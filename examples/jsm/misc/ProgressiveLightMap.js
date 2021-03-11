@@ -107,7 +107,7 @@ class ProgressiveLightMap {
 				void main() {
 					gl_FragColor.rgb = vec3(vUv2, depth); 
 					gl_FragColor.a = 1.0; // Extra value here, use for opacity?
-					gl_FragDepth = rand(vUv2);
+					gl_FragDepthEXT = rand(vUv2);
 				}
 			`,
 			extensions: { fragDepth: true }, // set to use fragment depth values
@@ -144,10 +144,7 @@ class ProgressiveLightMap {
 					uniform vec3 depthCameraPos;
 					uniform float texelStride;
 					uniform float averagingWindow;
-					//uniform vec2 sampleOffset[9];
-					vec2 sampleOffset[9] = vec2[9](vec2(-1, -1), vec2(0, -1), vec2( 1, -1),
-												   vec2(-1,  0), vec2(0,  0), vec2( 1,  0),
-												   vec2(-1,  1), vec2(0,  1), vec2( 1,  1));
+					uniform vec2 sampleOffset[9];
 					vec3 GetWorldPos(vec2 illumTexCoord, float depth) {
 						return (depthCameraDir * depth) +
 							   ((400.0 * illumTexCoord.x - 200.0) * depthCameraX) +
