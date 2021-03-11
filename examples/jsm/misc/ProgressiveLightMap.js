@@ -92,7 +92,7 @@ class ProgressiveLightMap {
 				void main() {
 					vUv2 = uv2;
 					vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-					depth = dot(worldPosition.xyz, vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]));
+					depth = dot(worldPosition.xyz, normalize(vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2])));
 					gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 				}
 			`,
@@ -101,12 +101,12 @@ class ProgressiveLightMap {
 				varying float depth;
 				uniform float time;
 				float rand(vec2 co){ // Author @patriciogv - 2015; http://patriciogonzalezvivo.com
-					return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453 * time);
+					return fract(sin(dot(co.xy ,vec2(12.9898,78.233) + time)) * 43758.5453);
 				}
 				void main() {
 					gl_FragColor.rgb = vec3(vUv2, depth); 
 					gl_FragColor.a = 1.0; // Extra value here, use for opacity?
-					gl_FragDepth = rand(vUv2);
+					gl_FragDepth = (rand(vUv2) * 2000.0)-1000.0;
 				}
 			`,
 			extensions: { fragDepth: true }, // set to use fragment depth values
@@ -136,6 +136,8 @@ class ProgressiveLightMap {
 					uniform sampler2D previousBounceMap;
 					uniform sampler2D stochasticDepthUVMap;
 					uniform mat4 depthViewProjectionMatrix;
+					uniform vec3 depthCameraX;
+					uniform vec3 depthCameraY;
 					uniform vec3 depthCameraDir;
 					uniform vec3 depthCameraPos;
 					uniform float texelStride;
@@ -144,43 +146,51 @@ class ProgressiveLightMap {
 												   vec2(-1,  0), vec2(0,  0), vec2( 1,  0),
 												   vec2(-1,  1), vec2(0,  1), vec2( 1,  1));
 					vec3 GetWorldPos(vec2 illumTexCoord, float depth) {
-						return (depthCameraDir * depth) + depthCameraPos;
+						return (depthCameraDir * depth) +
+							   ((illumTexCoord.x-0.5) * 100.0 * depthCameraX) +
+							   ((illumTexCoord.y-0.5) * 100.0 * depthCameraY);
 					}
 					// From "Approximate Radiosity using Stochastic Depth Buffering" by Andreas Thomsen and Kasper Høy Nielsen
 					vec3 CalculateIndirectLight(vec4 vWorldPosition, vec3 normal) {
 						float weight = dot(normal, depthCameraDir);
-						if (weight <= 0.0) return vec3(0,0,0);
-						vec4 bestSample = vec4(0,0,0, 100000.0); //SkyColorInDirection(d)
+						if (weight >= 0.0) return vec3(0,0,0);
+						vec4 bestSample = vec4(0, 0.0, 0.0, 100000.0); //SkyColorInDirection(d)
 						vec2 illumPos = (depthViewProjectionMatrix * vWorldPosition).xy;
 						vec2 illumTexCoord = vec2(0,0);
 						vec4 illumSample = vec4(0,0,0,0);
 						vec3 samplePos = vec3(0,0,0);
 						#pragma unroll_loop_start
-						for (int i=0; i < 9; i++) {
+						for (int i = 0; i < 9; i++) {
 							illumTexCoord = illumPos + (sampleOffset[i] * texelStride);
 							illumSample = texture2D(stochasticDepthUVMap, illumTexCoord);
-							samplePos = GetWorldPos(illumTexCoord, illumSample.w);
-							if (dot(samplePos-vWorldPosition.xyz, normal) > 0.0 && illumSample.w < bestSample.w) {
-								bestSample = texture2D(previousShadowMap, illumSample.xy);
+							samplePos = GetWorldPos(illumTexCoord, illumSample.b);
+							if (dot(samplePos-vWorldPosition.xyz, normal) > 0.0 && illumSample.b < bestSample.w) {
+								bestSample.rgb = texture2D(previousShadowMap, illumSample.xy).rgb; //illumSample.rgb;//
+								bestSample.w = illumSample.b;
 							}
 						}
 						#pragma unroll_loop_end
-						return 4.0 * bestSample.rgb * weight;
+						return 4.0 * bestSample.rgb * -weight;
+						//return bestSample.rgb;
 					}
 					` +
 					shader.fragmentShader.slice( bodyStart - 1, - 1 ) +
 					`
-					gl_FragColor.rgb = CalculateIndirectLight(vWorldPosition, normal);
+					vec3 worldNormal = inverseTransformDirection( normal, viewMatrix );
+					gl_FragColor.rgb = CalculateIndirectLight(vWorldPosition, worldNormal);
 
 					vec3 texelOld = texture2D(previousBounceMap, vUv2).rgb;
-					gl_FragColor.rgb = mix(texelOld, gl_FragColor.rgb, 1.0/averagingWindow);}`;
+					gl_FragColor.rgb = mix(texelOld, gl_FragColor.rgb, 1.0/averagingWindow);
+				}`;
 
 			// Set the Previous Frame's Texture Buffer and Averaging Window
 			shader.uniforms.previousShadowMap = { value: this.progressiveLightMap2.texture };
 			shader.uniforms.previousBounceMap = { value: this.progressiveBounceMap2.texture };
 			shader.uniforms.stochasticDepthUVMap = { value: this.stochasticDepthUVBuffer.texture };
 			shader.uniforms.depthViewProjectionMatrix = { value: this.depthMatrix };
-			shader.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorldInverse, 2 ) };
+			shader.uniforms.depthCameraX = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 0 ).multiplyScalar( - 1.0 ) };
+			shader.uniforms.depthCameraY = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 1 ).multiplyScalar( - 1.0 ) };
+			shader.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 2 ).multiplyScalar( - 1.0 ) };
 			shader.uniforms.depthCameraPos = { value: this.bounceCamera.position };
 			shader.uniforms.averagingWindow = { value: 100 };
 			shader.uniforms.texelStride = { value: 1.0 / this.res };
@@ -209,12 +219,12 @@ class ProgressiveLightMap {
 
 			let object = objects[ ob ];
 
-			if ( ob == objects.length - 1 ) {
+			//if ( ob == objects.length - 1 ) {
 
-				let helper = new THREE.CameraHelper( this.bounceCamera );
-				object.parent.add( helper );
+			//	let helper = new THREE.CameraHelper( this.bounceCamera );
+			//	object.parent.add( helper );
 
-			}
+			//}
 
 
 
@@ -346,7 +356,7 @@ class ProgressiveLightMap {
 		this.renderer.render( this.scene, camera );
 
 		// BEGIN INDIRECT BOUNCE PHASE
-		for ( let bounceIter = 0; bounceIter < 1; bounceIter ++ ) {
+		for ( let bounceIter = 0; bounceIter < 11; bounceIter ++ ) {
 
 			this.buffer1Active = ! this.buffer1Active;
 
@@ -382,8 +392,10 @@ class ProgressiveLightMap {
 			this.bounceGatherMaterial.uniforms.previousBounceMap = { value: inactiveBounceMap.texture };
 			this.bounceGatherMaterial.uniforms.stochasticDepthUVMap = { value: this.stochasticDepthUVBuffer.texture };
 			this.bounceGatherMaterial.uniforms.depthViewProjectionMatrix = { value: this.depthMatrix };
-			this.bounceGatherMaterial.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorldInverse, 2 ) };
-			this.bounceGatherMaterial.uniforms.depthCameraPos = { value: this.bounceCamera.position };
+			this.bounceGatherMaterial.uniforms.depthCameraX = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 0 ).normalize() };
+			this.bounceGatherMaterial.uniforms.depthCameraY = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 1 ).normalize() };
+			this.bounceGatherMaterial.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 2 ).normalize() };
+			this.bounceGatherMaterial.uniforms.depthCameraPos = { value: new THREE.Vector3() };// "Pos" is whatever the center of the frustum is//this.bounceCamera.position };
 			this.bounceGatherMaterial.uniforms.averagingWindow = { value: blendWindow };
 			this.bounceGatherMaterial.uniforms.texelStride = { value: 1.0 / this.res };
 			this.bounceGatherMaterial.needsUpdate = true;
@@ -398,10 +410,10 @@ class ProgressiveLightMap {
 			// Uniform Hemispherical Surface Distribution for Ambient Occlusion
 			let lambda = Math.acos( 2 * Math.random() - 1 ) - ( 3.14159 / 2.0 );
 			let phi = 2 * 3.14159 * Math.random();
-			//this.bounceCamera.position.set( ( ( Math.cos( lambda ) * Math.cos( phi ) ) * 300 ),
-			//	( ( Math.cos( lambda ) * Math.sin( phi ) ) * 300 ) + 20,
-			//	( Math.sin( lambda ) * 300 ) );
-			this.bounceCamera.position.set( 300, 300, 300 );
+			this.bounceCamera.position.set( ( ( Math.cos( lambda ) * Math.cos( phi ) ) * 300 ),
+				( ( Math.cos( lambda ) * Math.sin( phi ) ) * 300 ) + 20,
+				( Math.sin( lambda ) * 300 ) );
+			//this.bounceCamera.position.set( 300, 300, 300 );
 			this.bounceCamera.lookAt( 0, 0, 0 );
 			this.bounceCamera.updateProjectionMatrix();
 
