@@ -33,6 +33,7 @@ class ProgressiveLightMap {
 		this.warned = false;
 		this.depthMatrix = new THREE.Matrix4().identity();
 		this.cameraForward = new THREE.Vector3();
+		this.lights = [];
 
 		// Create the Progressive LightMap Texture
 		let format = /(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent ) ? THREE.HalfFloatType : THREE.FloatType;
@@ -79,7 +80,8 @@ class ProgressiveLightMap {
 		};
 
 		// This is Stochastic Order Independent Rendering for bouncing light off of layered surfaces
-		this.bounceCamera = new THREE.OrthographicCamera( - 1000, 1000, 1000, - 1000, - 1000, 1000 );
+		this.bounceCamera = new THREE.OrthographicCamera( - 200, 200, 200, - 200, - 1000, 1000 );
+
 		this.scene.add( this.bounceCamera );
 		this.stochasticDepthUVMaterial = new THREE.ShaderMaterial( {
 			vertexShader: `
@@ -97,8 +99,9 @@ class ProgressiveLightMap {
 			fragmentShader: `
 				varying vec2 vUv2;
 				varying float depth;
+				uniform float time;
 				float rand(vec2 co){ // Author @patriciogv - 2015; http://patriciogonzalezvivo.com
-					return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+					return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453 * time);
 				}
 				void main() {
 					gl_FragColor.rgb = vec3(vUv2, depth); 
@@ -106,7 +109,10 @@ class ProgressiveLightMap {
 					gl_FragDepth = rand(vUv2);
 				}
 			`,
-			extensions: { fragDepth: true } // set to use fragment depth values
+			extensions: { fragDepth: true }, // set to use fragment depth values
+			uniforms: {
+				time: { value: performance.now() }
+			}
 		} );
 
 		this.bounceGatherMaterial = new THREE.MeshPhongMaterial();
@@ -203,8 +209,21 @@ class ProgressiveLightMap {
 
 			let object = objects[ ob ];
 
+			if ( ob == objects.length - 1 ) {
+
+				let helper = new THREE.CameraHelper( this.bounceCamera );
+				object.parent.add( helper );
+
+			}
+
+
+
 			// If this object is a light, simply add it to the internal scene
 			if ( object.isLight ) {
+
+				object.shadow.autoUpdate = false;
+
+				this.lights.push( object );
 
 				this.scene.attach( object ); continue;
 
@@ -223,7 +242,7 @@ class ProgressiveLightMap {
 			}
 
 			// Apply the lightmap to the object
-			object.material.lightMap = this.progressiveLightMap2.texture;
+			object.material.lightMap = this.progressiveBounceMap2.texture;
 			object.material.dithering = true;
 			object.castShadow = true;
 			object.receiveShadow = true;
@@ -280,6 +299,13 @@ class ProgressiveLightMap {
 		this.blurringPlane.visible = blurEdges;
 
 		// Steal the Object3D from the real world to our special dimension
+		for ( let l = 0; l < this.lights.length; l ++ ) {
+
+			this.lights[ l ].shadow.needsUpdate = true;
+
+		}
+
+		// Steal the Object3D from the real world to our special dimension
 		for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
 
 			this.lightMapContainers[ l ].object.oldScene =
@@ -316,55 +342,74 @@ class ProgressiveLightMap {
 		this.renderer.setRenderTarget( activeMap );
 		this.uvMat.uniforms.previousShadowMap = { value: inactiveMap.texture };
 		this.blurringPlane.material.uniforms.previousShadowMap = { value: inactiveMap.texture };
-		this.buffer1Active = ! this.buffer1Active;
+
 		this.renderer.render( this.scene, camera );
 
 		// BEGIN INDIRECT BOUNCE PHASE
-		// Set each object's material to the stochastic depth version
-		for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
+		for ( let bounceIter = 0; bounceIter < 1; bounceIter ++ ) {
 
-			this.lightMapContainers[ l ].object.material = this.stochasticDepthUVMaterial;
+			this.buffer1Active = ! this.buffer1Active;
+
+			// Set each object's material to the stochastic depth version
+			for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
+
+				this.lightMapContainers[ l ].object.material = this.stochasticDepthUVMaterial;
+
+			}
+
+			this.stochasticDepthUVMaterial.uniforms.time = { value: performance.now() + bounceIter };
+			this.stochasticDepthUVMaterial.needsUpdate = true;
+
+			// Render the stochastic depth buffer from a random directional camera's perspective
+			this.renderer.setRenderTarget( this.stochasticDepthUVBuffer );
+			this.renderer.render( this.scene, this.bounceCamera );
+
+
+			// Update the depth camera matrix
+			this.depthMatrix.set(
+				0.5, 0.0, 0.0, 0.5,
+				0.0, 0.5, 0.0, 0.5,
+				0.0, 0.0, 0.5, 0.5,
+				0.0, 0.0, 0.0, 1.0 );
+			this.depthMatrix.multiply( this.bounceCamera.projectionMatrix );
+			this.depthMatrix.multiply( this.bounceCamera.matrixWorldInverse );
+
+			// Ping-pong two surface buffers for reading/writing
+			let activeBounceMap = this.buffer1Active ? this.progressiveBounceMap1 : this.progressiveBounceMap2;
+			let inactiveBounceMap = this.buffer1Active ? this.progressiveBounceMap2 : this.progressiveBounceMap1;
+
+			this.bounceGatherMaterial.uniforms.previousShadowMap = { value: inactiveMap.texture };
+			this.bounceGatherMaterial.uniforms.previousBounceMap = { value: inactiveBounceMap.texture };
+			this.bounceGatherMaterial.uniforms.stochasticDepthUVMap = { value: this.stochasticDepthUVBuffer.texture };
+			this.bounceGatherMaterial.uniforms.depthViewProjectionMatrix = { value: this.depthMatrix };
+			this.bounceGatherMaterial.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorldInverse, 2 ) };
+			this.bounceGatherMaterial.uniforms.depthCameraPos = { value: this.bounceCamera.position };
+			this.bounceGatherMaterial.uniforms.averagingWindow = { value: blendWindow };
+			this.bounceGatherMaterial.uniforms.texelStride = { value: 1.0 / this.res };
+			this.bounceGatherMaterial.needsUpdate = true;
+
+			// Set each object's material to the bounce gathering material
+			for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
+
+				this.lightMapContainers[ l ].object.material = this.bounceGatherMaterial;
+
+			}
+
+			// Uniform Hemispherical Surface Distribution for Ambient Occlusion
+			let lambda = Math.acos( 2 * Math.random() - 1 ) - ( 3.14159 / 2.0 );
+			let phi = 2 * 3.14159 * Math.random();
+			//this.bounceCamera.position.set( ( ( Math.cos( lambda ) * Math.cos( phi ) ) * 300 ),
+			//	( ( Math.cos( lambda ) * Math.sin( phi ) ) * 300 ) + 20,
+			//	( Math.sin( lambda ) * 300 ) );
+			this.bounceCamera.position.set( 300, 300, 300 );
+			this.bounceCamera.lookAt( 0, 0, 0 );
+			this.bounceCamera.updateProjectionMatrix();
+
+			// Gather the bounce
+			this.renderer.setRenderTarget( activeBounceMap );
+			this.renderer.render( this.scene, this.bounceCamera );
 
 		}
-
-		// Render the stochastic depth buffer from a random directional camera's perspective
-		this.renderer.setRenderTarget( this.stochasticDepthUVBuffer );
-		this.renderer.render( this.scene, this.bounceCamera );
-
-		// Update the depth camera matrix
-		this.depthMatrix.set(
-			0.5, 0.0, 0.0, 0.5,
-			0.0, 0.5, 0.0, 0.5,
-			0.0, 0.0, 0.5, 0.5,
-			0.0, 0.0, 0.0, 1.0 );
-		this.depthMatrix.multiply( this.bounceCamera.projectionMatrix );
-		this.depthMatrix.multiply( this.bounceCamera.matrixWorldInverse );
-
-		// Ping-pong two surface buffers for reading/writing
-		let activeBounceMap = this.buffer1Active ? this.progressiveBounceMap1 : this.progressiveBounceMap2;
-		let inactiveBounceMap = this.buffer1Active ? this.progressiveBounceMap2 : this.progressiveBounceMap1;
-
-		this.bounceGatherMaterial.uniforms.previousShadowMap = { value: inactiveMap.texture };
-		this.bounceGatherMaterial.uniforms.previousBounceMap = { value: inactiveBounceMap.texture };
-		this.bounceGatherMaterial.uniforms.stochasticDepthUVMap = { value: this.stochasticDepthUVBuffer.texture };
-		this.bounceGatherMaterial.uniforms.depthViewProjectionMatrix = { value: this.depthMatrix };
-		this.bounceGatherMaterial.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorldInverse, 2 ) };
-		this.bounceGatherMaterial.uniforms.depthCameraPos = { value: this.bounceCamera.position };
-		this.bounceGatherMaterial.uniforms.averagingWindow = { value: 100 };
-		this.bounceGatherMaterial.uniforms.texelStride = { value: 1.0 / this.res };
-		this.bounceGatherMaterial.needsUpdate = true;
-
-		// Set each object's material to the bounce gathering material
-		for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
-
-			this.lightMapContainers[ l ].object.material = this.bounceGatherMaterial;
-
-		}
-
-		// Gather the bounce
-		this.renderer.setRenderTarget( activeBounceMap );
-		this.renderer.render( this.scene, this.bounceCamera );
-
 		// END INDIRECT BOUNCE PHASE
 
 		// Restore the object's Real-time Material and add it back to the original world
