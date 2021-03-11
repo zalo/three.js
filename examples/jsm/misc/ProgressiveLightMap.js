@@ -359,6 +359,7 @@ class ProgressiveLightMap {
 		for ( let bounceIter = 0; bounceIter < 11; bounceIter ++ ) {
 
 			this.buffer1Active = ! this.buffer1Active;
+			this.blurringPlane.visible = false;
 
 			// Set each object's material to the stochastic depth version
 			for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
@@ -399,6 +400,8 @@ class ProgressiveLightMap {
 			this.bounceGatherMaterial.uniforms.averagingWindow = { value: blendWindow };
 			this.bounceGatherMaterial.uniforms.texelStride = { value: 1.0 / this.res };
 			this.bounceGatherMaterial.needsUpdate = true;
+			this.blurringPlane.visible = true;
+			this.blurringPlane.material.uniforms.previousShadowMap = { value: inactiveBounceMap.texture };
 
 			// Set each object's material to the bounce gathering material
 			for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
