@@ -22,11 +22,11 @@
 			import { ProgressiveLightMap } from './jsm/misc/ProgressiveLightMap.js';
 
 			// ShadowMap + LightMap Res and Number of Directional Lights
-			let shadowMapRes = 512, lightMapRes = 1024, lightCount = 8;
+			let shadowMapRes = 512, lightMapRes = 256, lightCount = 8;
 			let camera, scene, renderer, dirLights = [], controls, control, control2,
 				object = new THREE.Mesh(), lightOrigin = null, progressiveSurfacemap, lightmapObjects = [];
 			const params = { 'Enable': true, 'Blur Edges': true, 'Blend Window': 1000,
-							 'Light Radius': 50, 'Ambient Weight': 0.5, 'Debug Lightmap': false };
+							 'Light Radius': 50, 'Ambient Weight': 0.0, 'Debug Lightmap': false };
 			init();
 			createGUI();
 			animate();
@@ -75,12 +75,12 @@
 					dirLight.name = 'Dir. Light ' + l;
 					dirLight.position.set( 200, 200, 200 );
 					dirLight.castShadow = true;
-					dirLight.shadow.camera.near = 100;
+					dirLight.shadow.camera.near = -1000;
 					dirLight.shadow.camera.far = 5000;
-					dirLight.shadow.camera.right = 150;
-					dirLight.shadow.camera.left = - 150;
-					dirLight.shadow.camera.top = 150;
-					dirLight.shadow.camera.bottom = - 150;
+					dirLight.shadow.camera.right = 250;
+					dirLight.shadow.camera.left = - 250;
+					dirLight.shadow.camera.top = 250;
+					dirLight.shadow.camera.bottom = - 250;
 					dirLight.shadow.mapSize.width = shadowMapRes;
 					dirLight.shadow.mapSize.height = shadowMapRes;
 					lightmapObjects.push( dirLight );
@@ -96,6 +96,13 @@
 				groundMesh.name = "Ground Mesh";
 				lightmapObjects.push( groundMesh );
 				scene.add( groundMesh );
+
+				let labelMaterial = new THREE.MeshBasicMaterial( { } );
+				let labelPlane = new THREE.PlaneGeometry( 100, 100 );
+				let labelMesh = new THREE.Mesh( labelPlane, labelMaterial );
+				labelMesh.position.set( 200, 50, 0 );
+				lightmapObjects.push( labelMesh );
+				scene.add( labelMesh );
 
 				// model
 				function loadModel() {
