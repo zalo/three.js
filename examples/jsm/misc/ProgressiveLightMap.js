@@ -350,7 +350,7 @@ class ProgressiveLightMap {
 		let oldTarget = this.renderer.getRenderTarget();
 
 		// The blurring plane applies blur to the seams of the lightmap
-		this.blurringPlane.visible = blurEdges;
+		this.blurringPlane.visible = false;
 
 		// Steal the Object3D from the real world to our special dimension
 		for ( let l = 0; l < this.lights.length; l ++ ) {
@@ -450,7 +450,7 @@ class ProgressiveLightMap {
 				this.bounceGatherMaterial.uniforms.averagingWindow = { value: blendWindow };
 				this.bounceGatherMaterial.uniforms.texelStride = { value: 1.0 / this.res };
 				this.bounceGatherMaterial.needsUpdate = true;
-				this.blurringPlane.visible = true;
+				this.blurringPlane.visible = false;
 				this.blurringPlane.material.uniforms.previousShadowMap = { value: inactiveBounceMap.texture };
 
 				// Set each object's material to the bounce gathering material
@@ -481,6 +481,7 @@ class ProgressiveLightMap {
 
 		let activeCompositeMap = this.buffer1Active ? this.compositeLightMap1 : this.compositeLightMap2;
 		let inactiveCompositeMap = this.buffer1Active ? this.compositeLightMap2 : this.compositeLightMap1;
+		this.blurringPlane.visible = blurEdges;
 		this.blurringPlane.material.uniforms.previousShadowMap = { value: inactiveCompositeMap.texture };
 		this.compositeDirectAndIndirectMaterial.uniforms.previousShadowMap = { value: this.progressiveLightMap1.texture };
 		this.compositeDirectAndIndirectMaterial.uniforms.previousBounceMap = { value: this.progressiveBounceMap1.texture };
