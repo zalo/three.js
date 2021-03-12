@@ -27,7 +27,7 @@
 			let camera, scene, renderer, dirLights = [], controls, control, control2,
 				object = new THREE.Mesh(), lightOrigin = null, progressiveSurfacemap, lightmapObjects = [];
 			const params = { 'Enable': true, 'Blur Edges': true, 'Blend Window': 1000,
-							 'Light Radius': 50, 'Ambient Weight': 0.0, 'Indirect Weight': 1.0, 'Debug Lightmap': false };
+							 'Light Radius': 50, 'Ambient Weight': 0.3, 'Indirect Weight': 1.0, 'Indirect Passes': 5.0, 'Debug Lightmap': false };
 			init();
 			createGUI();
 			animate();
@@ -98,25 +98,34 @@
 				lightmapObjects.push( groundMesh );
 				scene.add( groundMesh );
 
-				let labelMaterial = new THREE.MeshPhongMaterial( );
-				let labelPlane = new THREE.PlaneBufferGeometry( 100, 100 );
-				let labelMesh = new THREE.Mesh( labelPlane, labelMaterial );
-				labelMesh.rotation.y = Math.PI;
-				labelMesh.castShadow = true;
-				labelMesh.receiveShadow = true;
-				labelMesh.position.set( 200, 50, 0 );
-				lightmapObjects.push( labelMesh );
-				scene.add( labelMesh );
+				let redPlaneFrontMat = new THREE.MeshPhongMaterial( { color: 0xff0000 } );
+				let redPlaneFrontGeo = new THREE.PlaneBufferGeometry( 100, 100 );
+				let redPlaneFrontMesh = new THREE.Mesh( redPlaneFrontGeo, redPlaneFrontMat );
+				redPlaneFrontMesh.rotation.y = -5*Math.PI/4;
+				redPlaneFrontMesh.castShadow = true;
+				redPlaneFrontMesh.receiveShadow = true;
+				redPlaneFrontMesh.position.set( 150, 50, 0 );
+				lightmapObjects.push( redPlaneFrontMesh );
+				scene.add( redPlaneFrontMesh );
 
-				let labelMaterial2 = new THREE.MeshPhongMaterial( );
-				let labelPlane2 = new THREE.PlaneBufferGeometry( 100, 100 );
-				let labelMesh2 = new THREE.Mesh( labelPlane2, labelMaterial2 );
-				//labelMesh2.rotation.y = Math.PI;
-				labelMesh2.castShadow = true;
-				labelMesh2.receiveShadow = true;
-				labelMesh2.position.set( 200, 50, 1 );
-				lightmapObjects.push( labelMesh2 );
-				scene.add( labelMesh2 );
+				let redPlaneBackMat = new THREE.MeshPhongMaterial( { color: 0xff0000 } );
+				let redPlaneBackGeo = new THREE.PlaneBufferGeometry( 100, 100 );
+				let redPlaneBackMesh = new THREE.Mesh( redPlaneBackGeo, redPlaneBackMat );
+				redPlaneBackMesh.rotation.y = -Math.PI/4;
+				redPlaneBackMesh.castShadow = true;
+				redPlaneBackMesh.receiveShadow = true;
+				redPlaneBackMesh.position.set( 150, 50, 1 );
+				lightmapObjects.push( redPlaneBackMesh );
+				scene.add( redPlaneBackMesh );
+
+				let greenLightMat = new THREE.MeshBasicMaterial( { color: new THREE.Color(0,2,0) } );
+				let greenLightGeo = new THREE.PlaneBufferGeometry( 100, 100 );
+				let greenLight = new THREE.Mesh( greenLightGeo, greenLightMat );
+				greenLight.rotation.x = Math.PI/4;
+				greenLight.position.set( -200, 50, 1 );
+				greenLight.excludeFromLightMap = true;
+				lightmapObjects.push( greenLight );
+				scene.add( greenLight );
 
 				// model
 				function loadModel() {
@@ -195,6 +204,7 @@
 				gui.add( params, 'Light Radius', 0, 200 ).step( 10 );
 				gui.add( params, 'Ambient Weight', 0, 1 ).step( 0.1 );
 				gui.add( params, 'Indirect Weight', 0, 2 ).step( 0.1 );
+				gui.add( params, 'Indirect Passes', 0, 7 ).step( 1 );
 				gui.add( params, 'Debug Lightmap' );
 
 			}
@@ -215,7 +225,7 @@
 				// Accumulate Surface Maps
 				if ( params[ 'Enable' ] ) {
 
-					progressiveSurfacemap.update( camera, params[ 'Blend Window' ], params[ 'Blur Edges' ], params[ 'Indirect Weight' ] );
+					progressiveSurfacemap.update( camera, params[ 'Blend Window' ], params[ 'Blur Edges' ], params[ 'Indirect Weight' ], params['Indirect Passes'] );
 					if(!progressiveSurfacemap.firstUpdate) { progressiveSurfacemap.showDebugLightmap( params[ 'Debug Lightmap' ] ); }
 
 				}
