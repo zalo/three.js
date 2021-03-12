@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>three.js webgl - progressive lightmap accumulation</title>
+		<title>three.js webgl - progressive radiosity</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<link type="text/css" rel="stylesheet" href="main.css">
@@ -9,8 +9,8 @@
 	<body>
 		<div id="container"></div>
 		<div id="info">
-			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - Progressive Lightmaps by <a href="https://github.com/zalo" target="_blank" rel="noopener">zalo</a><br/>
-			[Inspired by <a href="http://madebyevan.com/shaders/lightmap/" target="_blank" rel="noopener">evanw's Lightmap Generation</a>]
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - Progressive Radiosity by <a href="https://github.com/zalo" target="_blank" rel="noopener">zalo</a><br/>
+			[An implementation of <a href="http://xevius.org/papers/approxradpaper2010.pdf" target="_blank" rel="noopener">Approximate Radiosity by Stochastic Depth Buffering</a>]
 		</div>
 
 		<script type="module">
@@ -22,11 +22,11 @@
 			import { ProgressiveLightMap } from './jsm/misc/ProgressiveLightMap.js';
 
 			// ShadowMap + LightMap Res and Number of Directional Lights
-			let shadowMapRes = 512, lightMapRes = 256, lightCount = 8;
+			let shadowMapRes = 512, lightMapRes = 512, lightCount = 8;
 			let camera, scene, renderer, dirLights = [], controls, control, control2,
 				object = new THREE.Mesh(), lightOrigin = null, progressiveSurfacemap, lightmapObjects = [];
 			const params = { 'Enable': true, 'Blur Edges': true, 'Blend Window': 1000,
-							 'Light Radius': 50, 'Ambient Weight': 0.0, 'Debug Lightmap': false };
+							 'Light Radius': 50, 'Ambient Weight': 0.0, 'Indirect Weight': 1.0, 'Debug Lightmap': false };
 			init();
 			createGUI();
 			animate();
@@ -34,7 +34,7 @@
 			function init() {
 
 				// renderer
-				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer = new THREE.WebGL1Renderer( { antialias: true } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
 				renderer.shadowMap.enabled = true;
@@ -55,7 +55,7 @@
 
 				// directional lighting "origin"
 				lightOrigin = new THREE.Group();
-				lightOrigin.position.set( 60, 150, 100 );
+				lightOrigin.position.set( 0, 100, 200 );
 				scene.add( lightOrigin );
 
 				// transform gizmo
@@ -71,7 +71,7 @@
 				// create 8 directional lights to speed up the convergence
 				for ( let l = 0; l < lightCount; l ++ ) {
 
-					let dirLight = new THREE.DirectionalLight( 0xffffff, 1.0 / lightCount );
+					let dirLight = new THREE.DirectionalLight( 0xffffff, 0.75 / lightCount );
 					dirLight.name = 'Dir. Light ' + l;
 					dirLight.position.set( 200, 200, 200 );
 					dirLight.castShadow = true;
@@ -97,12 +97,25 @@
 				lightmapObjects.push( groundMesh );
 				scene.add( groundMesh );
 
-				let labelMaterial = new THREE.MeshBasicMaterial( { } );
-				let labelPlane = new THREE.PlaneGeometry( 100, 100 );
+				let labelMaterial = new THREE.MeshPhongMaterial( );
+				let labelPlane = new THREE.PlaneBufferGeometry( 100, 100 );
 				let labelMesh = new THREE.Mesh( labelPlane, labelMaterial );
+				labelMesh.rotation.y = Math.PI;
+				labelMesh.castShadow = true;
+				labelMesh.receiveShadow = true;
 				labelMesh.position.set( 200, 50, 0 );
 				lightmapObjects.push( labelMesh );
 				scene.add( labelMesh );
+
+				let labelMaterial2 = new THREE.MeshPhongMaterial( );
+				let labelPlane2 = new THREE.PlaneBufferGeometry( 100, 100 );
+				let labelMesh2 = new THREE.Mesh( labelPlane2, labelMaterial2 );
+				//labelMesh2.rotation.y = Math.PI;
+				labelMesh2.castShadow = true;
+				labelMesh2.receiveShadow = true;
+				labelMesh2.position.set( 200, 50, 1 );
+				lightmapObjects.push( labelMesh2 );
+				scene.add( labelMesh2 );
 
 				// model
 				function loadModel() {
@@ -180,6 +193,7 @@
 				gui.add( params, 'Blend Window', 1, 1000 ).step( 1 );
 				gui.add( params, 'Light Radius', 0, 200 ).step( 10 );
 				gui.add( params, 'Ambient Weight', 0, 1 ).step( 0.1 );
+				gui.add( params, 'Indirect Weight', 0, 2 ).step( 0.1 );
 				gui.add( params, 'Debug Lightmap' );
 
 			}
@@ -200,7 +214,7 @@
 				// Accumulate Surface Maps
 				if ( params[ 'Enable' ] ) {
 
-					progressiveSurfacemap.update( camera, params[ 'Blend Window' ], params[ 'Blur Edges' ] );
+					progressiveSurfacemap.update( camera, params[ 'Blend Window' ], params[ 'Blur Edges' ], params[ 'Indirect Weight' ] );
 					if(!progressiveSurfacemap.firstUpdate) { progressiveSurfacemap.showDebugLightmap( params[ 'Debug Lightmap' ] ); }
 
 				}
