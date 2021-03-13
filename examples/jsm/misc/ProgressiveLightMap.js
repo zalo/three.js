@@ -34,6 +34,8 @@ class ProgressiveLightMap {
 		this.depthMatrix = new THREE.Matrix4().identity();
 		this.cameraForward = new THREE.Vector3();
 		this.lights = [];
+		this.numSamples = 1.0;
+		this.switchingNum = 5000;
 
 		// Create the Progressive LightMap Texture
 		let format = /(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent ) ? THREE.HalfFloatType : THREE.FloatType;
@@ -118,7 +120,8 @@ class ProgressiveLightMap {
 					uniform vec3 depthCameraDir;
 					uniform vec3 depthCameraPos;
 					uniform float texelStride;
-					uniform float averagingWindow;
+					uniform float switchingNum;
+					uniform float numSamples;
 					uniform vec2 sampleOffset[9];
 					vec3 GetWorldPos(vec2 illumTexCoord, float depth) {
 						return (depthCameraDir * depth) +
@@ -153,7 +156,11 @@ class ProgressiveLightMap {
 					gl_FragColor.rgb = CalculateIndirectLight(vWorldPosition, worldNormal);
 
 					vec3 texelOld = texture2D(previousBounceMap, vUv2).rgb;
-					gl_FragColor.rgb = mix(texelOld, gl_FragColor.rgb, 1.0/averagingWindow);
+					if(numSamples >= switchingNum) {
+						gl_FragColor.rgb += mix(texelOld, gl_FragColor.rgb, 1.0/switchingNum);
+					} else {
+						gl_FragColor.rgb += texelOld;
+					}
 				}`;
 
 			// Set the Previous Frame's Texture Buffer and Averaging Window
@@ -165,7 +172,8 @@ class ProgressiveLightMap {
 			shader.uniforms.depthCameraY = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 1 ).multiplyScalar( - 1.0 ).clone() };
 			shader.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 2 ).clone() };
 			shader.uniforms.depthCameraPos = { value: this.bounceCamera.position };
-			shader.uniforms.averagingWindow = { value: 100 };
+			shader.uniforms.switchingNum = { value: this.switchingNum };
+			shader.uniforms.numSamples = { value: this.numSamples };
 			shader.uniforms.texelStride = { value: 1.0 / this.res };
 			shader.uniforms.sampleOffset = { value: [ new THREE.Vector2( - 1, - 1 ),
 													  new THREE.Vector2( 0, - 1 ),
@@ -469,6 +477,8 @@ class ProgressiveLightMap {
 				this.bounceGatherMaterial.uniforms.depthCameraPos = { value: new THREE.Vector3() };// "Pos" is whatever the center of the frustum is//this.bounceCamera.position };
 				this.bounceGatherMaterial.uniforms.averagingWindow = { value: blendWindow };
 				this.bounceGatherMaterial.uniforms.texelStride = { value: 1.0 / this.res };
+				this.bounceGatherMaterial.uniforms.switchingNum = { value: this.switchingNum };
+				this.bounceGatherMaterial.uniforms.numSamples = { value: this.numSamples };
 				this.bounceGatherMaterial.needsUpdate = true;
 				this.blurringPlane.visible = true;
 				this.blurringPlane.material.uniforms.previousShadowMap = { value: inactiveBounceMap.texture };
@@ -495,6 +505,8 @@ class ProgressiveLightMap {
 				this.renderer.setRenderTarget( activeBounceMap );
 				this.renderer.render( this.scene, this.bounceCamera );
 
+				this.numSamples = Math.min( this.switchingNum, this.numSamples + 1.0 );
+
 			}
 			// END INDIRECT BOUNCE PHASE
 
@@ -506,7 +518,7 @@ class ProgressiveLightMap {
 		this.blurringPlane.material.uniforms.previousShadowMap = { value: inactiveCompositeMap.texture };
 		this.compositeDirectAndIndirectMaterial.uniforms.previousShadowMap = { value: this.progressiveLightMap1.texture };
 		this.compositeDirectAndIndirectMaterial.uniforms.previousBounceMap = { value: this.progressiveBounceMap1.texture };
-		this.compositeDirectAndIndirectMaterial.uniforms.indirectContribution = { value: indirectContribution };
+		this.compositeDirectAndIndirectMaterial.uniforms.indirectContribution = { value: 1.0 / ( this.numSamples ) };//indirectContribution };
 
 		// Composite the direct and Indirect Lighting Steps together
 		for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {

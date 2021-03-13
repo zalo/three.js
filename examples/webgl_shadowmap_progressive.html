@@ -26,7 +26,7 @@
 			let shadowMapRes = 512, lightMapRes = 512, lightCount = 8;
 			let camera, scene, renderer, dirLights = [], controls, control, control2,
 				object = new THREE.Mesh(), lightOrigin = null, progressiveSurfacemap, lightmapObjects = [];
-			const params = { 'Enable': true, 'Blur Edges': true, 'Blend Window': 1000,
+			const params = { 'Enable': true, 'Blur Edges': true, 'Blend Window': 150,
 							 'Light Radius': 50, 'Ambient Weight': 0.3, 'Indirect Weight': 1.0, 'Indirect Passes': 5.0, 'Debug Lightmap': false };
 			init();
 			createGUI();
