@@ -200,12 +200,11 @@
 				gui.add( params, 'Enable' );
 				gui.add( params, 'Reset' ).listen();
 				gui.add( params, 'Blur Edges' );
-				gui.add( params, 'Direct Blend', 1, 1000 ).step( 10 );
-				gui.add( params, 'Indirect Blend', 100, 10000 ).step( 100 );
+				gui.add( params, 'Direct Blend', 1, 1000 ).step( 1 );
+				gui.add( params, 'Indirect Blend', 1, 10000 ).step( 1 );
 				gui.add( params, 'Light Radius', 0, 200 ).step( 10 );
 				gui.add( params, 'Ambient Weight', 0, 1 ).step( 0.1 );
 				gui.add( params, 'Indirect Weight', 0, 2 ).step( 0.1 );
-				gui.add( params, 'Indirect Passes', 0, 7 ).step( 1 );
 				gui.add( params, 'Debug Lightmap' );
 
 			}
