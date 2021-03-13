@@ -26,7 +26,7 @@
 			let shadowMapRes = 512, lightMapRes = 512, lightCount = 8;
 			let camera, scene, renderer, dirLights = [], controls, control, control2,
 				object = new THREE.Mesh(), lightOrigin = null, progressiveSurfacemap, lightmapObjects = [];
-			const params = { 'Enable': true, 'Blur Edges': true, 'Blend Window': 150,
+			const params = { 'Enable': true, 'Blur Edges': true, 'Direct Blend': 150, 'Indirect Blend': 5000,
 							 'Light Radius': 50, 'Ambient Weight': 0.3, 'Indirect Weight': 1.0, 'Indirect Passes': 5.0, 'Debug Lightmap': false };
 			init();
 			createGUI();
@@ -200,7 +200,8 @@
 				const gui = new GUI( { name: 'Accumulation Settings' } );
 				gui.add( params, 'Enable' );
 				gui.add( params, 'Blur Edges' );
-				gui.add( params, 'Blend Window', 1, 1000 ).step( 1 );
+				gui.add( params, 'Direct Blend', 1, 1000 ).step( 10 );
+				gui.add( params, 'Indirect Blend', 100, 10000 ).step( 100 );
 				gui.add( params, 'Light Radius', 0, 200 ).step( 10 );
 				gui.add( params, 'Ambient Weight', 0, 1 ).step( 0.1 );
 				gui.add( params, 'Indirect Weight', 0, 2 ).step( 0.1 );
@@ -225,7 +226,7 @@
 				// Accumulate Surface Maps
 				if ( params[ 'Enable' ] ) {
 
-					progressiveSurfacemap.update( camera, params[ 'Blend Window' ], params[ 'Blur Edges' ], params[ 'Indirect Weight' ], params['Indirect Passes'] );
+					progressiveSurfacemap.update( camera, params[ 'Direct Blend' ], params[ 'Blur Edges' ], params[ 'Indirect Weight' ], params['Indirect Blend'] );
 					if(!progressiveSurfacemap.firstUpdate) { progressiveSurfacemap.showDebugLightmap( params[ 'Debug Lightmap' ] ); }
 
 				}

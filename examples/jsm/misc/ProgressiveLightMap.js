@@ -366,7 +366,7 @@ class ProgressiveLightMap {
 	 * @param {number} blendWindow When >1, samples will accumulate over time.
 	 * @param {boolean} blurEdges  Whether to fix UV Edges via blurring
 	 */
-	update( camera, blendWindow = 100, blurEdges = true, indirectContribution = 1.0, indirectPasses = 3 ) {
+	update( camera, blendWindow = 100, blurEdges = true, indirectContribution = 1.0, indirectBlendWindow = 5000 ) {
 
 		if ( this.blurringPlane == null ) {
 
@@ -434,7 +434,7 @@ class ProgressiveLightMap {
 		// BEGIN INDIRECT BOUNCE PHASE
 		if ( indirectContribution > 0 ) {
 
-			for ( let bounceIter = 0; bounceIter < 1 + ( indirectPasses * 2 ); bounceIter ++ ) {
+			for ( let bounceIter = 0; bounceIter < 1 + ( 3 * 2 ); bounceIter ++ ) {
 
 				this.buffer1Active = ! this.buffer1Active;
 				this.blurringPlane.visible = false;
@@ -477,7 +477,7 @@ class ProgressiveLightMap {
 				this.bounceGatherMaterial.uniforms.depthCameraPos = { value: new THREE.Vector3() };// "Pos" is whatever the center of the frustum is//this.bounceCamera.position };
 				this.bounceGatherMaterial.uniforms.averagingWindow = { value: blendWindow };
 				this.bounceGatherMaterial.uniforms.texelStride = { value: 1.0 / this.res };
-				this.bounceGatherMaterial.uniforms.switchingNum = { value: this.switchingNum };
+				this.bounceGatherMaterial.uniforms.switchingNum = { value: indirectBlendWindow };
 				this.bounceGatherMaterial.uniforms.numSamples = { value: this.numSamples };
 				this.bounceGatherMaterial.needsUpdate = true;
 				this.blurringPlane.visible = true;
@@ -505,7 +505,7 @@ class ProgressiveLightMap {
 				this.renderer.setRenderTarget( activeBounceMap );
 				this.renderer.render( this.scene, this.bounceCamera );
 
-				this.numSamples = Math.min( this.switchingNum, this.numSamples + 1.0 );
+				this.numSamples = Math.min( indirectBlendWindow, this.numSamples + 1.0 );
 
 			}
 			// END INDIRECT BOUNCE PHASE
@@ -518,7 +518,7 @@ class ProgressiveLightMap {
 		this.blurringPlane.material.uniforms.previousShadowMap = { value: inactiveCompositeMap.texture };
 		this.compositeDirectAndIndirectMaterial.uniforms.previousShadowMap = { value: this.progressiveLightMap1.texture };
 		this.compositeDirectAndIndirectMaterial.uniforms.previousBounceMap = { value: this.progressiveBounceMap1.texture };
-		this.compositeDirectAndIndirectMaterial.uniforms.indirectContribution = { value: 1.0 / ( this.numSamples ) };//indirectContribution };
+		this.compositeDirectAndIndirectMaterial.uniforms.indirectContribution = { value: indirectContribution / ( this.numSamples ) };
 
 		// Composite the direct and Indirect Lighting Steps together
 		for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
