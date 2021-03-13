@@ -526,15 +526,7 @@ class ProgressiveLightMap {
 			this.lightMapContainers[ l ].object.frustumCulled =
 				this.lightMapContainers[ l ].object.oldFrustumCulled;
 
-			//if ( indirectContribution == 0 ) {
-
-			//	this.lightMapContainers[ l ].object.material = this.lightMapContainers[ l ].depthMat;
-
-			//} else {
-
 			this.lightMapContainers[ l ].object.material = this.lightMapContainers[ l ].basicMat;
-
-			//}
 
 			this.lightMapContainers[ l ].object.oldScene.attach( this.lightMapContainers[ l ].object );
 			this.lightMapContainers[ l ].object.visible = true;
