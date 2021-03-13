@@ -322,11 +322,16 @@ class ProgressiveLightMap {
 			object.renderOrder = 1000 + ob;
 
 			// Prepare UV boxes for potpack
-			// TODO: Size these by object surface area
 			if ( ! object.excludeFromLightMap ) {
 
-				this.uv_boxes.push( { w: 1 + ( padding * 2 ),
-									  h: 1 + ( padding * 2 ), index: ob } );
+				// Determine the true surface area of this mesh as a ratio
+				// of world surface area to used UV surface area
+				let surfaceAreaSqrt = Math.sqrt( this._findSurfaceArea( object, false ) /
+												 this._findSurfaceArea( object, true ) );
+
+				this.uv_boxes.push( { w: surfaceAreaSqrt * ( 1 + ( padding * 2 ) ),
+									  h: surfaceAreaSqrt * ( 1 + ( padding * 2 ) ),
+									  index: ob, surfaceAreaSqrt: surfaceAreaSqrt } );
 				object.material.lightMap = this.compositeLightMap1.texture;
 
 			}
@@ -348,8 +353,8 @@ class ProgressiveLightMap {
 			let uv2 = objects[ box.index ].geometry.getAttribute( "uv" ).clone();
 			for ( let i = 0; i < uv2.array.length; i += uv2.itemSize ) {
 
-				uv2.array[ i ] = ( ( uv2.array[ i ] ) + box.x + padding ) / dimensions.w;
-				uv2.array[ i + 1 ] = ( uv2.array[ i + 1 ] + box.y + padding ) / dimensions.h;
+				uv2.array[ i ] = ( ( ( uv2.array[ i ] * box.surfaceAreaSqrt ) ) + box.x + padding ) / dimensions.w;
+				uv2.array[ i + 1 ] = ( ( uv2.array[ i + 1 ] * box.surfaceAreaSqrt ) + box.y + padding ) / dimensions.h;
 
 			}
 
@@ -357,6 +362,55 @@ class ProgressiveLightMap {
 			objects[ box.index ].geometry.getAttribute( "uv2" ).needsUpdate = true;
 
 		} );
+
+	}
+
+	/**
+	 * INTERNAL: This function returns the surface area of the input object's geometry as a float
+	 * @param {Object3D} camera Standard Rendering Camera
+	 * @param {Boolean} uvs Whether to calculate the world surface area, or the used UV surface area.
+	 */
+	_findSurfaceArea( object, uvs = true ) {
+
+		object.updateWorldMatrix( true, false );
+		let sum = 0;
+		let tris = object.geometry.index.array;
+		let vertices = object.geometry.getAttribute( uvs ? "uv" : "position" );
+		let v1 = new THREE.Vector3( 0, 0, 0 ),
+			v2 = new THREE.Vector3( 0, 0, 0 ),
+			v3 = new THREE.Vector3( 0, 0, 0 );
+		let uv1 = new THREE.Vector2( 0, 0 ),
+			uv2 = new THREE.Vector2( 0, 0 ),
+			uv3 = new THREE.Vector2( 0, 0 );
+
+		for ( let t = 0; t < tris.length; t += 3 ) {
+
+			if ( ! uvs ) {
+
+				v1.fromBufferAttribute( vertices, tris[ t + 0 ] );
+				v2.fromBufferAttribute( vertices, tris[ t + 1 ] );
+				v3.fromBufferAttribute( vertices, tris[ t + 2 ] );
+				object.localToWorld( v1 ); // Multiply by matrixWorld for true size
+				object.localToWorld( v2 );
+				object.localToWorld( v3 );
+
+			} else {
+
+				uv1.fromBufferAttribute( vertices, tris[ t + 0 ] ); v1.set( uv1.x, uv1.y, 0 );
+				uv2.fromBufferAttribute( vertices, tris[ t + 1 ] ); v2.set( uv2.x, uv2.y, 0 );
+				uv3.fromBufferAttribute( vertices, tris[ t + 2 ] ); v3.set( uv3.x, uv3.y, 0 );
+
+			}
+
+			// Calculate the area of this triangle
+			v3.sub( v2 ); v1.sub( v2 );
+			sum += v3.cross( v1 ).length() * 0.5;
+
+		}
+
+		console.log( sum );
+
+		return sum;
 
 	}
 
