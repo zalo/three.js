@@ -266,6 +266,7 @@ class ProgressiveLightMap {
 				// Vertex Shader: Set Vertex Positions to the Unwrapped UV Positions
 				shader.vertexShader =
 					`#define USE_LIGHTMAP
+					# define USE_SHADOWMAP
 					varying float depth;
 					uniform vec3 depthCameraDir;
 					//varying vec2 vUv2;
@@ -289,7 +290,7 @@ class ProgressiveLightMap {
 					shader.fragmentShader.slice( bodyStart - 1, - 1 ) +
 					`
 						gl_FragColor.a = depth; // Extra value here, use for opacity?
-						gl_FragDepthEXT = randd(vUv2);
+						gl_FragDepthEXT = (randd(vUv2) * 20.0)-10.0;
 					}`;
 
 				// Set the Previous Frame's Texture Buffer and Averaging Window
@@ -404,6 +405,7 @@ class ProgressiveLightMap {
 			this.lightMapContainers[ l ].object.oldFrustumCulled =
 				this.lightMapContainers[ l ].object.frustumCulled;
 			this.lightMapContainers[ l ].object.frustumCulled = false;
+			this.lightMapContainers[ l ].object.visible = ! this.lightMapContainers[ l ].object.excludeFromLightMap;
 
 		}
 
@@ -436,6 +438,7 @@ class ProgressiveLightMap {
 					this.lightMapContainers[ l ].depthMat.uniforms.depthCameraDir = { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 2 ).clone() };
 					this.lightMapContainers[ l ].depthMat.needsUpdate = true;
 					this.lightMapContainers[ l ].object.material = this.lightMapContainers[ l ].depthMat;
+					this.lightMapContainers[ l ].object.visible = true;
 
 				}
 
@@ -474,6 +477,7 @@ class ProgressiveLightMap {
 				for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
 
 					this.lightMapContainers[ l ].object.material = this.bounceGatherMaterial;
+					this.lightMapContainers[ l ].object.visible = ! this.lightMapContainers[ l ].object.excludeFromLightMap;
 
 				}
 
@@ -508,6 +512,7 @@ class ProgressiveLightMap {
 		for ( let l = 0; l < this.lightMapContainers.length; l ++ ) {
 
 			this.lightMapContainers[ l ].object.material = this.compositeDirectAndIndirectMaterial;
+			this.lightMapContainers[ l ].object.visible = ! this.lightMapContainers[ l ].object.excludeFromLightMap;
 
 		}
 
@@ -520,8 +525,20 @@ class ProgressiveLightMap {
 
 			this.lightMapContainers[ l ].object.frustumCulled =
 				this.lightMapContainers[ l ].object.oldFrustumCulled;
+
+			//if ( indirectContribution == 0 ) {
+
+			//	this.lightMapContainers[ l ].object.material = this.lightMapContainers[ l ].depthMat;
+
+			//} else {
+
 			this.lightMapContainers[ l ].object.material = this.lightMapContainers[ l ].basicMat;
+
+			//}
+
 			this.lightMapContainers[ l ].object.oldScene.attach( this.lightMapContainers[ l ].object );
+			this.lightMapContainers[ l ].object.visible = true;
+
 
 		}
 
