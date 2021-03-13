@@ -118,7 +118,8 @@
 				lightmapObjects.push( redPlaneBackMesh );
 				scene.add( redPlaneBackMesh );
 
-				let greenLightMat = new THREE.MeshBasicMaterial( { color: new THREE.Color(0,2,0) } );
+				// This light's color can be set way above 1 to make it brighter!
+				let greenLightMat = new THREE.MeshBasicMaterial( { color: new THREE.Color(0, 1, 0) } );
 				let greenLightGeo = new THREE.PlaneBufferGeometry( 100, 100 );
 				let greenLight = new THREE.Mesh( greenLightGeo, greenLightMat );
 				greenLight.rotation.x = Math.PI/4;
