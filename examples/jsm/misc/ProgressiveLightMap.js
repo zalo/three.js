@@ -38,16 +38,18 @@ class ProgressiveLightMap {
 		this.switchingNum = 5000;
 
 		// Create the Progressive LightMap Texture
-		let format = /(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent ) ? THREE.HalfFloatType : THREE.FloatType;
-		this.progressiveLightMap1 = new THREE.WebGLRenderTarget( this.res, this.res, { type: format } );
-		this.progressiveLightMap2 = new THREE.WebGLRenderTarget( this.res, this.res, { type: format } );
+		this.mobile = true;///(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent );
+		let format = this.mobile ? THREE.HalfFloatType : THREE.FloatType;
+		this.mobileDivisor = this.mobile ? 2.0 : 1.0;
+		this.progressiveLightMap1 = new THREE.WebGLRenderTarget( this.res / this.mobileDivisor, this.res / this.mobileDivisor, { type: format } );
+		this.progressiveLightMap2 = new THREE.WebGLRenderTarget( this.res / this.mobileDivisor, this.res / this.mobileDivisor, { type: format } );
 
-		this.stochasticDepthColorBuffer = new THREE.WebGLRenderTarget( this.res / 2.0, this.res / 2.0, { type: format, magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter } );
-		this.progressiveBounceMap1 = new THREE.WebGLRenderTarget( this.res / 2.0, this.res / 2.0, { type: format } );
-		this.progressiveBounceMap2 = new THREE.WebGLRenderTarget( this.res / 2.0, this.res / 2.0, { type: format } );
+		this.stochasticDepthColorBuffer = new THREE.WebGLRenderTarget( this.res / ( this.mobileDivisor * 2.0 ), this.res / ( this.mobileDivisor * 2.0 ), { type: format, magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter } );
+		this.progressiveBounceMap1 = new THREE.WebGLRenderTarget( this.res / ( this.mobileDivisor * 2.0 ), this.res / ( this.mobileDivisor * 2.0 ), { type: format } );
+		this.progressiveBounceMap2 = new THREE.WebGLRenderTarget( this.res / ( this.mobileDivisor * 2.0 ), this.res / ( this.mobileDivisor * 2.0 ), { type: format } );
 
-		this.compositeLightMap1 = new THREE.WebGLRenderTarget( this.res, this.res, { type: format } );
-		this.compositeLightMap2 = new THREE.WebGLRenderTarget( this.res, this.res, { type: format } );
+		this.compositeLightMap1 = new THREE.WebGLRenderTarget( this.res / this.mobileDivisor, this.res / this.mobileDivisor, { type: format } );
+		this.compositeLightMap2 = new THREE.WebGLRenderTarget( this.res / this.mobileDivisor, this.res / this.mobileDivisor, { type: format } );
 
 		// Inject some spicy new logic into a standard phong material
 		this.uvMat = new THREE.MeshPhongMaterial();
@@ -156,11 +158,7 @@ class ProgressiveLightMap {
 					gl_FragColor.rgb = CalculateIndirectLight(vWorldPosition, worldNormal);
 
 					vec3 texelOld = texture2D(previousBounceMap, vUv2).rgb;
-					if(numSamples >= switchingNum) {
-						gl_FragColor.rgb += mix(texelOld, gl_FragColor.rgb, 1.0/switchingNum);
-					} else {
-						gl_FragColor.rgb += texelOld;
-					}
+					gl_FragColor.rgb += texelOld * ((numSamples >= switchingNum) ? (switchingNum-1.0)/switchingNum : 1.0);
 				}`;
 
 			// Set the Previous Frame's Texture Buffer and Averaging Window
@@ -408,8 +406,6 @@ class ProgressiveLightMap {
 
 		}
 
-		console.log( sum );
-
 		return sum;
 
 	}
@@ -488,7 +484,7 @@ class ProgressiveLightMap {
 		// BEGIN INDIRECT BOUNCE PHASE
 		if ( indirectContribution > 0 ) {
 
-			for ( let bounceIter = 0; bounceIter < 1 + ( 3 * 2 ); bounceIter ++ ) {
+			for ( let bounceIter = 0; bounceIter < 1 + ( this.mobile ? 0 : 6 ); bounceIter ++ ) {
 
 				this.buffer1Active = ! this.buffer1Active;
 				this.blurringPlane.visible = false;
