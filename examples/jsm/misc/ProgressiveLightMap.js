@@ -36,6 +36,7 @@ class ProgressiveLightMap {
 		this.lights = [];
 		this.numSamples = 1.0;
 		this.switchingNum = 5000;
+		this.hasFragDepth = renderer.capabilities.isWebGL2 || renderer.extensions.has( 'EXT_frag_depth' );
 
 		// Create the Progressive LightMap Texture
 		this.mobile = /(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent );
@@ -74,7 +75,6 @@ class ProgressiveLightMap {
 				shader.fragmentShader.slice( bodyStart - 1, - 1 ) +
 				`
 				vec3 texelOld = texture2D(previousShadowMap, vUv2).rgb;
-				//vec3 bounceTexelOld = texture2D(previousBounceMap, vUv2).rgb;
 				gl_FragColor.rgb = mix(texelOld, gl_FragColor.rgb, 1.0/averagingWindow);
 			}`;
 
@@ -266,7 +266,7 @@ class ProgressiveLightMap {
 			// Inject some spicy stochastic depth logic into this object's material
 			let stochasticDepthMaterial = object.material.clone();
 			stochasticDepthMaterial.uniforms = {};
-			stochasticDepthMaterial.extensions = { fragDepth: true }; // set to use fragment depth values
+			stochasticDepthMaterial.extensions = { fragDepth: this.fragDepth }; // set to use fragment depth values
 			stochasticDepthMaterial.onBeforeCompile = ( shader ) => {
 
 				// Vertex Shader: Set Vertex Positions to the Unwrapped UV Positions
@@ -296,8 +296,9 @@ class ProgressiveLightMap {
 					shader.fragmentShader.slice( bodyStart - 1, - 1 ) +
 					`
 						gl_FragColor.a = depth; // Extra value here, use for opacity?
-						gl_FragDepthEXT = (randd(vUv2) * 20.0)-10.0;
-					}`;
+					` +
+						( this.hasFragDepth ? 'gl_FragDepthEXT = (randd(vUv2) * 20.0)-10.0;\n' : '\n' ) +
+					'}';
 
 				// Set the Previous Frame's Texture Buffer and Averaging Window
 				shader.uniforms.previousShadowMap = { value: this.progressiveLightMap1.texture };
