@@ -38,7 +38,7 @@ class ProgressiveLightMap {
 		this.switchingNum = 5000;
 
 		// Create the Progressive LightMap Texture
-		this.mobile = true;///(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent );
+		this.mobile = /(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent );
 		let format = this.mobile ? THREE.HalfFloatType : THREE.FloatType;
 		this.mobileDivisor = this.mobile ? 2.0 : 1.0;
 		this.progressiveLightMap1 = new THREE.WebGLRenderTarget( this.res / this.mobileDivisor, this.res / this.mobileDivisor, { type: format } );
