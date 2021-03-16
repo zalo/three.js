@@ -36,10 +36,14 @@ class ProgressiveLightMap {
 		this.lights = [];
 		this.numSamples = 1.0;
 		this.switchingNum = 5000;
-		this.hasFragDepth = renderer.capabilities.isWebGL2 || renderer.extensions.has( 'EXT_frag_depth' );
+		this.safari = /(Safari)/g.test( navigator.userAgent ) && ! /(Chrome)/g.test( navigator.userAgent );
+		console.log( "Safari: " + this.safari );
+		console.log( "WebGL2: " + renderer.capabilities.isWebGL2 );
+		console.log( "FragDepth: " + renderer.extensions.has( 'EXT_frag_depth' ) );
+		this.hasFragDepth = renderer.capabilities.isWebGL2 || ( renderer.extensions.has( 'EXT_frag_depth' ) && ! this.safari );
 
 		// Create the Progressive LightMap Texture
-		this.mobile = /(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent );
+		this.mobile = /(Android|iPad|iPhone|iPod)/g.test( navigator.userAgent ) || this.safari;
 		let format = this.mobile ? THREE.HalfFloatType : THREE.FloatType;
 		this.mobileDivisor = this.mobile ? 2.0 : 1.0;
 		this.progressiveLightMap1 = new THREE.WebGLRenderTarget( this.res / this.mobileDivisor, this.res / this.mobileDivisor, { type: format } );
