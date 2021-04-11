@@ -24,7 +24,6 @@ class ProgressiveLightMap {
 		this.renderer = renderer;
 		this.res = res;
 		this.lightMapContainers = [];
-		this.compiled = false;
 		this.scene = new THREE.Scene();
 		this.scene.background = null;
 		this.tinyTarget = new THREE.WebGLRenderTarget( 1, 1 );
@@ -37,9 +36,9 @@ class ProgressiveLightMap {
 		this.numSamples = 1.0;
 		this.switchingNum = 5000;
 		this.safari = /(Safari)/g.test( navigator.userAgent ) && ! /(Chrome)/g.test( navigator.userAgent );
-		console.log( "Safari: " + this.safari );
-		console.log( "WebGL2: " + renderer.capabilities.isWebGL2 );
-		console.log( "FragDepth: " + renderer.extensions.has( 'EXT_frag_depth' ) );
+		//console.log( "Safari: " + this.safari );
+		//console.log( "WebGL2: " + renderer.capabilities.isWebGL2 );
+		//console.log( "FragDepth: " + renderer.extensions.has( 'EXT_frag_depth' ) );
 		this.hasFragDepth = renderer.capabilities.isWebGL2 || ( renderer.extensions.has( 'EXT_frag_depth' ) && ! this.safari );
 
 		// Create the Progressive LightMap Texture
@@ -57,48 +56,94 @@ class ProgressiveLightMap {
 		this.compositeLightMap2 = new THREE.WebGLRenderTarget( this.res / this.mobileDivisor, this.res / this.mobileDivisor, { type: format } );
 
 		// Inject some spicy new logic into a standard phong material
-		this.uvMat = new THREE.MeshPhongMaterial();
-		this.uvMat.uniforms = {};
-		this.uvMat.onBeforeCompile = ( shader ) => {
-
-			// Vertex Shader: Set Vertex Positions to the Unwrapped UV Positions
-			shader.vertexShader =
-				'#define USE_LIGHTMAP\n' +
-				shader.vertexShader.slice( 0, - 1 ) +
-				'	gl_Position = vec4((uv2 - 0.5) * 2.0, 1.0, 1.0); }';
-
-			// Fragment Shader: Set Pixels to average in the Previous Frame's Shadows
-			let bodyStart = shader.fragmentShader.indexOf( 'void main() {' );
-			shader.fragmentShader =
-				'varying vec2 vUv2;\n' +
-				shader.fragmentShader.slice( 0, bodyStart ) +
-				`	uniform sampler2D previousShadowMap;
-					uniform sampler2D previousBounceMap;
-					uniform float averagingWindow;
-					` +
-				shader.fragmentShader.slice( bodyStart - 1, - 1 ) +
-				`
-				vec3 texelOld = texture2D(previousShadowMap, vUv2).rgb;
+		this.uvMat = this.createModifiedMaterial(new THREE.MeshPhongMaterial(),
+			{	previousShadowMap: { value: this. progressiveLightMap1.texture },
+				previousBounceMap: { value: this.progressiveBounceMap1.texture },
+				averagingWindow:   { value: 100 } },
+			'#define USE_LIGHTMAP', '', '	gl_Position = vec4((uv2 - 0.5) * 2.0, 1.0, 1.0); }',
+			'varying vec2 vUv2;',
+			`	uniform sampler2D previousShadowMap;
+				uniform sampler2D previousBounceMap;
+				uniform float averagingWindow;
+			`,
+			`	vec3 texelOld = texture2D(previousShadowMap, vUv2).rgb;
 				gl_FragColor.rgb = mix(texelOld, gl_FragColor.rgb, 1.0/averagingWindow);
-			}`;
-
-			// Set the Previous Frame's Texture Buffer and Averaging Window
-			shader.uniforms.previousShadowMap = { value: this.progressiveLightMap1.texture };
-			shader.uniforms.previousBounceMap = { value: this.progressiveBounceMap1.texture };
-			shader.uniforms.averagingWindow = { value: 100 };
-
-			this.uvMat.uniforms = shader.uniforms;
-
-			// Set the new Shader to this
-			this.uvMat.userData.shader = shader;
-
-			this.compiled = true;
-
-		};
+			}`
+		);
 
 		// This is Stochastic Order Independent Rendering for bouncing light off of layered surfaces
 		this.bounceCamera = new THREE.OrthographicCamera( - 300, 300, 300, - 300, - 1000, 1000 );
 		this.scene.add( this.bounceCamera );
+
+		//this.bounceGatherMaterial = this.createModifiedMaterial(new THREE.MeshPhongMaterial(),
+		//	{previousShadowMap        : { value: this.progressiveLightMap2.texture },
+		//	previousBounceMap         : { value: this.progressiveBounceMap2.texture },
+		//	stochasticDepthUVMap      : { value: this.stochasticDepthColorBuffer.texture },
+		//	depthViewProjectionMatrix : { value: this.depthMatrix },
+		//	depthCameraX              : { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 0 ).multiplyScalar( - 1.0 ).clone() },
+		//	depthCameraY              : { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 1 ).multiplyScalar( - 1.0 ).clone() },
+		//	depthCameraDir            : { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 2 ).clone() },
+		//	depthCameraPos            : { value: this.bounceCamera.position },
+		//	switchingNum              : { value: this.switchingNum },
+		//	numSamples                : { value: this.numSamples },
+		//	texelStride               : { value: 1.0 / this.res },
+		//	sampleOffset              : { value: [ new THREE.Vector2( - 1, - 1 ),
+		//										   new THREE.Vector2( 0, - 1 ),
+		//										   new THREE.Vector2( 1, - 1 ),
+		//										   new THREE.Vector2( - 1, 0 ),
+		//										   new THREE.Vector2( 0, 0 ),
+		//										   new THREE.Vector2( 1, 0 ),
+		//										   new THREE.Vector2( - 1, 1 ),
+		//										   new THREE.Vector2( 0, 1 ),
+		//										   new THREE.Vector2( 1, 1 ) ] }},
+		//	'#define USE_LIGHTMAP\nvarying vec4 vWorldPosition;', '',
+		//	'vWorldPosition = worldPosition; gl_Position = vec4((uv2 - 0.5) * 2.0, 1.0, 1.0); }',
+		//	'varying vec2 vUv2; varying vec4 vWorldPosition;',
+		//	`	uniform sampler2D previousShadowMap;
+		//		uniform sampler2D previousBounceMap;
+		//		uniform sampler2D stochasticDepthUVMap;
+		//		uniform mat4 depthViewProjectionMatrix;
+		//		uniform vec3 depthCameraX;
+		//		uniform vec3 depthCameraY;
+		//		uniform vec3 depthCameraDir;
+		//		uniform vec3 depthCameraPos;
+		//		uniform float texelStride;
+		//		uniform float switchingNum;
+		//		uniform float numSamples;
+		//		uniform vec2 sampleOffset[9];
+		//		vec3 GetWorldPos(vec2 illumTexCoord, float depth) {
+		//			return (depthCameraDir * depth) +
+		//				((600.0 * illumTexCoord.x - 300.0) * depthCameraX) +
+		//				((600.0 * illumTexCoord.y - 300.0) * depthCameraY);
+		//		}
+		//		// From "Approximate Radiosity using Stochastic Depth Buffering" by Andreas Thomsen and Kasper Høy Nielsen
+		//		vec3 CalculateIndirectLight(vec4 vWorldPosition, vec3 normal) {
+		//			float weight = dot(normal, depthCameraDir);
+		//			if (weight >= 0.0) return vec3(0,0,0);
+		//			vec4 bestSample = vec4(0, 0.0, 0.0, -100000.0); //SkyColorInDirection(d)
+		//			vec2 illumPos = (depthViewProjectionMatrix * vWorldPosition).xy;
+		//			vec2 illumTexCoord = vec2(0,0);
+		//			vec4 illumSample = vec4(0,0,0,0);//texture2D(stochasticDepthUVMap, illumPos);
+		//			vec3 samplePos = vec3(0,0,0);
+		//			#pragma unroll_loop_start
+		//			for (int i = 0; i < 9; i++) {
+		//				illumTexCoord = illumPos + (sampleOffset[i] * texelStride);
+		//				illumSample = texture2D(stochasticDepthUVMap, illumTexCoord);
+		//				samplePos = GetWorldPos(illumTexCoord, illumSample.w);
+		//				if (dot(samplePos-vWorldPosition.xyz, normal) > 0.0 && illumSample.w > bestSample.w) {
+		//					bestSample = illumSample;
+		//				}
+		//			}
+		//			#pragma unroll_loop_end
+		//			return 4.0 * bestSample.rgb * -weight;
+		//		}`,
+		//		`
+		//		vec3 worldNormal = inverseTransformDirection( normal, viewMatrix );
+		//		gl_FragColor.rgb = CalculateIndirectLight(vWorldPosition, worldNormal);
+		//		vec3 texelOld = texture2D(previousBounceMap, vUv2).rgb;
+		//		gl_FragColor.rgb += texelOld * ((numSamples >= switchingNum) ? (switchingNum-1.0)/switchingNum : 1.0);
+		//	}`
+		//);
 
 		this.bounceGatherMaterial = new THREE.MeshPhongMaterial();
 		this.bounceGatherMaterial.uniforms = {};
@@ -192,8 +237,6 @@ class ProgressiveLightMap {
 
 			// Set the new Shader to this
 			this.bounceGatherMaterial.userData.shader = shader;
-
-			this.compiled = true;
 
 		};
 
@@ -314,9 +357,25 @@ class ProgressiveLightMap {
 				// Set the new Shader to this
 				stochasticDepthMaterial.userData.shader = shader;
 
-				this.compiled = true;
-
 			};
+			//let stochasticDepthMaterial = this.createModifiedMaterial(object.material,
+			//	{	previousShadowMap : { value: this.progressiveLightMap1.texture },
+			//		time              : { value: performance.now() },
+			//		depthCameraDir    : { value: this.cameraForward.setFromMatrixColumn( this.bounceCamera.matrixWorld, 2 ).clone() }},
+			//	`#define USE_LIGHTMAP
+			//	#define USE_SHADOWMAP
+			//	varying float depth;
+			//	uniform vec3 depthCameraDir;`, '', `depth = dot(worldPosition.xyz, depthCameraDir); }`, '',
+			//	`	uniform sampler2D previousShadowMap;
+			//		varying float depth;
+			//		uniform float time;
+			//		varying vec2 vUv2;
+			//		float randd(vec2 co){ // Author @patriciogv - 2015; http://patriciogonzalezvivo.com
+			//			return fract(sin(dot(co.xy ,vec2(12.9898,78.233) + time)) * 43758.5453);
+			//		}`,
+			//		`gl_FragColor.a = depth; // Extra value here, use for opacity?` +
+			//		( this.hasFragDepth ? 'gl_FragDepthEXT = (randd(vUv2) * 20.0)-10.0;\n' : '\n' ) + '}'
+			//);
 
 			// Apply the lightmap to the object
 			object.material.dithering = true;
@@ -344,8 +403,6 @@ class ProgressiveLightMap {
 				basicMat: object.material,
 				object: object
 			} );
-
-			this.compiled = false;
 
 		}
 
@@ -646,54 +703,31 @@ class ProgressiveLightMap {
 
 	}
 
-	/**
-	 * INTERNAL Creates the Blurring Plane
+	/** INTERNAL Creates the Blurring Plane
 	 * @param {number} res The square resolution of this object's lightMap.
-	 * @param {WebGLRenderTexture} lightMap The lightmap to initialize the plane with.
-	 */
+	 * @param {WebGLRenderTexture} lightMap The lightmap to initialize the plane with. */
 	_initializeBlurPlane( res, lightMap = null ) {
 
-		let blurMaterial = new THREE.MeshBasicMaterial();
-		blurMaterial.uniforms = { previousShadowMap: { value: null },
-								  pixelOffset: { value: 1.0 / res },
-								  polygonOffset: true, polygonOffsetFactor: - 1, polygonOffsetUnits: 3.0 };
-		blurMaterial.onBeforeCompile = ( shader ) => {
-
-			// Vertex Shader: Set Vertex Positions to the Unwrapped UV Positions
-			shader.vertexShader =
-				'#define USE_UV\n' +
-				shader.vertexShader.slice( 0, - 1 ) +
-				'	gl_Position = vec4((uv - 0.5) * 2.0, 1.0, 1.0); }';
-
-			// Fragment Shader: Set Pixels to 9-tap box blur the current frame's Shadows
-			let bodyStart	= shader.fragmentShader.indexOf( 'void main() {' );
-			shader.fragmentShader =
-				'#define USE_UV\n' +
-				shader.fragmentShader.slice( 0, bodyStart ) +
-				'	uniform sampler2D previousShadowMap;\n	uniform float pixelOffset;\n' +
-				shader.fragmentShader.slice( bodyStart - 1, - 1 ) +
-					`	gl_FragColor.rgb = (
-									texture2D(previousShadowMap, vUv + vec2( pixelOffset,  0.0        )).rgb + 
-									texture2D(previousShadowMap, vUv + vec2( 0.0        ,  pixelOffset)).rgb +
-									texture2D(previousShadowMap, vUv + vec2( 0.0        , -pixelOffset)).rgb +
-									texture2D(previousShadowMap, vUv + vec2(-pixelOffset,  0.0        )).rgb +
-									texture2D(previousShadowMap, vUv + vec2( pixelOffset,  pixelOffset)).rgb + 
-									texture2D(previousShadowMap, vUv + vec2(-pixelOffset,  pixelOffset)).rgb +
-									texture2D(previousShadowMap, vUv + vec2( pixelOffset, -pixelOffset)).rgb +
-									texture2D(previousShadowMap, vUv + vec2(-pixelOffset, -pixelOffset)).rgb)/8.0;
-				}`;
-
-			// Set the LightMap Accumulation Buffer
-			shader.uniforms.previousShadowMap = { value: lightMap.texture };
-			shader.uniforms.pixelOffset = { value: 0.5 / res };
-			blurMaterial.uniforms = shader.uniforms;
-
-			// Set the new Shader to this
-			blurMaterial.userData.shader = shader;
-
-			this.compiled = true;
-
+		let uniforms = {
+			previousShadowMap: { value: lightMap.texture },
+			pixelOffset: { value: 1.0 / res },
+			polygonOffset: true, polygonOffsetFactor: - 1, polygonOffsetUnits: 3.0
 		};
+
+		let blurMaterial = this.createModifiedMaterial(new THREE.MeshBasicMaterial(), uniforms,
+			'#define USE_UV', '', '	gl_Position = vec4((uv - 0.5) * 2.0, 1.0, 1.0); }',
+			'#define USE_UV', '	uniform sampler2D previousShadowMap;\n	uniform float pixelOffset;\n',
+			`	gl_FragColor.rgb = (
+											texture2D(previousShadowMap, vUv + vec2( pixelOffset,  0.0        )).rgb + 
+											texture2D(previousShadowMap, vUv + vec2( 0.0        ,  pixelOffset)).rgb +
+											texture2D(previousShadowMap, vUv + vec2( 0.0        , -pixelOffset)).rgb +
+											texture2D(previousShadowMap, vUv + vec2(-pixelOffset,  0.0        )).rgb +
+											texture2D(previousShadowMap, vUv + vec2( pixelOffset,  pixelOffset)).rgb + 
+											texture2D(previousShadowMap, vUv + vec2(-pixelOffset,  pixelOffset)).rgb +
+											texture2D(previousShadowMap, vUv + vec2( pixelOffset, -pixelOffset)).rgb +
+											texture2D(previousShadowMap, vUv + vec2(-pixelOffset, -pixelOffset)).rgb)/8.0;
+						}`
+		);
 
 		this.blurringPlane = new THREE.Mesh( new THREE.PlaneBufferGeometry( 1, 1 ), blurMaterial );
 		this.blurringPlane.name = "Blurring Plane";
@@ -702,6 +736,34 @@ class ProgressiveLightMap {
 		this.blurringPlane.material.depthWrite = false;
 		this.scene.add( this.blurringPlane );
 
+	}
+
+	/** INTERNAL Creates a new material by injecting new code into an existing material's shader
+	 * @param {THREE.Material} originalMaterial
+	 * @param {string} vertexStart @param {string} vertexBody @param {string} vertexEnd 
+	 * @param {string} fragmentStart @param {string} fragmentBody @param {string} fragmentEnd */
+	createModifiedMaterial(originalMaterial, uniforms, vertexStart, vertexBody, vertexEnd, fragmentStart, fragmentBody, fragmentEnd, extensions) {
+		/** @type {THREE.Material} */
+		let modifiedMaterial = originalMaterial.clone();
+
+		modifiedMaterial.uniforms = uniforms;
+		if (extensions) { modifiedMaterial.extensions = extensions; }
+
+		modifiedMaterial.onBeforeCompile = (shader) => {
+			let vertexBodyStart   = shader.  vertexShader.indexOf('void main() {');
+			let fragmentBodyStart = shader.fragmentShader.indexOf('void main() {');
+
+			shader.vertexShader =     vertexStart + '\n' + shader.  vertexShader.slice(0,   vertexBodyStart) + '\n' +
+				vertexBody   + '\n' + shader.  vertexShader.slice(  vertexBodyStart - 1, - 1) + '\n' +   vertexEnd;
+			shader.fragmentShader = fragmentStart + '\n' + shader.fragmentShader.slice(0, fragmentBodyStart) + '\n' +
+				fragmentBody + '\n' + shader.fragmentShader.slice(fragmentBodyStart - 1, - 1) + '\n' + fragmentEnd;
+
+			Object.assign(shader.uniforms, uniforms);
+			modifiedMaterial.uniforms = shader.uniforms;
+			modifiedMaterial.userData.shader = shader;
+
+		};
+		return modifiedMaterial;
 	}
 
 }
