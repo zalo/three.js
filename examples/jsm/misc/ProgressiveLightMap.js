@@ -621,8 +621,14 @@ class ProgressiveLightMap {
 	_findSurfaceArea( object, uvs = true ) {
 
 		object.updateWorldMatrix( true, false );
-		let sum = 0;
-		let tris = object.geometry.index.array;
+		let sum = 0; let tris = [];
+		if (!object.geometry.index) {
+			for (let t = 0; t < object.geometry.attributes.position.count; t++){
+				tris.push(t);
+			}
+		} else {
+			tris = object.geometry.index.array;
+		}
 		let vertices = object.geometry.getAttribute( uvs ? "uv" : "position" );
 		let v1 = new THREE.Vector3( 0, 0, 0 ),
 			v2 = new THREE.Vector3( 0, 0, 0 ),
