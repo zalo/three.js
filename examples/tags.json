@@ -8,6 +8,7 @@
 	"webgl_framebuffer_texture": [ "renderTarget" ],
 	"webgl_geometries": [ "geometry" ],
 	"webgl_geometries_parametric": [ "geometry" ],
+	"webgl_geometry_align_tangents": [ "normal", "vertex" ],
 	"webgl_geometry_colors_lookuptable": [ "vertex" ],
 	"webgl_geometry_nurbs": [ "curve", "surface" ],
 	"webgl_geometry_spline_editor": [ "curve" ],
