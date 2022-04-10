@@ -3,9 +3,10 @@ import * as THREE from 'three';
 import { GUI } from './jsm/libs/lil-gui.module.min.js';
 import { GLTFLoader } from './jsm/loaders/GLTFLoader.js';
 import { VertexTangentsHelper } from './jsm/helpers/VertexTangentsHelper.js';
+import { OrbitControls } from './jsm/controls/OrbitControls.js';
 
 let scene, renderer;
-let camera, light;
+let camera, light, controls;
 let vth, mesh, connections, m_tangents;
 
 init();
@@ -25,6 +26,21 @@ function init() {
 
 	scene = new THREE.Scene();
 
+	// controls
+
+	controls = new OrbitControls( camera, renderer.domElement );
+	controls.listenToKeyEvents( window ); // optional
+
+	//controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
+
+	controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+	controls.dampingFactor = 0.05;
+	controls.screenSpacePanning = true;
+
+	//controls.minDistance = 100;
+	//controls.maxDistance = 500;
+	//controls.maxPolarAngle = Math.PI / 2;
+
 	light = new THREE.PointLight();
 	light.position.set( 200, 100, 150 );
 	scene.add( light );
@@ -35,22 +51,60 @@ function init() {
         'Compute Tangents from UVs': function () {
             mesh.geometry.computeTangents(); // generates bad data due to degenerate UVs
 
-            for (let i = 0; i < mesh.geometry.attributes.tangent.array.length; i++) {
-                m_tangents[i] = mesh.geometry.attributes.tangent.array[i];
+            for (let i = 0; i < mesh.geometry.getAttribute("tangent").array.length; i++) {
+                m_tangents[i] = mesh.geometry.getAttribute("tangent").array[i];
             }
         },
         'Set Tangents Right': function () {
             let attributes = mesh.geometry.attributes;
             let positions  = attributes.position.array;
-            let tangentAttribute = attributes.tangent;
+            let tangentAttribute = mesh.geometry.getAttribute("tangent");
 
             for (let i = 0; i < positions.length / 3; i++) {
                 tangentAttribute.setXYZ(i, 1, 0, 0);
             }
-            attributes.tangent.needsUpdate = true;
-            for (let i = 0; i < mesh.geometry.attributes.tangent.array.length; i++) {
-                m_tangents[i] = mesh.geometry.attributes.tangent.array[i];
+            if (m_tangents) {
+                for (let i = 0; i < positions.length / 3; i++) {
+                    m_tangents[(i * 3) + 0] = 1;
+                    m_tangents[(i * 3) + 1] = 0;
+                    m_tangents[(i * 3) + 2] = 0;
+                }
             }
+            attributes.tangent.needsUpdate = true;
+        },
+        'Set Tangents Up': function () {
+            let attributes = mesh.geometry.attributes;
+            let positions  = attributes.position.array;
+            let tangentAttribute = mesh.geometry.getAttribute("tangent");
+
+            for (let i = 0; i < positions.length / 3; i++) {
+                tangentAttribute.setXYZ(i, 0, 1, 0);
+            }
+            if (m_tangents) {
+                for (let i = 0; i < positions.length / 3; i++) {
+                    m_tangents[(i * 3) + 0] = 0;
+                    m_tangents[(i * 3) + 1] = 1;
+                    m_tangents[(i * 3) + 2] = 0;
+                }
+            }
+            attributes.tangent.needsUpdate = true;
+        },
+        'Set Tangents Forward': function () {
+            let attributes = mesh.geometry.attributes;
+            let positions  = attributes.position.array;
+            let tangentAttribute = mesh.geometry.getAttribute("tangent");
+
+            for (let i = 0; i < positions.length / 3; i++) {
+                tangentAttribute.setXYZ(i, 0, 0, 1);
+            }
+            if (m_tangents) {
+                for (let i = 0; i < positions.length / 3; i++) {
+                    m_tangents[(i * 3) + 0] = 0;
+                    m_tangents[(i * 3) + 1] = 0;
+                    m_tangents[(i * 3) + 2] = 1;
+                }
+            }
+            attributes.tangent.needsUpdate = true;
         },
         'Comb Tangents One Iteration': function () {
 
@@ -59,7 +113,7 @@ function init() {
             let attributes = mesh.geometry.attributes;
             let positions  = attributes.position.array;
             let normals    = attributes.normal.array;
-            let tangentAttribute = attributes.tangent;
+            let tangentAttribute = mesh.geometry.getAttribute("tangent");
             let tangents   = tangentAttribute.array;
         
             // Step 1: Construct a table that connects all vertices to their neighbors
@@ -97,15 +151,19 @@ function init() {
                     normals[(i * 3) + 1],
                     normals[(i * 3) + 2]);
                 for (let j = 0; j < connections[i].length; j++) {
-                    neighborTangent.set(
-                        m_tangents[(connections[i][j] * 3) + 0],
-                        m_tangents[(connections[i][j] * 3) + 1],
-                        m_tangents[(connections[i][j] * 3) + 2]);
-                    //neighborTangent = neighborTangent.projectOnPlane(normalVec);
-                    sumVector.add(neighborTangent);
+                    //neighborTangent.set(
+                    //    m_tangents[(connections[i][j] * 3) + 0],
+                    //    m_tangents[(connections[i][j] * 3) + 1],
+                    //    m_tangents[(connections[i][j] * 3) + 2]);
+                    ////neighborTangent = neighborTangent.projectOnPlane(normalVec);
+                    //sumVector.add(neighborTangent);
+                    sumVector.set(
+                        sumVector.x + m_tangents[(connections[i][j] * 3) + 0],
+                        sumVector.y + m_tangents[(connections[i][j] * 3) + 1],
+                        sumVector.z + m_tangents[(connections[i][j] * 3) + 2]);
                 }
-                sumVector.projectOnPlane(normalVec);
-                sumVector.normalize();
+                sumVector = sumVector.projectOnPlane(normalVec);
+                sumVector = sumVector.normalize();
 
                 m_tangents[(i * 3) + 0] = sumVector.x;
                 m_tangents[(i * 3) + 1] = sumVector.y;
@@ -161,13 +219,15 @@ function animate() {
 
 	const time = - performance.now() * 0.0003;
 
-	camera.position.x = 400 * Math.cos( time );
-	camera.position.z = 400 * Math.sin( time );
-	camera.lookAt( scene.position );
+	//camera.position.x = 400 * Math.cos( time );
+	//camera.position.z = 400 * Math.sin( time );
+	//camera.lookAt( scene.position );
 
 	light.position.x = Math.sin( time * 1.7 ) * 300;
 	light.position.y = Math.cos( time * 1.5 ) * 400;
 	light.position.z = Math.cos( time * 1.3 ) * 300;
+
+    controls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
 
 	if ( vth ) vth.update();
 
