@@ -6,7 +6,7 @@ import { VertexTangentsHelper } from './jsm/helpers/VertexTangentsHelper.js';
 
 let scene, renderer;
 let camera, light;
-let vth, mesh, connections;
+let vth, mesh, connections, m_tangents;
 
 init();
 animate();
@@ -34,17 +34,23 @@ function init() {
     let settings = {
         'Compute Tangents from UVs': function () {
             mesh.geometry.computeTangents(); // generates bad data due to degenerate UVs
+
+            for (let i = 0; i < mesh.geometry.attributes.tangent.array.length; i++) {
+                m_tangents[i] = mesh.geometry.attributes.tangent.array[i];
+            }
         },
-        'Set Tangents Up': function () {
+        'Set Tangents Right': function () {
             let attributes = mesh.geometry.attributes;
             let positions  = attributes.position.array;
             let tangentAttribute = attributes.tangent;
 
             for (let i = 0; i < positions.length / 3; i++) {
-                tangentAttribute.setXYZ(i, 0, 1, 0);
+                tangentAttribute.setXYZ(i, 1, 0, 0);
             }
             attributes.tangent.needsUpdate = true;
-
+            for (let i = 0; i < mesh.geometry.attributes.tangent.array.length; i++) {
+                m_tangents[i] = mesh.geometry.attributes.tangent.array[i];
+            }
         },
         'Comb Tangents One Iteration': function () {
 
@@ -57,37 +63,54 @@ function init() {
             let tangents   = tangentAttribute.array;
         
             // Step 1: Construct a table that connects all vertices to their neighbors
-            connections      = new Array(positions.length / 3).fill([]);
-            for (let i = 0; i < indices.length; i += 3) {
-                let i0 = indices[i + 0];
-                let i1 = indices[i + 1];
-                let i2 = indices[i + 2];
-                if (!connections[i0].includes(i1)) { connections[i0].push(i1); }
-                if (!connections[i0].includes(i2)) { connections[i0].push(i2); }
-                if (!connections[i1].includes(i0)) { connections[i1].push(i0); }
-                if (!connections[i1].includes(i2)) { connections[i1].push(i2); }
-                if (!connections[i2].includes(i0)) { connections[i2].push(i0); }
-                if (!connections[i2].includes(i1)) { connections[i2].push(i1); }
+            if (!connections) {
+                connections = new Array(positions.length / 3).fill([]);
+                for (let i = 0; i < indices.length; i += 3) {
+                    let i0 = indices[i + 0];
+                    let i1 = indices[i + 1];
+                    let i2 = indices[i + 2];
+                    if (!connections[i0].includes(i1)) { connections[i0].push(i1); }
+                    if (!connections[i0].includes(i2)) { connections[i0].push(i2); }
+                    if (!connections[i1].includes(i0)) { connections[i1].push(i0); }
+                    if (!connections[i1].includes(i2)) { connections[i1].push(i2); }
+                    if (!connections[i2].includes(i0)) { connections[i2].push(i0); }
+                    if (!connections[i2].includes(i1)) { connections[i2].push(i1); }
+                }
+            }
+
+            if (!m_tangents) {
+                m_tangents = new Array(tangents.length);
+                for (let i = 0; i < tangents.length; i++) {
+                    m_tangents[i] = tangents[i];
+                }
             }
             
             // Step 2: For each vertex, make the current tangent the average of
             // the tangents of its neighbors (projected to the plane of the normal)
-            let sumVector = new THREE.Vector3();
-            let tempVec   = new THREE.Vector3();
+            let sumVector       = new THREE.Vector3();
+            let normalVec       = new THREE.Vector3();
+            let neighborTangent = new THREE.Vector3();
             for (let i = 0; i < positions.length / 3; i++) {
                 sumVector.set(0, 0, 0);
-                for (let j = 0; j < connections[i].length; j++) {
-                    sumVector.set(
-                        sumVector.x + tangents[(connections[i][j] * 3) + 0],
-                        sumVector.y + tangents[(connections[i][j] * 3) + 1],
-                        sumVector.z + tangents[(connections[i][j] * 3) + 2]);
-                }
-                sumVector = sumVector.projectOnPlane(tempVec.set(
+                normalVec.set(
                     normals[(i * 3) + 0],
                     normals[(i * 3) + 1],
-                    normals[(i * 3) + 2]));
-                sumVector = sumVector.normalize();
-        
+                    normals[(i * 3) + 2]);
+                for (let j = 0; j < connections[i].length; j++) {
+                    neighborTangent.set(
+                        m_tangents[(connections[i][j] * 3) + 0],
+                        m_tangents[(connections[i][j] * 3) + 1],
+                        m_tangents[(connections[i][j] * 3) + 2]);
+                    //neighborTangent = neighborTangent.projectOnPlane(normalVec);
+                    sumVector.add(neighborTangent);
+                }
+                sumVector.projectOnPlane(normalVec);
+                sumVector.normalize();
+
+                m_tangents[(i * 3) + 0] = sumVector.x;
+                m_tangents[(i * 3) + 1] = sumVector.y;
+                m_tangents[(i * 3) + 2] = sumVector.z;
+
                 tangentAttribute.setXYZ(i, sumVector.x, sumVector.y, sumVector.z);
             }
             attributes.tangent.needsUpdate = true;
