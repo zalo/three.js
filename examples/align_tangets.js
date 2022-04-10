@@ -7,7 +7,9 @@ import { OrbitControls } from './jsm/controls/OrbitControls.js';
 
 let scene, renderer;
 let camera, light, controls;
-let vth, mesh, connections, m_tangents;
+let vth, connections, m_tangents;
+/** @type {THREE.Mesh} */
+let mesh;
 
 init();
 animate();
@@ -51,8 +53,16 @@ function init() {
         'Compute Tangents from UVs': function () {
             mesh.geometry.computeTangents(); // generates bad data due to degenerate UVs
 
-            for (let i = 0; i < mesh.geometry.getAttribute("tangent").array.length; i++) {
-                m_tangents[i] = mesh.geometry.getAttribute("tangent").array[i];
+            let attributes = mesh.geometry.attributes;
+            let positions  = attributes.position.array;
+            let tangentAttribute = mesh.geometry.getAttribute("tangent");
+
+            if (m_tangents) {
+                for (let i = 0; i < positions.length / 3; i++) {
+                    m_tangents[(i * 3) + 0] = tangentAttribute.getX(i);
+                    m_tangents[(i * 3) + 1] = tangentAttribute.getY(i);
+                    m_tangents[(i * 3) + 2] = tangentAttribute.getZ(i);
+                }
             }
         },
         'Set Tangents Right': function () {
@@ -114,7 +124,6 @@ function init() {
             let positions  = attributes.position.array;
             let normals    = attributes.normal.array;
             let tangentAttribute = mesh.geometry.getAttribute("tangent");
-            let tangents   = tangentAttribute.array;
         
             // Step 1: Construct a table that connects all vertices to their neighbors
             if (!connections) {
@@ -133,11 +142,14 @@ function init() {
             }
 
             if (!m_tangents) {
-                m_tangents = new Array(tangents.length);
-                for (let i = 0; i < tangents.length; i++) {
-                    m_tangents[i] = tangents[i];
+                m_tangents = new Array(positions.length);
+                for (let i = 0; i < positions.length/3; i++) {
+                    m_tangents[(i * 3) + 0] = tangentAttribute.getX(i);
+                    m_tangents[(i * 3) + 1] = tangentAttribute.getY(i);
+                    m_tangents[(i * 3) + 2] = tangentAttribute.getZ(i);
                 }
             }
+            let m_tangents_temp = new Array(m_tangents.length);
             
             // Step 2: For each vertex, make the current tangent the average of
             // the tangents of its neighbors (projected to the plane of the normal)
@@ -145,18 +157,15 @@ function init() {
             let normalVec       = new THREE.Vector3();
             let neighborTangent = new THREE.Vector3();
             for (let i = 0; i < positions.length / 3; i++) {
-                sumVector.set(0, 0, 0);
+                sumVector.set(
+                    m_tangents[(i * 3) + 0],
+                    m_tangents[(i * 3) + 1],
+                    m_tangents[(i * 3) + 2]);
                 normalVec.set(
                     normals[(i * 3) + 0],
                     normals[(i * 3) + 1],
                     normals[(i * 3) + 2]);
                 for (let j = 0; j < connections[i].length; j++) {
-                    //neighborTangent.set(
-                    //    m_tangents[(connections[i][j] * 3) + 0],
-                    //    m_tangents[(connections[i][j] * 3) + 1],
-                    //    m_tangents[(connections[i][j] * 3) + 2]);
-                    ////neighborTangent = neighborTangent.projectOnPlane(normalVec);
-                    //sumVector.add(neighborTangent);
                     sumVector.set(
                         sumVector.x + m_tangents[(connections[i][j] * 3) + 0],
                         sumVector.y + m_tangents[(connections[i][j] * 3) + 1],
@@ -165,14 +174,18 @@ function init() {
                 sumVector = sumVector.projectOnPlane(normalVec);
                 sumVector = sumVector.normalize();
 
-                m_tangents[(i * 3) + 0] = sumVector.x;
-                m_tangents[(i * 3) + 1] = sumVector.y;
-                m_tangents[(i * 3) + 2] = sumVector.z;
+                m_tangents_temp[(i * 3) + 0] = sumVector.x;
+                m_tangents_temp[(i * 3) + 1] = sumVector.y;
+                m_tangents_temp[(i * 3) + 2] = sumVector.z;
 
                 tangentAttribute.setXYZ(i, sumVector.x, sumVector.y, sumVector.z);
             }
             attributes.tangent.needsUpdate = true;
 
+            // Copy the new tangents into the original array
+            for (let i = 0; i < m_tangents.length; i++) {
+                m_tangents[i] = m_tangents_temp[i];
+            }
         }
 
     }
@@ -195,7 +208,7 @@ function init() {
 
 		group.add( mesh );
 
-		vth = new VertexTangentsHelper( mesh, 5 );
+		vth = new VertexTangentsHelper( mesh, 10 );
 		scene.add( vth );
 
 	} );
