@@ -84,10 +84,10 @@
 			let cube, sphere, dome, curvedPanel, material;
 			let raycaster;
 			let lineGeometry = new THREE.BufferGeometry();
-			let lineMaterial = new THREE.LineBasicMaterial( );
-			let indices = [], positions = [];
+			let lineMaterial = new THREE.LineBasicMaterial( {transparent: true, opacity: 0.1} );
+			let lineSegments;
 
-			let eyeCamera, eyeRenderTarget, eyeCameraHelper, params = { setFoVToCorners: true, panelCurvature: 20 };
+			let eyeCamera, eyeRenderTarget, eyeCameraHelper, params = { panelCurvature: 20, enableInterpolatedNormals: true };
 
 			let controls;
 
@@ -111,9 +111,9 @@
 				scene = new THREE.Scene();
 
 				camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
-				camera.position.x = 60;
-				camera.position.y = 20;
-				camera.position.z = 30;
+				camera.position.x = 200;
+				camera.position.y = 150;
+				camera.position.z = 0;
 				scene.add(camera);
 
 				new RGBELoader()
@@ -130,7 +130,7 @@
 				eyeRenderTarget.texture.type = THREE.HalfFloatType;
 				eyeRenderTarget.texture.encoding = renderer.outputEncoding;
 
-				eyeCamera = new THREE.PerspectiveCamera(30, 16.0 / 9.0, 1, 100);
+				eyeCamera = new THREE.PerspectiveCamera(30, 16.0 / 9.0, 1, 200);
 				scene.add(eyeCamera);
 				eyeCameraHelper = new THREE.CameraHelper(eyeCamera);
 				scene.add(eyeCameraHelper);
@@ -157,9 +157,9 @@
 				} );
 
 				cube = new THREE.Mesh( new THREE.BoxGeometry( 15, 15, 15 ), material2 );
-				cube.position.x = 0.0;
-				cube.position.y = 0.0;
-				cube.position.z = -30;
+				cube.position.x = 0;
+				cube.position.y = 40;
+				cube.position.z = 100;
 				scene.add( cube );
 
 				sphere = new THREE.Mesh( new THREE.SphereGeometry( 23, 32, 16 ), material2 );
@@ -183,6 +183,8 @@
 
 				curvedPanel = new THREE.Mesh(createCurvedPanelGeometry(params.panelCurvature), material);
 				scene.add(curvedPanel);
+				lineSegments = new THREE.LineSegments( lineGeometry, lineMaterial );
+				scene.add(lineSegments);
 
 				const gui = new GUI();
 				gui.add(renderer, 'toneMappingExposure', 0, 2).name('Exposure');
@@ -190,12 +192,16 @@
 				gui.add(params, 'panelCurvature', 10, 100).onChange(() => {
 					curvedPanel.geometry = createCurvedPanelGeometry(params.panelCurvature);
 				}).name('Panel Curvature');
-				gui.add(params, 'setFoVToCorners', true).name('Set FoV to Corners');
-				gui.add(material.uniforms.previewOnScreen, 'value', false).name('Preview');
-
+				gui.add(material.uniforms.previewOnScreen, 'value', false).name('Preview').onChange((preview)=>{
+					material.side = preview ? THREE.FrontSide : THREE.BackSide;
+				});
+				gui.add(params, 'enableInterpolatedNormals', true).onChange(() => {
+					curvedPanel.geometry = createCurvedPanelGeometry(params.panelCurvature);
+				});
 				//
 
 				controls = new OrbitControls( camera, renderer.domElement );
+				controls.target = new THREE.Vector3(0, 50, 100);
 			}
 
 			function createCurvedPanelGeometry( panelCurvature ) {
@@ -203,7 +209,7 @@
 				let vertices = curvedPanelGeometry.getAttribute("position").array;
 				let tempVec1 = new THREE.Vector3(), tempVec2 = new THREE.Vector3();
 				//let radius = tempVec.set(-25, 0, panelCurvature).length();
-				let index = 0;
+				let index = 0, indices = [], positions = [];
 				for (let i = 0; i < vertices.length; i += 3) {
 					raycaster.set(tempVec1.set(0, 0, 30), 
 								  tempVec2.set(vertices[i]+0.00001, vertices[i+1]+5, vertices[i+2]-30).normalize());
@@ -215,7 +221,7 @@
 						positions.push(0, 0, 30, vertices[i], vertices[i + 1], vertices[i + 2]); indices.push(index, index+1); index += 2;
 					
 						//console.log(intersects[0]);
-						let normal = intersects[0].normal.normalize();
+						let normal = (params.enableInterpolatedNormals ? intersects[0].normal : intersects[0].face.normal).normalize();
 						raycaster.set(intersects[0].point, normal);
 						intersects = raycaster.intersectObjects( [dome] );
 						if(intersects.length > 0){
@@ -234,8 +240,10 @@
 				lineGeometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
 				//lineGeometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
 				lineGeometry.computeBoundingSphere();
-				let lineSegments = new THREE.LineSegments( lineGeometry, lineMaterial );
-				scene.add(lineSegments);
+				lineGeometry.needsUpdate = true;
+				if(lineSegments){
+					lineSegments.needsUpdate = true;
+				}
 
 				dome.visible = false;
 
@@ -259,7 +267,7 @@
 				eyeCamera.position.x = Math.cos( ( 2.0 + time ) * 0.5 ) * 30;
 				eyeCamera.position.y = Math.sin( ( 2.0 + time ) * 0.25 ) * 5;
 				eyeCamera.position.z = 30 + Math.sin( ( 2.0 + time ) ) * 20;
-				eyeCamera.lookAt( cube.position );
+				eyeCamera.lookAt( new THREE.Vector3(0, 40, 100) );
 
 				// save the original camera properties
 				const currentRenderTarget = renderer.getRenderTarget();
@@ -268,21 +276,8 @@
 				renderer.xr.enabled = false; // Avoid camera modification
 				renderer.shadowMap.autoUpdate = false; // Avoid re-computing shadows
 
-				// set the eye camera's frustum
-				if (params.setFoVToCorners) {
-
-					// create an asymmetric/off-axis frustum that aligns to the corners of the curvedPanel
-					CameraUtils.frameCorners(eyeCamera,
-						new THREE.Vector3(-25, -10, 0),
-						new THREE.Vector3( 25, -10, 0),
-						new THREE.Vector3(-25,  10, 0), false);
-
-				} else {
-
-					// update the FoV of the eye camera
-					eyeCamera.updateProjectionMatrix();
-
-				}
+				// update the FoV of the eye camera
+				eyeCamera.updateProjectionMatrix();
 
 				// set up rendering from the eye's camera
 				renderer.setRenderTarget( eyeRenderTarget );
@@ -290,11 +285,13 @@
 				if ( renderer.autoClear === false ) renderer.clear();
 				curvedPanel    .visible = false; // hide the curvedPanel from from the eye's camera
 				eyeCameraHelper.visible = false;
+				lineSegments   .visible = false;
 
 				// render the eye's perspective to eyeRenderTarget
 				renderer.render( scene, eyeCamera );
 
 				// restore the original rendering properties
+				lineSegments   .visible = true;
 				curvedPanel    .visible = true;
 				eyeCameraHelper.visible = true;
 				renderer.xr.enabled = currentXrEnabled;
