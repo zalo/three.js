@@ -177,6 +177,7 @@
 					side: THREE.BackSide
 				} ));
 				dome.name = "dome";
+				dome.visible = false;
 				scene.add( dome );
 
 				sphere.updateMatrixWorld();
@@ -248,8 +249,6 @@
 				if(lineSegments){
 					lineSegments.needsUpdate = true;
 				}
-
-				dome.visible = false;
 
 				return curvedPanelGeometry;
 			}
