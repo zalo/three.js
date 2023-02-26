@@ -7969,11 +7969,11 @@ class Triangle {
 
 	}
 
-	static getUV( point, p1, p2, p3, uv1, uv2, uv3, target ) {
+	static getInterpolation( point, p1, p2, p3, uv1, uv2, uv3, target ) {
 
 		this.getBarycoord( point, p1, p2, p3, _v3$1 );
 
-		target.set( 0, 0 );
+		target.setScalar( 0 );
 		target.addScaledVector( uv1, _v3$1.x );
 		target.addScaledVector( uv2, _v3$1.y );
 		target.addScaledVector( uv3, _v3$1.z );
@@ -8073,7 +8073,7 @@ class Triangle {
 
 	getUV( point, uv1, uv2, uv3, target ) {
 
-		return Triangle.getUV( point, this.a, this.b, this.c, uv1, uv2, uv3, target );
+		return Triangle.getInterpolation( point, this.a, this.b, this.c, uv1, uv2, uv3, target );
 
 	}
 
@@ -10914,6 +10914,10 @@ const _uvA$1 = /*@__PURE__*/ new Vector2();
 const _uvB$1 = /*@__PURE__*/ new Vector2();
 const _uvC$1 = /*@__PURE__*/ new Vector2();
 
+const _normalA$1 = /*@__PURE__*/ new Vector3();
+const _normalB$1 = /*@__PURE__*/ new Vector3();
+const _normalC$1 = /*@__PURE__*/ new Vector3();
+
 const _intersectionPoint = /*@__PURE__*/ new Vector3();
 const _intersectionPointWorld = /*@__PURE__*/ new Vector3();
 
@@ -11082,6 +11086,7 @@ class Mesh extends Object3D {
 		const position = geometry.attributes.position;
 		const uv = geometry.attributes.uv;
 		const uv2 = geometry.attributes.uv2;
+		const normals = geometry.attributes.normal;
 		const groups = geometry.groups;
 		const drawRange = geometry.drawRange;
 
@@ -11105,7 +11110,7 @@ class Mesh extends Object3D {
 						const b = index.getX( j + 1 );
 						const c = index.getX( j + 2 );
 
-						intersection = checkBufferGeometryIntersection( this, groupMaterial, raycaster, _ray$2, uv, uv2, a, b, c );
+						intersection = checkBufferGeometryIntersection( this, groupMaterial, raycaster, _ray$2, uv, uv2, normals, a, b, c );
 
 						if ( intersection ) {
 
@@ -11130,7 +11135,7 @@ class Mesh extends Object3D {
 					const b = index.getX( i + 1 );
 					const c = index.getX( i + 2 );
 
-					intersection = checkBufferGeometryIntersection( this, material, raycaster, _ray$2, uv, uv2, a, b, c );
+					intersection = checkBufferGeometryIntersection( this, material, raycaster, _ray$2, uv, uv2, normals, a, b, c );
 
 					if ( intersection ) {
 
@@ -11163,7 +11168,7 @@ class Mesh extends Object3D {
 						const b = j + 1;
 						const c = j + 2;
 
-						intersection = checkBufferGeometryIntersection( this, groupMaterial, raycaster, _ray$2, uv, uv2, a, b, c );
+						intersection = checkBufferGeometryIntersection( this, groupMaterial, raycaster, _ray$2, uv, uv2, normals, a, b, c );
 
 						if ( intersection ) {
 
@@ -11188,7 +11193,7 @@ class Mesh extends Object3D {
 					const b = i + 1;
 					const c = i + 2;
 
-					intersection = checkBufferGeometryIntersection( this, material, raycaster, _ray$2, uv, uv2, a, b, c );
+					intersection = checkBufferGeometryIntersection( this, material, raycaster, _ray$2, uv, uv2, normals, a, b, c );
 
 					if ( intersection ) {
 
@@ -11238,7 +11243,7 @@ function checkIntersection( object, material, raycaster, ray, pA, pB, pC, point 
 
 }
 
-function checkBufferGeometryIntersection( object, material, raycaster, ray, uv, uv2, a, b, c ) {
+function checkBufferGeometryIntersection( object, material, raycaster, ray, uv, uv2, normals, a, b, c ) {
 
 	object.getVertexPosition( a, _vA$1 );
 	object.getVertexPosition( b, _vB$1 );
@@ -11254,7 +11259,7 @@ function checkBufferGeometryIntersection( object, material, raycaster, ray, uv, 
 			_uvB$1.fromBufferAttribute( uv, b );
 			_uvC$1.fromBufferAttribute( uv, c );
 
-			intersection.uv = Triangle.getUV( _intersectionPoint, _vA$1, _vB$1, _vC$1, _uvA$1, _uvB$1, _uvC$1, new Vector2() );
+			intersection.uv = Triangle.getInterpolation( _intersectionPoint, _vA$1, _vB$1, _vC$1, _uvA$1, _uvB$1, _uvC$1, new Vector2() );
 
 		}
 
@@ -11264,7 +11269,21 @@ function checkBufferGeometryIntersection( object, material, raycaster, ray, uv, 
 			_uvB$1.fromBufferAttribute( uv2, b );
 			_uvC$1.fromBufferAttribute( uv2, c );
 
-			intersection.uv2 = Triangle.getUV( _intersectionPoint, _vA$1, _vB$1, _vC$1, _uvA$1, _uvB$1, _uvC$1, new Vector2() );
+			intersection.uv2 = Triangle.getInterpolation( _intersectionPoint, _vA$1, _vB$1, _vC$1, _uvA$1, _uvB$1, _uvC$1, new Vector2() );
+
+		}
+
+		if ( normals ) {
+			
+			_normalA$1.fromBufferAttribute( normals, a );
+			_normalB$1.fromBufferAttribute( normals, b );
+			_normalC$1.fromBufferAttribute( normals, c );
+			
+			intersection.normal = Triangle.getInterpolation( _intersectionPoint, _vA$1, _vB$1, _vC$1, _normalA$1, _normalB$1, _normalC$1, new Vector3() );
+
+			if (!isFinite(intersection.normal.x) || !isFinite(intersection.normal.y) || !isFinite(intersection.normal.z)) {
+				console.log("Got zero normal for ", intersection);
+			}
 
 		}
 
@@ -30087,7 +30106,7 @@ class Sprite extends Object3D {
 
 			distance: distance,
 			point: _intersectPoint.clone(),
-			uv: Triangle.getUV( _intersectPoint, _vA, _vB, _vC, _uvA, _uvB, _uvC, new Vector2() ),
+			uv: Triangle.getInterpolation( _intersectPoint, _vA, _vB, _vC, _uvA, _uvB, _uvC, new Vector2() ),
 			face: null,
 			object: this
 

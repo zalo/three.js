@@ -81,7 +81,11 @@
 			import Stats from 'three/addons/libs/stats.module.js';
 
 			let camera, scene, renderer, stats;
-			let cube, curvedPanel, material;
+			let cube, sphere, dome, curvedPanel, material;
+			let raycaster;
+			let lineGeometry = new THREE.BufferGeometry();
+			let lineMaterial = new THREE.LineBasicMaterial( );
+			let indices = [], positions = [];
 
 			let eyeCamera, eyeRenderTarget, eyeCameraHelper, params = { setFoVToCorners: true, panelCurvature: 20 };
 
@@ -134,7 +138,7 @@
 				//
 
 				material = new THREE.ShaderMaterial( {
-
+					side: THREE.BackSide,
 					uniforms: {
 						map                 : { value: eyeRenderTarget.texture      },
 						eyeProjectionMatrix : { value: eyeCamera.projectionMatrix   },
@@ -145,6 +149,37 @@
 					fragmentShader: document.getElementById( 'fragmentshader' ).textContent
 
 				} );
+
+
+				const material2 = new THREE.MeshStandardMaterial( {
+					roughness: 0.1,
+					metalness: 0
+				} );
+
+				cube = new THREE.Mesh( new THREE.BoxGeometry( 15, 15, 15 ), material2 );
+				cube.position.x = 0.0;
+				cube.position.y = 0.0;
+				cube.position.z = -30;
+				scene.add( cube );
+
+				sphere = new THREE.Mesh( new THREE.SphereGeometry( 23, 32, 16 ), material2 );
+				sphere.name = "sphere";
+				sphere.position.x = 0.0;
+				sphere.position.y = 0.0;
+				sphere.position.z = -30;
+				scene.add( sphere );
+
+				dome = new THREE.Mesh( new THREE.SphereGeometry( 250, 32, 16 ), new THREE.MeshStandardMaterial( {
+					roughness: 0.1,
+					metalness: 0,
+					side: THREE.BackSide
+				} ));
+				dome.name = "dome";
+				scene.add( dome );
+
+				sphere.updateMatrixWorld();
+				sphere.updateWorldMatrix();
+				raycaster = new THREE.Raycaster()
 
 				curvedPanel = new THREE.Mesh(createCurvedPanelGeometry(params.panelCurvature), material);
 				scene.add(curvedPanel);
@@ -158,31 +193,52 @@
 				gui.add(params, 'setFoVToCorners', true).name('Set FoV to Corners');
 				gui.add(material.uniforms.previewOnScreen, 'value', false).name('Preview');
 
-				const material2 = new THREE.MeshStandardMaterial( {
-					roughness: 0.1,
-					metalness: 0
-				} );
-
-				cube = new THREE.Mesh( new THREE.BoxGeometry( 15, 15, 15 ), material2 );
-				cube.position.x = 0.0;
-				cube.position.y = 0.0;
-				cube.position.z = -30;
-				scene.add( cube );
-
 				//
 
 				controls = new OrbitControls( camera, renderer.domElement );
 			}
 
 			function createCurvedPanelGeometry( panelCurvature ) {
-				let curvedPanelGeometry = new THREE.PlaneGeometry(50, 20, 16, 16);
+				let curvedPanelGeometry = new THREE.PlaneGeometry(16, 9, 16, 16);
 				let vertices = curvedPanelGeometry.getAttribute("position").array;
-				let tempVec = new THREE.Vector3();
-				let radius = tempVec.set(-25, 0, panelCurvature).length();
+				let tempVec1 = new THREE.Vector3(), tempVec2 = new THREE.Vector3();
+				//let radius = tempVec.set(-25, 0, panelCurvature).length();
+				let index = 0;
 				for (let i = 0; i < vertices.length; i += 3) {
-					tempVec.set(vertices[i], 0, -panelCurvature).setLength(radius);
-					vertices[i] = tempVec.x; vertices[i + 2] = tempVec.z + panelCurvature;
+					raycaster.set(tempVec1.set(0, 0, 30), 
+								  tempVec2.set(vertices[i]+0.00001, vertices[i+1]+5, vertices[i+2]-30).normalize());
+					let intersects = raycaster.intersectObjects( [sphere] );
+					if(intersects.length > 0){
+						vertices[i    ] = intersects[0].point.x;
+						vertices[i + 1] = intersects[0].point.y;
+						vertices[i + 2] = intersects[0].point.z;
+						positions.push(0, 0, 30, vertices[i], vertices[i + 1], vertices[i + 2]); indices.push(index, index+1); index += 2;
+					
+						//console.log(intersects[0]);
+						let normal = intersects[0].normal.normalize();
+						raycaster.set(intersects[0].point, normal);
+						intersects = raycaster.intersectObjects( [dome] );
+						if(intersects.length > 0){
+							positions.push(vertices[i], vertices[i + 1], vertices[i + 2], intersects[0].point.x, intersects[0].point.y, intersects[0].point.z); indices.push(index, index+1); index += 2;
+							vertices[i    ] = intersects[0].point.x;
+							vertices[i + 1] = intersects[0].point.y;
+							vertices[i + 2] = intersects[0].point.z;
+						}else{
+							console.log("WHAT THE HECK HAPPENED?!", normal)
+						}
+					}
+
 				}
+
+				lineGeometry.setIndex( indices );
+				lineGeometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+				//lineGeometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
+				lineGeometry.computeBoundingSphere();
+				let lineSegments = new THREE.LineSegments( lineGeometry, lineMaterial );
+				scene.add(lineSegments);
+
+				dome.visible = false;
+
 				return curvedPanelGeometry;
 			}
 
