@@ -84,10 +84,10 @@
 			let cube, sphere, dome, curvedPanel, material;
 			let raycaster;
 			let lineGeometry = new THREE.BufferGeometry();
-			let lineMaterial = new THREE.LineBasicMaterial( {transparent: true, opacity: 0.1} );
+			let lineMaterial = new THREE.LineBasicMaterial( {transparent: true, opacity: 0.35 } );
 			let lineSegments;
 
-			let eyeCamera, eyeRenderTarget, eyeCameraHelper, params = { panelCurvature: 20, enableInterpolatedNormals: true };
+			let eyeCamera, eyeRenderTarget, eyeCameraHelper, params = { mirrorSphereRadius: 23, enableInterpolatedNormals: true };
 
 			let controls;
 
@@ -122,6 +122,7 @@
 						texture.mapping = THREE.EquirectangularReflectionMapping;
 						scene.background = texture;
 						scene.environment = texture;
+						sphere.material = new THREE.MeshBasicMaterial( { envMap: texture } );
 					});
 
 				//
@@ -158,15 +159,16 @@
 
 				cube = new THREE.Mesh( new THREE.BoxGeometry( 15, 15, 15 ), material2 );
 				cube.position.x = 0;
-				cube.position.y = 40;
+				cube.position.y = 30;
 				cube.position.z = 100;
 				scene.add( cube );
 
-				sphere = new THREE.Mesh( new THREE.SphereGeometry( 23, 32, 16 ), material2 );
+				sphere = new THREE.Mesh( new THREE.SphereGeometry( 1, 32, 16 ), material2 );
 				sphere.name = "sphere";
 				sphere.position.x = 0.0;
 				sphere.position.y = 0.0;
 				sphere.position.z = -30;
+				sphere.scale.set(params.mirrorSphereRadius, params.mirrorSphereRadius, params.mirrorSphereRadius);
 				scene.add( sphere );
 
 				dome = new THREE.Mesh( new THREE.SphereGeometry( 250, 32, 16 ), new THREE.MeshStandardMaterial( {
@@ -181,7 +183,7 @@
 				sphere.updateWorldMatrix();
 				raycaster = new THREE.Raycaster()
 
-				curvedPanel = new THREE.Mesh(createCurvedPanelGeometry(params.panelCurvature), material);
+				curvedPanel = new THREE.Mesh(createCurvedPanelGeometry(), material);
 				scene.add(curvedPanel);
 				lineSegments = new THREE.LineSegments( lineGeometry, lineMaterial );
 				scene.add(lineSegments);
@@ -189,26 +191,28 @@
 				const gui = new GUI();
 				gui.add(renderer, 'toneMappingExposure', 0, 2).name('Exposure');
 				gui.add(eyeCamera, 'fov', 0, 60).name('FoV');
-				gui.add(params, 'panelCurvature', 10, 100).onChange(() => {
-					curvedPanel.geometry = createCurvedPanelGeometry(params.panelCurvature);
-				}).name('Panel Curvature');
+				gui.add(params, 'mirrorSphereRadius', 23, 30).onChange(() => {
+					curvedPanel.geometry = createCurvedPanelGeometry();
+				}).name('Mirror Sphere Radius');
 				gui.add(material.uniforms.previewOnScreen, 'value', false).name('Preview').onChange((preview)=>{
 					material.side = preview ? THREE.FrontSide : THREE.BackSide;
 				});
 				gui.add(params, 'enableInterpolatedNormals', true).onChange(() => {
-					curvedPanel.geometry = createCurvedPanelGeometry(params.panelCurvature);
-				});
+					curvedPanel.geometry = createCurvedPanelGeometry();
+				}).name("Use Interpolated Normals");
 				//
 
 				controls = new OrbitControls( camera, renderer.domElement );
 				controls.target = new THREE.Vector3(0, 50, 100);
 			}
 
-			function createCurvedPanelGeometry( panelCurvature ) {
+			function createCurvedPanelGeometry( ) {
+
+				sphere.scale.set(params.mirrorSphereRadius, params.mirrorSphereRadius, params.mirrorSphereRadius);
+
 				let curvedPanelGeometry = new THREE.PlaneGeometry(16, 9, 16, 16);
 				let vertices = curvedPanelGeometry.getAttribute("position").array;
 				let tempVec1 = new THREE.Vector3(), tempVec2 = new THREE.Vector3();
-				//let radius = tempVec.set(-25, 0, panelCurvature).length();
 				let index = 0, indices = [], positions = [];
 				for (let i = 0; i < vertices.length; i += 3) {
 					raycaster.set(tempVec1.set(0, 0, 30), 
@@ -267,7 +271,7 @@
 				eyeCamera.position.x = Math.cos( ( 2.0 + time ) * 0.5 ) * 30;
 				eyeCamera.position.y = Math.sin( ( 2.0 + time ) * 0.25 ) * 5;
 				eyeCamera.position.z = 30 + Math.sin( ( 2.0 + time ) ) * 20;
-				eyeCamera.lookAt( new THREE.Vector3(0, 40, 100) );
+				eyeCamera.lookAt( new THREE.Vector3(0, 30, 100) );
 
 				// save the original camera properties
 				const currentRenderTarget = renderer.getRenderTarget();
