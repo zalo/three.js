@@ -170,7 +170,7 @@ const SSILVBShader = {
 		const uint sectorCount = 32u;
 		uint updateSectors(float minHorizon, float maxHorizon, uint outBitfield) {
 			uint startBit = uint(minHorizon * float(sectorCount));
-			uint horizonAngle = uint(ceil((maxHorizon - minHorizon) * float(sectorCount)));
+			uint horizonAngle = uint(round((maxHorizon - minHorizon) * float(sectorCount)));
 			uint angleBit = horizonAngle > 0u ? uint(0xFFFFFFFFu >> (sectorCount - horizonAngle)) : 0u;
 			uint currentBitfield = angleBit << startBit;
 			return outBitfield | currentBitfield;
