@@ -197,7 +197,7 @@ const SSILVBShader = {
 			vec2 frontBackHorizon = vec2(0.0);
 			//vec2 aspect = screenSize.yx / screenSize.x;
 			//vec3 position = texture(screenPosition, fragUV).rgb
-			vec2 aspect = vec2(cameraProjectionMatrix[1][1] / cameraProjectionMatrix[0][0], 1.0);
+			vec2 aspect = vec2(cameraProjectionMatrix[0][0] / cameraProjectionMatrix[1][1], 1.0);
 			float depth = getDepth(vUv.xy);
 			if (depth >= 1.0) { discard; return; }
 
@@ -206,7 +206,7 @@ const SSILVBShader = {
 			vec3 normal = normalize(getViewNormal(vUv.xy));
 			if (!useCorrectNormals) { normal.xyz = normal.xyz * 0.5 + 0.5; }
 
-			float sliceRotation = twoPi / (sliceCount - 1.0);
+			float sliceRotation = pi / float(sliceCount - 1.0);
 			float sampleScale = (-radius * cameraProjectionMatrix[0][0]) / position.z;
 			float sampleOffset = 0.01 * scale;
 			float jitter = randf(int(gl_FragCoord.x), int(gl_FragCoord.y)) - 0.5;
