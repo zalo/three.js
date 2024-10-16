@@ -138,7 +138,7 @@
 					scale: 1.,
 					samples: 16,
 					screenSpaceRadius: false,
-					directionSwizzle: false
+					useCorrectNormals: false
 				};
 				const pdParameters = {
 					lumaPhi: 10.,
@@ -152,7 +152,7 @@
 				ssilvbPass.updateSSILVBMaterial( aoParameters );
 				ssilvbPass.updatePdMaterial( pdParameters );
 				gui.add( ssilvbPass, 'blendIntensity' ).min( 0 ).max( 1 ).step( 0.01 );
-				gui.add( aoParameters, 'directionSwizzle' ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) )
+				gui.add( aoParameters, 'useCorrectNormals' ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) )
 				gui.add( aoParameters, 'radius' ).min( 0.01 ).max( 1 ).step( 0.01 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
 				gui.add( aoParameters, 'distanceExponent' ).min( 1 ).max( 4 ).step( 0.01 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
 				gui.add( aoParameters, 'thickness' ).min( 0.01 ).max( 0.3 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );

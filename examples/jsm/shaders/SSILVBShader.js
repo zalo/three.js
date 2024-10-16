@@ -45,7 +45,7 @@ const SSILVBShader = {
 		scale: { value: 1. },
 		sceneBoxMin: { value: new Vector3( - 1, - 1, - 1 ) },
 		sceneBoxMax: { value: new Vector3( 1, 1, 1 ) },
-		directionSwizzle: { value: false },
+		useCorrectNormals: { value: false },
 	},
 
 	vertexShader: /* glsl */`
@@ -80,7 +80,7 @@ const SSILVBShader = {
 		uniform float distanceExponent;
 		uniform float thickness;
 		uniform float scale;
-		uniform bool directionSwizzle;
+		uniform bool useCorrectNormals;
 		#if SCENE_CLIP_BOX == 1
 			uniform vec3 sceneBoxMin;
 			uniform vec3 sceneBoxMax;
@@ -208,7 +208,8 @@ const SSILVBShader = {
 
 			vec3 position = getViewPosition(vUv, depth);
 			vec3 camera = normalize(-position);
-			vec3 normal = getViewNormal(vUv.xy); //normalize(texture(tNormal, vUv.xy).rgb);
+			vec3 normal = normalize(getViewNormal(vUv.xy));
+			if (!useCorrectNormals) { normal.xyz = normal.xyz * 0.5 + 0.5; }
 
 			float sliceRotation = twoPi / (sliceCount - 1.0);
 			float sampleScale = (-radius * cameraProjectionMatrix[0][0]) / position.z;
@@ -218,7 +219,7 @@ const SSILVBShader = {
 			for (float slice = 0.0; slice < sliceCount + 0.5; slice += 1.0) {
 				float phi = sliceRotation * (slice + jitter) + pi;
 				vec2 omega = vec2(cos(phi), sin(phi));
-				vec3 direction = directionSwizzle ? vec3(-omega.y, 0.0, -omega.x) : vec3(omega, 0.0);
+				vec3 direction = vec3(omega.x, omega.y, 0.0);
 				vec3 orthoDirection = direction - dot(direction, camera) * camera;
 				vec3 axis = cross(direction, camera);
 				vec3 projNormal = normal - axis * dot(normal, axis);

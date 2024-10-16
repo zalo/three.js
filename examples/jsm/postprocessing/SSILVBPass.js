@@ -277,9 +277,9 @@ class SSILVBPass extends Pass {
 
 		}
 
-		if ( parameters.directionSwizzle !== undefined ) {
+		if ( parameters.useCorrectNormals !== undefined ) {
 
-			this.ssilvbMaterial.uniforms.directionSwizzle.value = parameters.directionSwizzle;
+			this.ssilvbMaterial.uniforms.useCorrectNormals.value = parameters.useCorrectNormals;
 
 		}
 
