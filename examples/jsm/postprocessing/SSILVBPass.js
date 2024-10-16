@@ -277,6 +277,12 @@ class SSILVBPass extends Pass {
 
 		}
 
+		if ( parameters.directionSwizzle !== undefined ) {
+
+			this.ssilvbMaterial.uniforms.directionSwizzle.value = parameters.directionSwizzle;
+
+		}
+
 	}
 
 	updatePdMaterial( parameters ) {

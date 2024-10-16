@@ -45,6 +45,7 @@ const SSILVBShader = {
 		scale: { value: 1. },
 		sceneBoxMin: { value: new Vector3( - 1, - 1, - 1 ) },
 		sceneBoxMax: { value: new Vector3( 1, 1, 1 ) },
+		directionSwizzle: { value: false },
 	},
 
 	vertexShader: /* glsl */`
@@ -79,6 +80,7 @@ const SSILVBShader = {
 		uniform float distanceExponent;
 		uniform float thickness;
 		uniform float scale;
+		uniform bool directionSwizzle;
 		#if SCENE_CLIP_BOX == 1
 			uniform vec3 sceneBoxMin;
 			uniform vec3 sceneBoxMax;
@@ -97,6 +99,11 @@ const SSILVBShader = {
 			vec4 clipSpacePosition = vec4(vec3(screenPosition, depth) * 2.0 - 1.0, 1.0);
 			vec4 viewSpacePosition = cameraProjectionMatrixInverse * clipSpacePosition;
 			return viewSpacePosition.xyz / viewSpacePosition.w;
+		}
+
+		vec3 getWorldPosition(const in vec2 screenPosition, const in float depth) {
+			vec3 viewSpacePosition = getViewPosition(screenPosition, depth);
+			return (cameraWorldMatrix * vec4(viewSpacePosition, 1.0)).xyz;
 		}
 
 		float getDepth(const vec2 uv) {  
@@ -147,6 +154,10 @@ const SSILVBShader = {
 			#endif
 		}
 
+		vec3 getWorldNormal(const vec2 uv) {
+			return normalize((cameraWorldMatrix * vec4(getViewNormal(uv), 0.0)).xyz);
+		}
+
 		vec3 getSceneUvAndDepth(vec3 sampleViewPos) {
 			vec4 sampleClipPos = cameraProjectionMatrix * vec4(sampleViewPos, 1.);
 			vec2 sampleUv = sampleClipPos.xy / sampleClipPos.w * 0.5 + 0.5;
@@ -189,46 +200,43 @@ const SSILVBShader = {
 			vec2 aspect = vec2(cameraProjectionMatrix[1][1] / cameraProjectionMatrix[0][0], 1.0);
 			float depth = getDepth(vUv.xy);
 			if (depth >= 1.0) { discard; return; }
+			//vec3 position = getWorldPosition(vUv, depth);
+			//vec3 cameraPos = cameraWorldMatrix[3].xyz;
+			//vec3 cameraDir = -cameraWorldMatrix[2].xyz;
+			//vec3 camera = -normalize(cameraPos - position);
+			//vec3 normal = getWorldNormal(vUv.xy); //normalize(texture(tNormal, vUv.xy).rgb);
+
 			vec3 position = getViewPosition(vUv, depth);
 			vec3 camera = normalize(-position);
-			vec3 normal = normalize(texture(tNormal, vUv.xy).rgb);
-
-			vec2 noiseResolution = vec2(textureSize(tNoise, 0));
-			vec2 noiseUv = vUv * resolution / noiseResolution;
-			vec4 noiseTexel = textureLod(tNoise, noiseUv, 0.0);
-			vec3 randomVec = noiseTexel.xyz * 2.0 - 1.0;
-			vec3 tangent = normalize(vec3(randomVec.xy, 0.));
-			vec3 bitangent = vec3(-tangent.y, tangent.x, 0.);
-			mat3 kernelMatrix = mat3(tangent, bitangent, vec3(0., 0., 1.));
+			vec3 normal = getViewNormal(vUv.xy); //normalize(texture(tNormal, vUv.xy).rgb);
 
 			float sliceRotation = twoPi / (sliceCount - 1.0);
-			float sampleScale   = (-radius * cameraProjectionMatrix[0][0]) / position.z;
-			float sampleOffset  = 0.01 * scale;
-			float jitter        = randf(int(gl_FragCoord.x), int(gl_FragCoord.y)) - 0.5;
+			float sampleScale = (-radius * cameraProjectionMatrix[0][0]) / position.z;
+			float sampleOffset = 0.01 * scale;
+			float jitter = randf(int(gl_FragCoord.x), int(gl_FragCoord.y)) - 0.5;
 
 			for (float slice = 0.0; slice < sliceCount + 0.5; slice += 1.0) {
-				float phi            = sliceRotation * (slice + jitter) + pi;
-				vec2  omega          = vec2(cos(phi), sin(phi));
-				vec3  direction      = vec3(omega.x, omega.y, 0.0);
-
-				vec3  orthoDirection = direction - dot(direction, camera) * camera;
-				vec3  axis           = cross(direction, camera);
-				vec3  projNormal     = normal - axis * dot(normal, axis);
-				float projLength     = length(projNormal);
+				float phi = sliceRotation * (slice + jitter) + pi;
+				vec2 omega = vec2(cos(phi), sin(phi));
+				vec3 direction = directionSwizzle ? vec3(-omega.y, 0.0, -omega.x) : vec3(omega, 0.0);
+				vec3 orthoDirection = direction - dot(direction, camera) * camera;
+				vec3 axis = cross(direction, camera);
+				vec3 projNormal = normal - axis * dot(normal, axis);
+				float projLength = length(projNormal);
 
 				float signN = sign(dot(orthoDirection, projNormal));
-				float cosN  = clamp(dot(projNormal, camera) / projLength, 0.0, 1.0);
-				float n     = signN * acos(cosN);
+				float cosN = clamp(dot(projNormal, camera) / projLength, 0.0, 1.0);
+				float n = signN * acos(cosN);
 
 				for (float currentSample = 0.0; currentSample < sampleCount + 0.5; currentSample += 1.0) {
-					float sampleStep     = (currentSample + jitter) / sampleCount + sampleOffset;
-					vec2  sampleUV       = vUv.xy - sampleStep * sampleScale * omega * aspect;
-					vec3  samplePosition = getViewPosition(sampleUV, getDepth(sampleUV));
-					vec3  sampleNormal   = normalize(texture(tNormal, sampleUV).rgb);
-					vec3  sampleLight    = texture(tColor, sampleUV).rgb;
-					vec3  sampleDistance = samplePosition - position;
-					float sampleLength   = length(sampleDistance);
-					vec3  sampleHorizon  = sampleDistance / sampleLength;
+					float sampleStep = (currentSample + jitter) / sampleCount + sampleOffset;
+					vec2 sampleUV = vUv.xy - sampleStep * sampleScale * omega * aspect;
+					vec3 samplePosition = getViewPosition(sampleUV, getDepth(sampleUV));
+					vec3 sampleNormal = normalize(texture(tNormal, sampleUV).rgb);
+					vec3 sampleLight = texture(tColor, sampleUV).rgb;
+					vec3 sampleDistance = samplePosition - position;
+					float sampleLength = length(sampleDistance);
+					vec3 sampleHorizon = sampleDistance / sampleLength;
 
 					frontBackHorizon.x = dot(sampleHorizon, camera);
 					frontBackHorizon.y = dot(normalize(sampleDistance - camera * thickness), camera);
@@ -246,10 +254,9 @@ const SSILVBShader = {
 			}
 
 			visibility /= sliceCount;
-			lighting   /= sliceCount;
+			lighting /= sliceCount;
 
 			//lighting += texture(tColor, vUv.xy).rgb;
-
 			gl_FragColor = vec4(visibility, visibility, visibility, 1.0);// lighting, visibility); //
 		}`
 
