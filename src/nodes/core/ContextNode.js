@@ -1,7 +1,13 @@
-import Node, { addNodeClass } from './Node.js';
-import { addNodeElement, nodeProxy } from '../shadernode/ShaderNode.js';
+import Node from './Node.js';
+import { addMethodChaining, nodeProxy } from '../tsl/TSLCore.js';
 
 class ContextNode extends Node {
+
+	static get type() {
+
+		return 'ContextNode';
+
+	}
 
 	constructor( node, value = {} ) {
 
@@ -11,6 +17,12 @@ class ContextNode extends Node {
 
 		this.node = node;
 		this.value = value;
+
+	}
+
+	getScope() {
+
+		return this.node.getScope();
 
 	}
 
@@ -58,10 +70,8 @@ class ContextNode extends Node {
 
 export default ContextNode;
 
-export const context = nodeProxy( ContextNode );
+export const context = /*@__PURE__*/ nodeProxy( ContextNode );
 export const label = ( node, name ) => context( node, { label: name } );
 
-addNodeElement( 'context', context );
-addNodeElement( 'label', label );
-
-addNodeClass( 'ContextNode', ContextNode );
+addMethodChaining( 'context', context );
+addMethodChaining( 'label', label );

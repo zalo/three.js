@@ -79,11 +79,11 @@ class WebGLTextureUtils {
 
 			glTextureType = gl.TEXTURE_CUBE_MAP;
 
-		} else if ( texture.isDataArrayTexture === true ) {
+		} else if ( texture.isDataArrayTexture === true || texture.isCompressedArrayTexture === true ) {
 
 			glTextureType = gl.TEXTURE_2D_ARRAY;
 
-		} else if ( texture.isData3DTexture === true ) {
+		} else if ( texture.isData3DTexture === true ) { // TODO: isCompressed3DTexture, wait for #26642
 
 			glTextureType = gl.TEXTURE_3D;
 
@@ -245,7 +245,11 @@ class WebGLTextureUtils {
 
 		const { gl, extensions, backend } = this;
 
-		const { currentAnisotropy } = backend.get( texture );
+
+		gl.pixelStorei( gl.UNPACK_FLIP_Y_WEBGL, texture.flipY );
+		gl.pixelStorei( gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, texture.premultiplyAlpha );
+		gl.pixelStorei( gl.UNPACK_ALIGNMENT, texture.unpackAlignment );
+		gl.pixelStorei( gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE );
 
 		gl.texParameteri( textureType, gl.TEXTURE_WRAP_S, wrappingToGL[ texture.wrapS ] );
 		gl.texParameteri( textureType, gl.TEXTURE_WRAP_T, wrappingToGL[ texture.wrapT ] );
@@ -279,11 +283,10 @@ class WebGLTextureUtils {
 			if ( texture.minFilter !== NearestMipmapLinearFilter && texture.minFilter !== LinearMipmapLinearFilter ) return;
 			if ( texture.type === FloatType && extensions.has( 'OES_texture_float_linear' ) === false ) return; // verify extension for WebGL 1 and WebGL 2
 
-			if ( texture.anisotropy > 1 || currentAnisotropy !== texture.anisotropy ) {
+			if ( texture.anisotropy > 1 ) {
 
 				const extension = extensions.get( 'EXT_texture_filter_anisotropic' );
 				gl.texParameterf( textureType, extension.TEXTURE_MAX_ANISOTROPY_EXT, Math.min( texture.anisotropy, backend.getMaxAnisotropy() ) );
-				backend.get( texture ).currentAnisotropy = texture.anisotropy;
 
 			}
 
@@ -336,14 +339,9 @@ class WebGLTextureUtils {
 
 		backend.state.bindTexture( glTextureType, textureGPU );
 
-		gl.pixelStorei( gl.UNPACK_FLIP_Y_WEBGL, texture.flipY );
-		gl.pixelStorei( gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, texture.premultiplyAlpha );
-		gl.pixelStorei( gl.UNPACK_ALIGNMENT, texture.unpackAlignment );
-		gl.pixelStorei( gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE );
-
 		this.setTextureParameters( glTextureType, texture );
 
-		if ( texture.isDataArrayTexture ) {
+		if ( texture.isDataArrayTexture || texture.isCompressedArrayTexture ) {
 
 			gl.texStorage3D( gl.TEXTURE_2D_ARRAY, levels, glInternalFormat, width, height, depth );
 
@@ -429,9 +427,12 @@ class WebGLTextureUtils {
 
 		this.backend.state.bindTexture( glTextureType, textureGPU );
 
+		this.setTextureParameters( glTextureType, texture );
+
 		if ( texture.isCompressedTexture ) {
 
 			const mipmaps = texture.mipmaps;
+			const image = options.image;
 
 			for ( let i = 0; i < mipmaps.length; i ++ ) {
 
@@ -439,14 +440,12 @@ class WebGLTextureUtils {
 
 				if ( texture.isCompressedArrayTexture ) {
 
-					const image = options.image;
 
 					if ( texture.format !== gl.RGBA ) {
 
 						if ( glFormat !== null ) {
 
-							gl.compressedTexSubImage3D( gl.TEXTURE_2D_ARRAY, i, 0, 0, 0, mipmap.width, mipmap.height, image.depth, glFormat, mipmap.data, 0, 0 );
-
+							gl.compressedTexSubImage3D( gl.TEXTURE_2D_ARRAY, i, 0, 0, 0, mipmap.width, mipmap.height, image.depth, glFormat, mipmap.data );
 
 						} else {
 
@@ -475,6 +474,7 @@ class WebGLTextureUtils {
 				}
 
 			}
+
 
 		} else if ( texture.isCubeTexture ) {
 
@@ -659,20 +659,46 @@ class WebGLTextureUtils {
 		gl.pixelStorei( gl.UNPACK_SKIP_PIXELS, minX );
 		gl.pixelStorei( gl.UNPACK_SKIP_ROWS, minY );
 
+		if ( srcTexture.isRenderTargetTexture || srcTexture.isDepthTexture ) {
 
-		if ( srcTexture.isDataTexture ) {
+			const srcTextureData = backend.get( srcTexture );
+			const dstTextureData = backend.get( dstTexture );
 
-			gl.texSubImage2D( gl.TEXTURE_2D, level, dstX, dstY, width, height, glFormat, glType, image.data );
+			const srcRenderContextData = backend.get( srcTextureData.renderTarget );
+			const dstRenderContextData = backend.get( dstTextureData.renderTarget );
+
+			const srcFramebuffer = srcRenderContextData.framebuffers[ srcTextureData.cacheKey ];
+			const dstFramebuffer = dstRenderContextData.framebuffers[ dstTextureData.cacheKey ];
+
+			state.bindFramebuffer( gl.READ_FRAMEBUFFER, srcFramebuffer );
+			state.bindFramebuffer( gl.DRAW_FRAMEBUFFER, dstFramebuffer );
+
+			let mask = gl.COLOR_BUFFER_BIT;
+
+			if ( srcTexture.isDepthTexture ) mask = gl.DEPTH_BUFFER_BIT;
+
+			gl.blitFramebuffer( minX, minY, width, height, dstX, dstY, width, height, mask, gl.NEAREST );
+
+			state.bindFramebuffer( gl.READ_FRAMEBUFFER, null );
+			state.bindFramebuffer( gl.DRAW_FRAMEBUFFER, null );
 
 		} else {
 
-			if ( srcTexture.isCompressedTexture ) {
+			if ( srcTexture.isDataTexture ) {
 
-				gl.compressedTexSubImage2D( gl.TEXTURE_2D, level, dstX, dstY, image.width, image.height, glFormat, image.data );
+				gl.texSubImage2D( gl.TEXTURE_2D, level, dstX, dstY, width, height, glFormat, glType, image.data );
 
 			} else {
 
-				gl.texSubImage2D( gl.TEXTURE_2D, level, dstX, dstY, width, height, glFormat, glType, image );
+				if ( srcTexture.isCompressedTexture ) {
+
+					gl.compressedTexSubImage2D( gl.TEXTURE_2D, level, dstX, dstY, image.width, image.height, glFormat, image.data );
+
+				} else {
+
+					gl.texSubImage2D( gl.TEXTURE_2D, level, dstX, dstY, width, height, glFormat, glType, image );
+
+				}
 
 			}
 
@@ -691,20 +717,22 @@ class WebGLTextureUtils {
 
 	}
 
-	copyFramebufferToTexture( texture, renderContext ) {
+	copyFramebufferToTexture( texture, renderContext, rectangle ) {
 
 		const { gl } = this;
 		const { state } = this.backend;
 
 		const { textureGPU } = this.backend.get( texture );
 
-		const width = texture.image.width;
-		const height = texture.image.height;
+		const { x, y, z: width, w: height } = rectangle;
 
 		const requireDrawFrameBuffer = texture.isDepthTexture === true || ( renderContext.renderTarget && renderContext.renderTarget.samples > 0 );
 
+		const srcHeight = renderContext.renderTarget ? renderContext.renderTarget.height : this.backend.gerDrawingBufferSize().y;
+
 		if ( requireDrawFrameBuffer ) {
 
+			const partial = ( x !== 0 || y !== 0 );
 			let mask;
 			let attachment;
 
@@ -726,19 +754,45 @@ class WebGLTextureUtils {
 
 			}
 
-			const fb = gl.createFramebuffer();
-			state.bindFramebuffer( gl.DRAW_FRAMEBUFFER, fb );
+			if ( partial ) {
 
-			gl.framebufferTexture2D( gl.DRAW_FRAMEBUFFER, attachment, gl.TEXTURE_2D, textureGPU, 0 );
+				const renderTargetContextData = this.backend.get( renderContext.renderTarget );
 
-			gl.blitFramebuffer( 0, 0, width, height, 0, 0, width, height, mask, gl.NEAREST );
+				const fb = renderTargetContextData.framebuffers[ renderContext.getCacheKey() ];
+				const msaaFrameBuffer = renderTargetContextData.msaaFrameBuffer;
 
-			gl.deleteFramebuffer( fb );
+				state.bindFramebuffer( gl.DRAW_FRAMEBUFFER, fb );
+				state.bindFramebuffer( gl.READ_FRAMEBUFFER, msaaFrameBuffer );
+
+				const flippedY = srcHeight - y - height;
+
+				gl.blitFramebuffer( x, flippedY, x + width, flippedY + height, x, flippedY, x + width, flippedY + height, mask, gl.NEAREST );
+
+				state.bindFramebuffer( gl.READ_FRAMEBUFFER, fb );
+
+				state.bindTexture( gl.TEXTURE_2D, textureGPU );
+
+				gl.copyTexSubImage2D( gl.TEXTURE_2D, 0, 0, 0, x, flippedY, width, height );
+
+				state.unbindTexture();
+
+			} else {
+
+				const fb = gl.createFramebuffer();
+
+				state.bindFramebuffer( gl.DRAW_FRAMEBUFFER, fb );
+
+				gl.framebufferTexture2D( gl.DRAW_FRAMEBUFFER, attachment, gl.TEXTURE_2D, textureGPU, 0 );
+				gl.blitFramebuffer( 0, 0, width, height, 0, 0, width, height, mask, gl.NEAREST );
+
+				gl.deleteFramebuffer( fb );
+
+			}
 
 		} else {
 
 			state.bindTexture( gl.TEXTURE_2D, textureGPU );
-			gl.copyTexSubImage2D( gl.TEXTURE_2D, 0, 0, 0, 0, 0, width, height );
+			gl.copyTexSubImage2D( gl.TEXTURE_2D, 0, 0, 0, x, srcHeight - height - y, width, height );
 
 			state.unbindTexture();
 
@@ -805,7 +859,7 @@ class WebGLTextureUtils {
 
 	}
 
-	async copyTextureToBuffer( texture, x, y, width, height ) {
+	async copyTextureToBuffer( texture, x, y, width, height, faceIndex ) {
 
 		const { backend, gl } = this;
 
@@ -814,10 +868,13 @@ class WebGLTextureUtils {
 		const fb = gl.createFramebuffer();
 
 		gl.bindFramebuffer( gl.READ_FRAMEBUFFER, fb );
-		gl.framebufferTexture2D( gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureGPU, 0 );
+
+		const target = texture.isCubeTexture ? gl.TEXTURE_CUBE_MAP_POSITIVE_X + faceIndex : gl.TEXTURE_2D;
+
+		gl.framebufferTexture2D( gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, target, textureGPU, 0 );
 
 		const typedArrayType = this._getTypedArrayType( glType );
-		const bytesPerTexel = this._getBytesPerTexel( glFormat );
+		const bytesPerTexel = this._getBytesPerTexel( glType, glFormat );
 
 		const elementCount = width * height;
 		const byteLength = elementCount * bytesPerTexel;
@@ -855,19 +912,33 @@ class WebGLTextureUtils {
 		if ( glType === gl.UNSIGNED_SHORT ) return Uint16Array;
 		if ( glType === gl.UNSIGNED_INT ) return Uint32Array;
 
+		if ( glType === gl.HALF_FLOAT ) return Uint16Array;
 		if ( glType === gl.FLOAT ) return Float32Array;
 
 		throw new Error( `Unsupported WebGL type: ${glType}` );
 
 	}
 
-	_getBytesPerTexel( glFormat ) {
+	_getBytesPerTexel( glType, glFormat ) {
 
 		const { gl } = this;
 
-		if ( glFormat === gl.RGBA ) return 4;
-		if ( glFormat === gl.RGB ) return 3;
-		if ( glFormat === gl.ALPHA ) return 1;
+		let bytesPerComponent = 0;
+
+		if ( glType === gl.UNSIGNED_BYTE ) bytesPerComponent = 1;
+
+		if ( glType === gl.UNSIGNED_SHORT_4_4_4_4 ||
+			glType === gl.UNSIGNED_SHORT_5_5_5_1 ||
+			glType === gl.UNSIGNED_SHORT_5_6_5 ||
+			glType === gl.UNSIGNED_SHORT ||
+			glType === gl.HALF_FLOAT ) bytesPerComponent = 2;
+
+		if ( glType === gl.UNSIGNED_INT ||
+			glType === gl.FLOAT ) bytesPerComponent = 4;
+
+		if ( glFormat === gl.RGBA ) return bytesPerComponent * 4;
+		if ( glFormat === gl.RGB ) return bytesPerComponent * 3;
+		if ( glFormat === gl.ALPHA ) return bytesPerComponent;
 
 	}
 

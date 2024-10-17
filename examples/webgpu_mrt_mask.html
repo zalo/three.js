@@ -26,7 +26,8 @@
 		<script type="module">
 
 			import * as THREE from 'three';
-			import { color, viewportTopLeft, mrt, output, pass, vec4 } from 'three/tsl';
+			import { color, screenUV, mrt, output, pass, vec4 } from 'three/tsl';
+			import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 
 			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
@@ -45,7 +46,7 @@
 				camera.position.set( 1, 2, 3 );
 
 				scene = new THREE.Scene();
-				scene.backgroundNode = viewportTopLeft.y.mix( color( 0x66bbff ), color( 0x4466ff ) ).mul( .05 );
+				scene.backgroundNode = screenUV.y.mix( color( 0x66bbff ), color( 0x4466ff ) ).mul( .05 );
 				camera.lookAt( 0, 1, 0 );
 
 				clock = new THREE.Clock();
@@ -130,7 +131,7 @@
 
 				postProcessing = new THREE.PostProcessing( renderer );
 				postProcessing.outputColorTransform = false;
-				postProcessing.outputNode = colorPass.add( maskPass.gaussianBlur( 1, 10 ).mul( .3 ) ).renderOutput();
+				postProcessing.outputNode = colorPass.add( gaussianBlur( maskPass, 1, 10 ).mul( .3 ) ).renderOutput();
 
 				// controls
 

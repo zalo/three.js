@@ -1,10 +1,16 @@
 import TempNode from '../core/TempNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { addNodeElement, nodeObject } from '../shadernode/ShaderNode.js';
+import { addMethodChaining, nodeObject } from '../tsl/TSLCore.js';
 
-import { LinearSRGBColorSpace, SRGBColorSpace, NoToneMapping } from '../../constants.js';
+import { NoColorSpace, NoToneMapping } from '../../constants.js';
+import { ColorManagement } from '../../math/ColorManagement.js';
 
 class RenderOutputNode extends TempNode {
+
+	static get type() {
+
+		return 'RenderOutputNode';
+
+	}
 
 	constructor( colorNode, toneMapping, outputColorSpace ) {
 
@@ -25,7 +31,7 @@ class RenderOutputNode extends TempNode {
 		// tone mapping
 
 		const toneMapping = ( this.toneMapping !== null ? this.toneMapping : context.toneMapping ) || NoToneMapping;
-		const outputColorSpace = ( this.outputColorSpace !== null ? this.outputColorSpace : context.outputColorSpace ) || LinearSRGBColorSpace;
+		const outputColorSpace = ( this.outputColorSpace !== null ? this.outputColorSpace : context.outputColorSpace ) || NoColorSpace;
 
 		if ( toneMapping !== NoToneMapping ) {
 
@@ -33,11 +39,11 @@ class RenderOutputNode extends TempNode {
 
 		}
 
-		// output color space
+		// working to output color space
 
-		if ( outputColorSpace === SRGBColorSpace ) {
+		if ( outputColorSpace !== NoColorSpace && outputColorSpace !== ColorManagement.workingColorSpace ) {
 
-			outputNode = outputNode.linearToColorSpace( outputColorSpace );
+			outputNode = outputNode.workingToColorSpace( outputColorSpace );
 
 		}
 
@@ -51,6 +57,4 @@ export default RenderOutputNode;
 
 export const renderOutput = ( color, toneMapping = null, outputColorSpace = null ) => nodeObject( new RenderOutputNode( nodeObject( color ), toneMapping, outputColorSpace ) );
 
-addNodeElement( 'renderOutput', renderOutput );
-
-addNodeClass( 'RenderOutputNode', RenderOutputNode );
+addMethodChaining( 'renderOutput', renderOutput );

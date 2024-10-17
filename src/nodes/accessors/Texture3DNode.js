@@ -1,12 +1,11 @@
 import TextureNode from './TextureNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { nodeProxy, vec3, Fn, If } from '../shadernode/ShaderNode.js';
+import { nodeProxy, vec3, Fn, If } from '../tsl/TSLBase.js';
 
 const normal = Fn( ( { texture, uv } ) => {
 
 	const epsilon = 0.0001;
 
-	const ret = vec3().temp();
+	const ret = vec3().toVar();
 
 	If( uv.x.lessThan( epsilon ), () => {
 
@@ -50,6 +49,12 @@ const normal = Fn( ( { texture, uv } ) => {
 
 
 class Texture3DNode extends TextureNode {
+
+	static get type() {
+
+		return 'Texture3DNode';
+
+	}
 
 	constructor( value, uvNode = null, levelNode = null ) {
 
@@ -95,6 +100,4 @@ class Texture3DNode extends TextureNode {
 
 export default Texture3DNode;
 
-export const texture3D = nodeProxy( Texture3DNode );
-
-addNodeClass( 'Texture3DNode', Texture3DNode );
+export const texture3D = /*@__PURE__*/ nodeProxy( Texture3DNode );

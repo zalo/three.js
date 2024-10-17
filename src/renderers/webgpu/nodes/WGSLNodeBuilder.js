@@ -57,19 +57,8 @@ const wgslTypeLib = {
 	bvec4: 'vec4<bool>',
 
 	mat2: 'mat2x2<f32>',
-	imat2: 'mat2x2<i32>',
-	umat2: 'mat2x2<u32>',
-	bmat2: 'mat2x2<bool>',
-
 	mat3: 'mat3x3<f32>',
-	imat3: 'mat3x3<i32>',
-	umat3: 'mat3x3<u32>',
-	bmat3: 'mat3x3<bool>',
-
-	mat4: 'mat4x4<f32>',
-	imat4: 'mat4x4<i32>',
-	umat4: 'mat4x4<u32>',
-	bmat4: 'mat4x4<bool>'
+	mat4: 'mat4x4<f32>'
 };
 
 const wgslPolyfill = {
@@ -94,7 +83,8 @@ fn tsl_repeatWrapping( uv : vec2<f32>, dimension : vec2<u32> ) -> vec2<u32> {
 	biquadraticTexture: new CodeNode( `
 fn tsl_biquadraticTexture( map : texture_2d<f32>, coord : vec2f, level : i32 ) -> vec4f {
 
-	let res = vec2f( textureDimensions( map, level ) );
+	let iRes = vec2i( textureDimensions( map, level ) );
+	let res = vec2f( iRes );
 
 	let uvScaled = coord * res;
 	let uvWrapping = ( ( uvScaled % res ) + res ) % res;
@@ -105,10 +95,10 @@ fn tsl_biquadraticTexture( map : texture_2d<f32>, coord : vec2f, level : i32 ) -
 	let iuv = floor( uv );
 	let f = fract( uv );
 
-	let rg1 = textureLoad( map, vec2i( iuv + vec2( 0.5, 0.5 ) ), level );
-	let rg2 = textureLoad( map, vec2i( iuv + vec2( 1.5, 0.5 ) ), level );
-	let rg3 = textureLoad( map, vec2i( iuv + vec2( 0.5, 1.5 ) ), level );
-	let rg4 = textureLoad( map, vec2i( iuv + vec2( 1.5, 1.5 ) ), level );
+	let rg1 = textureLoad( map, vec2i( iuv + vec2( 0.5, 0.5 ) ) % iRes, level );
+	let rg2 = textureLoad( map, vec2i( iuv + vec2( 1.5, 0.5 ) ) % iRes, level );
+	let rg3 = textureLoad( map, vec2i( iuv + vec2( 0.5, 1.5 ) ) % iRes, level );
+	let rg4 = textureLoad( map, vec2i( iuv + vec2( 1.5, 1.5 ) ) % iRes, level );
 
 	return mix( mix( rg1, rg2, f.x ), mix( rg3, rg4, f.x ), f.y );
 
@@ -149,6 +139,16 @@ if ( /Windows/g.test( navigator.userAgent ) ) {
 
 //
 
+let diagnostics = '';
+
+if ( /Firefox|Deno/g.test( navigator.userAgent ) !== true ) {
+
+	diagnostics += 'diagnostic( off, derivative_uniformity );\n';
+
+}
+
+//
+
 class WGSLNodeBuilder extends NodeBuilder {
 
 	constructor( object, renderer ) {
@@ -161,9 +161,11 @@ class WGSLNodeBuilder extends NodeBuilder {
 
 		this.directives = {};
 
+		this.scopedArrays = new Map();
+
 	}
 
-	needsColorSpaceToLinear( texture ) {
+	needsToWorkingColorSpace( texture ) {
 
 		return texture.isVideoTexture === true && texture.colorSpace !== NoColorSpace;
 
@@ -373,7 +375,7 @@ class WGSLNodeBuilder extends NodeBuilder {
 
 				return name;
 
-			} else if ( type === 'buffer' || type === 'storageBuffer' ) {
+			} else if ( type === 'buffer' || type === 'storageBuffer' || type === 'indirectStorageBuffer' ) {
 
 				return `NodeBuffer_${ node.id }.${name}`;
 
@@ -512,9 +514,10 @@ class WGSLNodeBuilder extends NodeBuilder {
 
 				}
 
-			} else if ( type === 'buffer' || type === 'storageBuffer' ) {
+			} else if ( type === 'buffer' || type === 'storageBuffer' || type === 'indirectStorageBuffer' ) {
 
-				const bufferClass = type === 'storageBuffer' ? NodeStorageBuffer : NodeUniformBuffer;
+				const bufferClass = type === 'buffer' ? NodeUniformBuffer : NodeStorageBuffer;
+
 				const buffer = new bufferClass( node, group );
 				buffer.setVisibility( gpuShaderStageLib[ shaderStage ] );
 
@@ -568,6 +571,12 @@ class WGSLNodeBuilder extends NodeBuilder {
 		}
 
 		return property;
+
+	}
+
+	hasBuiltin( name, shaderStage = this.shaderStage ) {
+
+		return ( this.builtins[ shaderStage ] !== undefined && this.builtins[ shaderStage ].has( name ) );
 
 	}
 
@@ -629,6 +638,12 @@ ${ flowData.code }
 
 	}
 
+	getInvocationLocalIndex() {
+
+		return this.getBuiltin( 'local_invocation_index', 'invocationLocalIndex', 'u32', 'attribute' );
+
+	}
+
 	getSubgroupSize() {
 
 		this.enableSubGroups();
@@ -637,11 +652,19 @@ ${ flowData.code }
 
 	}
 
+	getInvocationSubgroupIndex() {
+
+		this.enableSubGroups();
+
+		return this.getBuiltin( 'subgroup_invocation_id', 'invocationSubgroupIndex', 'u32', 'attribute' );
+
+	}
+
 	getSubgroupIndex() {
 
 		this.enableSubGroups();
 
-		return this.getBuiltin( 'subgroup_invocation_id', 'subgroupIndex', 'u32', 'attribute' );
+		return this.getBuiltin( 'subgroup_id', 'subgroupIndex', 'u32', 'attribute' );
 
 	}
 
@@ -659,7 +682,7 @@ ${ flowData.code }
 
 	getFragCoord() {
 
-		return this.getBuiltin( 'position', 'fragCoord', 'vec4<f32>' ) + '.xyz';
+		return this.getBuiltin( 'position', 'fragCoord', 'vec4<f32>' ) + '.xy';
 
 	}
 
@@ -750,6 +773,45 @@ ${ flowData.code }
 
 	}
 
+	getScopedArray( name, scope, bufferType, bufferCount ) {
+
+		if ( this.scopedArrays.has( name ) === false ) {
+
+			this.scopedArrays.set( name, {
+				name,
+				scope,
+				bufferType,
+				bufferCount
+			} );
+
+		}
+
+		return name;
+
+	}
+
+	getScopedArrays( shaderStage ) {
+
+		if ( shaderStage !== 'compute' ) {
+
+			return;
+
+		}
+
+		const snippets = [];
+
+		for ( const { name, scope, bufferType, bufferCount } of this.scopedArrays.values() ) {
+
+			const type = this.getType( bufferType );
+
+			snippets.push( `var<${scope}> ${name}: array< ${type}, ${bufferCount} >;` );
+
+		}
+
+		return snippets.join( '\n' );
+
+	}
+
 	getAttributes( shaderStage ) {
 
 		const snippets = [];
@@ -760,6 +822,13 @@ ${ flowData.code }
 			this.getBuiltin( 'workgroup_id', 'workgroupId', 'vec3<u32>', 'attribute' );
 			this.getBuiltin( 'local_invocation_id', 'localId', 'vec3<u32>', 'attribute' );
 			this.getBuiltin( 'num_workgroups', 'numWorkgroups', 'vec3<u32>', 'attribute' );
+
+			if ( this.renderer.hasFeature( 'subgroups' ) ) {
+
+				this.enableDirective( 'subgroups', shaderStage );
+				this.getBuiltin( 'subgroup_size', 'subgroupSize', 'u32', 'attribute' );
+
+			}
 
 		}
 
@@ -920,8 +989,8 @@ ${ flowData.code }
 
 		for ( const uniform of uniforms ) {
 
-			const groundName = uniform.groupNode.name;
-			const uniformIndexes = this.bindingsIndexes[ groundName ];
+			const groupName = uniform.groupNode.name;
+			const uniformIndexes = this.bindingsIndexes[ groupName ];
 
 			if ( uniform.type === 'texture' || uniform.type === 'cubeTexture' || uniform.type === 'storageTexture' || uniform.type === 'texture3D' ) {
 
@@ -955,7 +1024,7 @@ ${ flowData.code }
 
 					textureType = 'texture_cube<f32>';
 
-				} else if ( texture.isDataArrayTexture === true ) {
+				} else if ( texture.isDataArrayTexture === true || texture.isCompressedArrayTexture === true ) {
 
 					textureType = 'texture_2d_array<f32>';
 
@@ -988,14 +1057,15 @@ ${ flowData.code }
 
 				bindingSnippets.push( `@binding( ${ uniformIndexes.binding ++ } ) @group( ${ uniformIndexes.group } ) var ${ uniform.name } : ${ textureType };` );
 
-			} else if ( uniform.type === 'buffer' || uniform.type === 'storageBuffer' ) {
+			} else if ( uniform.type === 'buffer' || uniform.type === 'storageBuffer' || uniform.type === 'indirectStorageBuffer' ) {
 
 				const bufferNode = uniform.node;
 				const bufferType = this.getType( bufferNode.bufferType );
 				const bufferCount = bufferNode.bufferCount;
 
-				const bufferCountSnippet = bufferCount > 0 ? ', ' + bufferCount : '';
-				const bufferSnippet = `\t${ uniform.name } : array< ${ bufferType }${ bufferCountSnippet } >\n`;
+				const bufferCountSnippet = bufferCount > 0 && uniform.type === 'buffer' ? ', ' + bufferCount : '';
+				const bufferTypeSnippet = bufferNode.isAtomic ? `atomic<${bufferType}>` : `${bufferType}`;
+				const bufferSnippet = `\t${ uniform.name } : array< ${ bufferTypeSnippet }${ bufferCountSnippet } >\n`;
 				const bufferAccessMode = bufferNode.isStorageBufferNode ? `storage, ${ this.getStorageAccess( bufferNode ) }` : 'uniform';
 
 				bufferSnippets.push( this._getWGSLStructBinding( 'NodeBuffer_' + bufferNode.id, bufferSnippet, bufferAccessMode, uniformIndexes.binding ++, uniformIndexes.group ) );
@@ -1037,6 +1107,8 @@ ${ flowData.code }
 
 		const shadersData = this.material !== null ? { fragment: {}, vertex: {} } : { compute: {} };
 
+		this.sortBindingGroups();
+
 		for ( const shaderStage in shadersData ) {
 
 			const stageData = shadersData[ shaderStage ];
@@ -1047,6 +1119,7 @@ ${ flowData.code }
 			stageData.vars = this.getVars( shaderStage );
 			stageData.codes = this.getCodes( shaderStage );
 			stageData.directives = this.getDirectives( shaderStage );
+			stageData.scopedArrays = this.getScopedArrays( shaderStage );
 
 			//
 
@@ -1238,8 +1311,8 @@ fn main( ${shaderData.attributes} ) -> VaryingsStruct {
 	_getWGSLFragmentCode( shaderData ) {
 
 		return `${ this.getSignature() }
-
-diagnostic( off, derivative_uniformity );
+// global
+${ diagnostics }
 
 // uniforms
 ${shaderData.uniforms}
@@ -1272,6 +1345,9 @@ ${shaderData.directives}
 
 // system
 var<private> instanceIndex : u32;
+
+// locals
+${shaderData.scopedArrays}
 
 // uniforms
 ${shaderData.uniforms}

@@ -1,8 +1,7 @@
 import TextureNode from '../accessors/TextureNode.js';
 import { NodeUpdateType } from '../core/constants.js';
-import { addNodeClass } from '../core/Node.js';
-import { addNodeElement, nodeProxy } from '../shadernode/ShaderNode.js';
-import { viewportTopLeft } from './ViewportNode.js';
+import { nodeProxy } from '../tsl/TSLBase.js';
+import { screenUV } from './ScreenNode.js';
 
 import { Vector2 } from '../../math/Vector2.js';
 import { FramebufferTexture } from '../../textures/FramebufferTexture.js';
@@ -12,7 +11,13 @@ const _size = /*@__PURE__*/ new Vector2();
 
 class ViewportTextureNode extends TextureNode {
 
-	constructor( uvNode = viewportTopLeft, levelNode = null, framebufferTexture = null ) {
+	static get type() {
+
+		return 'ViewportTextureNode';
+
+	}
+
+	constructor( uvNode = screenUV, levelNode = null, framebufferTexture = null ) {
 
 		if ( framebufferTexture === null ) {
 
@@ -72,10 +77,5 @@ class ViewportTextureNode extends TextureNode {
 
 export default ViewportTextureNode;
 
-export const viewportTexture = nodeProxy( ViewportTextureNode );
-export const viewportMipTexture = nodeProxy( ViewportTextureNode, null, null, { generateMipmaps: true } );
-
-addNodeElement( 'viewportTexture', viewportTexture );
-addNodeElement( 'viewportMipTexture', viewportMipTexture );
-
-addNodeClass( 'ViewportTextureNode', ViewportTextureNode );
+export const viewportTexture = /*@__PURE__*/ nodeProxy( ViewportTextureNode );
+export const viewportMipTexture = /*@__PURE__*/ nodeProxy( ViewportTextureNode, null, null, { generateMipmaps: true } );

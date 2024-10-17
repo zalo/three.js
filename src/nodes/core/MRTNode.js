@@ -1,6 +1,5 @@
-import { addNodeClass } from './Node.js';
 import OutputStructNode from './OutputStructNode.js';
-import { nodeProxy, vec4 } from '../shadernode/ShaderNode.js';
+import { nodeProxy, vec4 } from '../tsl/TSLBase.js';
 
 export function getTextureIndex( textures, name ) {
 
@@ -19,6 +18,12 @@ export function getTextureIndex( textures, name ) {
 }
 
 class MRTNode extends OutputStructNode {
+
+	static get type() {
+
+		return 'MRTNode';
+
+	}
 
 	constructor( outputNodes ) {
 
@@ -77,6 +82,4 @@ class MRTNode extends OutputStructNode {
 
 export default MRTNode;
 
-export const mrt = nodeProxy( MRTNode );
-
-addNodeClass( 'MRTNode', MRTNode );
+export const mrt = /*@__PURE__*/ nodeProxy( MRTNode );

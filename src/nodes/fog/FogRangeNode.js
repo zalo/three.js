@@ -1,9 +1,14 @@
 import FogNode from './FogNode.js';
 import { smoothstep } from '../math/MathNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { addNodeElement, nodeProxy } from '../shadernode/ShaderNode.js';
+import { nodeProxy } from '../tsl/TSLBase.js';
 
 class FogRangeNode extends FogNode {
+
+	static get type() {
+
+		return 'FogRangeNode';
+
+	}
 
 	constructor( colorNode, nearNode, farNode ) {
 
@@ -28,8 +33,4 @@ class FogRangeNode extends FogNode {
 
 export default FogRangeNode;
 
-export const rangeFog = nodeProxy( FogRangeNode );
-
-addNodeElement( 'rangeFog', rangeFog );
-
-addNodeClass( 'FogRangeNode', FogRangeNode );
+export const rangeFog = /*@__PURE__*/ nodeProxy( FogRangeNode );

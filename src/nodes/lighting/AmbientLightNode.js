@@ -1,10 +1,12 @@
 import AnalyticLightNode from './AnalyticLightNode.js';
-import { addLightNode } from './LightsNode.js';
-import { addNodeClass } from '../core/Node.js';
-
-import { AmbientLight } from '../../lights/AmbientLight.js';
 
 class AmbientLightNode extends AnalyticLightNode {
+
+	static get type() {
+
+		return 'AmbientLightNode';
+
+	}
 
 	constructor( light = null ) {
 
@@ -21,7 +23,3 @@ class AmbientLightNode extends AnalyticLightNode {
 }
 
 export default AmbientLightNode;
-
-addNodeClass( 'AmbientLightNode', AmbientLightNode );
-
-addLightNode( AmbientLight, AmbientLightNode );

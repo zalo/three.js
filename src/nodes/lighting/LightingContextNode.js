@@ -1,8 +1,13 @@
 import ContextNode from '../core/ContextNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { addNodeElement, nodeProxy, float, vec3 } from '../shadernode/ShaderNode.js';
+import { nodeProxy, float, vec3 } from '../tsl/TSLBase.js';
 
 class LightingContextNode extends ContextNode {
+
+	static get type() {
+
+		return 'LightingContextNode';
+
+	}
 
 	constructor( node, lightingModel = null, backdropNode = null, backdropAlphaNode = null ) {
 
@@ -20,10 +25,10 @@ class LightingContextNode extends ContextNode {
 
 		const { backdropNode, backdropAlphaNode } = this;
 
-		const directDiffuse = vec3().temp( 'directDiffuse' ),
-			directSpecular = vec3().temp( 'directSpecular' ),
-			indirectDiffuse = vec3().temp( 'indirectDiffuse' ),
-			indirectSpecular = vec3().temp( 'indirectSpecular' );
+		const directDiffuse = vec3().toVar( 'directDiffuse' ),
+			directSpecular = vec3().toVar( 'directSpecular' ),
+			indirectDiffuse = vec3().toVar( 'indirectDiffuse' ),
+			indirectSpecular = vec3().toVar( 'indirectSpecular' );
 
 		const reflectedLight = {
 			directDiffuse,
@@ -33,10 +38,10 @@ class LightingContextNode extends ContextNode {
 		};
 
 		const context = {
-			radiance: vec3().temp( 'radiance' ),
-			irradiance: vec3().temp( 'irradiance' ),
-			iblIrradiance: vec3().temp( 'iblIrradiance' ),
-			ambientOcclusion: float( 1 ).temp( 'ambientOcclusion' ),
+			radiance: vec3().toVar( 'radiance' ),
+			irradiance: vec3().toVar( 'irradiance' ),
+			iblIrradiance: vec3().toVar( 'iblIrradiance' ),
+			ambientOcclusion: float( 1 ).toVar( 'ambientOcclusion' ),
 			reflectedLight,
 			backdrop: backdropNode,
 			backdropAlpha: backdropAlphaNode
@@ -59,8 +64,4 @@ class LightingContextNode extends ContextNode {
 
 export default LightingContextNode;
 
-export const lightingContext = nodeProxy( LightingContextNode );
-
-addNodeElement( 'lightingContext', lightingContext );
-
-addNodeClass( 'LightingContextNode', LightingContextNode );
+export const lightingContext = /*@__PURE__*/ nodeProxy( LightingContextNode );

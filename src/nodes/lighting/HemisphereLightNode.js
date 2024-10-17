@@ -1,24 +1,28 @@
 import AnalyticLightNode from './AnalyticLightNode.js';
-import { addLightNode } from './LightsNode.js';
 import { uniform } from '../core/UniformNode.js';
 import { mix } from '../math/MathNode.js';
-import { normalView } from '../accessors/NormalNode.js';
-import { objectPosition } from '../accessors/Object3DNode.js';
-import { addNodeClass } from '../core/Node.js';
+import { normalView } from '../accessors/Normal.js';
+import { lightPosition } from '../accessors/Lights.js';
+import { renderGroup } from '../core/UniformGroupNode.js';
 
 import { Color } from '../../math/Color.js';
-import { HemisphereLight } from '../../lights/HemisphereLight.js';
 
 class HemisphereLightNode extends AnalyticLightNode {
+
+	static get type() {
+
+		return 'HemisphereLightNode';
+
+	}
 
 	constructor( light = null ) {
 
 		super( light );
 
-		this.lightPositionNode = objectPosition( light );
+		this.lightPositionNode = lightPosition( light );
 		this.lightDirectionNode = this.lightPositionNode.normalize();
 
-		this.groundColorNode = uniform( new Color() );
+		this.groundColorNode = uniform( new Color() ).setGroup( renderGroup );
 
 	}
 
@@ -50,7 +54,3 @@ class HemisphereLightNode extends AnalyticLightNode {
 }
 
 export default HemisphereLightNode;
-
-addNodeClass( 'HemisphereLightNode', HemisphereLightNode );
-
-addLightNode( HemisphereLight, HemisphereLightNode );

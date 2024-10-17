@@ -1,9 +1,14 @@
-import { addNodeClass } from '../core/Node.js';
 import TempNode from '../core/TempNode.js';
-import { addNodeElement, nodeProxy } from '../shadernode/ShaderNode.js';
+import { addMethodChaining, nodeProxy } from '../tsl/TSLCore.js';
 import { vectorComponents } from '../core/constants.js';
 
 class AssignNode extends TempNode {
+
+	static get type() {
+
+		return 'AssignNode';
+
+	}
 
 	constructor( targetNode, sourceNode ) {
 
@@ -75,7 +80,7 @@ class AssignNode extends TempNode {
 			const sourceVar = builder.getVarFromNode( this, null, targetType );
 			const sourceProperty = builder.getPropertyName( sourceVar );
 
-			builder.addLineFlowCode( `${ sourceProperty } = ${ source }` );
+			builder.addLineFlowCode( `${ sourceProperty } = ${ source }`, this );
 
 			const targetRoot = targetNode.node.context( { assign: true } ).build( builder );
 
@@ -83,7 +88,7 @@ class AssignNode extends TempNode {
 
 				const component = targetNode.components[ i ];
 
-				builder.addLineFlowCode( `${ targetRoot }.${ component } = ${ sourceProperty }[ ${ i } ]` );
+				builder.addLineFlowCode( `${ targetRoot }.${ component } = ${ sourceProperty }[ ${ i } ]`, this );
 
 			}
 
@@ -99,7 +104,7 @@ class AssignNode extends TempNode {
 
 			if ( output === 'void' || sourceType === 'void' ) {
 
-				builder.addLineFlowCode( snippet );
+				builder.addLineFlowCode( snippet, this );
 
 				if ( output !== 'void' ) {
 
@@ -121,8 +126,6 @@ class AssignNode extends TempNode {
 
 export default AssignNode;
 
-export const assign = nodeProxy( AssignNode );
+export const assign = /*@__PURE__*/ nodeProxy( AssignNode );
 
-addNodeClass( 'AssignNode', AssignNode );
-
-addNodeElement( 'assign', assign );
+addMethodChaining( 'assign', assign );

@@ -1,8 +1,13 @@
 import UniformNode from '../core/UniformNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { nodeObject } from '../shadernode/ShaderNode.js';
+import { nodeObject } from '../tsl/TSLBase.js';
 
 class BufferNode extends UniformNode {
+
+	static get type() {
+
+		return 'BufferNode';
+
+	}
 
 	constructor( value, bufferType, bufferCount = 0 ) {
 
@@ -32,5 +37,3 @@ class BufferNode extends UniformNode {
 export default BufferNode;
 
 export const buffer = ( value, type, count ) => nodeObject( new BufferNode( value, type, count ) );
-
-addNodeClass( 'BufferNode', BufferNode );

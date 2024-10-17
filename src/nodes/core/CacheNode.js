@@ -1,7 +1,13 @@
-import Node, { addNodeClass } from './Node.js';
-import { addNodeElement, nodeObject } from '../shadernode/ShaderNode.js';
+import Node from './Node.js';
+import { addMethodChaining, nodeObject } from '../tsl/TSLCore.js';
 
 class CacheNode extends Node {
+
+	static get type() {
+
+		return 'CacheNode';
+
+	}
 
 	constructor( node, parent = true ) {
 
@@ -23,7 +29,7 @@ class CacheNode extends Node {
 	build( builder, ...params ) {
 
 		const previousCache = builder.getCache();
-		const cache = builder.getCacheFromNode( this, parent );
+		const cache = builder.getCacheFromNode( this, this.parent );
 
 		builder.setCache( cache );
 
@@ -41,6 +47,4 @@ export default CacheNode;
 
 export const cache = ( node, ...params ) => nodeObject( new CacheNode( nodeObject( node ), ...params ) );
 
-addNodeElement( 'cache', cache );
-
-addNodeClass( 'CacheNode', CacheNode );
+addMethodChaining( 'cache', cache );

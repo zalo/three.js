@@ -1,8 +1,14 @@
-import Node, { addNodeClass } from '../core/Node.js';
-import { positionView } from '../accessors/PositionNode.js';
-import { addNodeElement, nodeProxy } from '../shadernode/ShaderNode.js';
+import Node from '../core/Node.js';
+import { positionView } from '../accessors/Position.js';
+import { nodeProxy } from '../tsl/TSLBase.js';
 
 class FogNode extends Node {
+
+	static get type() {
+
+		return 'FogNode';
+
+	}
 
 	constructor( colorNode, factorNode ) {
 
@@ -41,8 +47,4 @@ class FogNode extends Node {
 
 export default FogNode;
 
-export const fog = nodeProxy( FogNode );
-
-addNodeElement( 'fog', fog );
-
-addNodeClass( 'FogNode', FogNode );
+export const fog = /*@__PURE__*/ nodeProxy( FogNode );

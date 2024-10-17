@@ -1,11 +1,17 @@
-import Node, { addNodeClass } from '../core/Node.js';
+import Node from '../core/Node.js';
 import { add } from '../math/OperatorNode.js';
-import { normalLocal } from '../accessors/NormalNode.js';
-import { positionLocal } from '../accessors/PositionNode.js';
+import { normalLocal } from '../accessors/Normal.js';
+import { positionLocal } from '../accessors/Position.js';
 import { texture } from '../accessors/TextureNode.js';
-import { addNodeElement, nodeProxy, float, vec3 } from '../shadernode/ShaderNode.js';
+import { nodeProxy, float, vec3 } from '../tsl/TSLBase.js';
 
 class TriplanarTexturesNode extends Node {
+
+	static get type() {
+
+		return 'TriplanarTexturesNode';
+
+	}
 
 	constructor( textureXNode, textureYNode = null, textureZNode = null, scaleNode = float( 1 ), positionNode = positionLocal, normalNode = normalLocal ) {
 
@@ -54,9 +60,5 @@ class TriplanarTexturesNode extends Node {
 
 export default TriplanarTexturesNode;
 
-export const triplanarTextures = nodeProxy( TriplanarTexturesNode );
+export const triplanarTextures = /*@__PURE__*/ nodeProxy( TriplanarTexturesNode );
 export const triplanarTexture = ( ...params ) => triplanarTextures( ...params );
-
-addNodeElement( 'triplanarTexture', triplanarTexture );
-
-addNodeClass( 'TriplanarTexturesNode', TriplanarTexturesNode );

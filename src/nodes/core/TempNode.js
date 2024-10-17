@@ -1,6 +1,12 @@
-import Node, { addNodeClass } from './Node.js';
+import Node from './Node.js';
 
 class TempNode extends Node {
+
+	static get type() {
+
+		return 'TempNode';
+
+	}
 
 	constructor( type ) {
 
@@ -36,7 +42,7 @@ class TempNode extends Node {
 				const nodeVar = builder.getVarFromNode( this, null, type );
 				const propertyName = builder.getPropertyName( nodeVar );
 
-				builder.addLineFlowCode( `${propertyName} = ${snippet}` );
+				builder.addLineFlowCode( `${propertyName} = ${snippet}`, this );
 
 				nodeData.snippet = snippet;
 				nodeData.propertyName = propertyName;
@@ -54,5 +60,3 @@ class TempNode extends Node {
 }
 
 export default TempNode;
-
-addNodeClass( 'TempNode', TempNode );

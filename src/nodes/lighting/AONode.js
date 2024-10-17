@@ -1,7 +1,12 @@
 import LightingNode from './LightingNode.js';
-import { addNodeClass } from '../core/Node.js';
 
 class AONode extends LightingNode {
+
+	static get type() {
+
+		return 'AONode';
+
+	}
 
 	constructor( aoNode = null ) {
 
@@ -20,5 +25,3 @@ class AONode extends LightingNode {
 }
 
 export default AONode;
-
-addNodeClass( 'AONode', AONode );

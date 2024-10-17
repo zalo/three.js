@@ -1,6 +1,7 @@
-import Node, { addNodeClass } from '../core/Node.js';
+import Node from '../core/Node.js';
 import { scriptableValue } from './ScriptableValueNode.js';
-import { addNodeElement, nodeProxy, float } from '../shadernode/ShaderNode.js';
+import { nodeProxy, float } from '../tsl/TSLBase.js';
+import { hashArray, hashString } from '../core/NodeUtils.js';
 
 class Resources extends Map {
 
@@ -60,6 +61,12 @@ class Parameters {
 export const global = new Resources();
 
 class ScriptableNode extends Node {
+
+	static get type() {
+
+		return 'ScriptableNode';
+
+	}
 
 	constructor( codeNode = null, parameters = {} ) {
 
@@ -439,15 +446,15 @@ class ScriptableNode extends Node {
 
 	getCacheKey( force ) {
 
-		const cacheKey = [ this.source, this.getDefaultOutputNode().getCacheKey( force ) ];
+		const values = [ hashString( this.source ), this.getDefaultOutputNode().getCacheKey( force ) ];
 
 		for ( const param in this.parameters ) {
 
-			cacheKey.push( this.parameters[ param ].getCacheKey( force ) );
+			values.push( this.parameters[ param ].getCacheKey( force ) );
 
 		}
 
-		return cacheKey.join( ',' );
+		return hashArray( values );
 
 	}
 
@@ -495,8 +502,4 @@ class ScriptableNode extends Node {
 
 export default ScriptableNode;
 
-export const scriptable = nodeProxy( ScriptableNode );
-
-addNodeElement( 'scriptable', scriptable );
-
-addNodeClass( 'ScriptableNode', ScriptableNode );
+export const scriptable = /*@__PURE__*/ nodeProxy( ScriptableNode );

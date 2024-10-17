@@ -1,8 +1,13 @@
 import LightingNode from './LightingNode.js';
-import { addNodeClass } from '../core/Node.js';
 import { cubeMapNode } from '../utils/CubeMapNode.js';
 
 class BasicEnvironmentNode extends LightingNode {
+
+	static get type() {
+
+		return 'BasicEnvironmentNode';
+
+	}
 
 	constructor( envNode = null ) {
 
@@ -23,5 +28,3 @@ class BasicEnvironmentNode extends LightingNode {
 }
 
 export default BasicEnvironmentNode;
-
-addNodeClass( 'BasicEnvironmentNode', BasicEnvironmentNode );

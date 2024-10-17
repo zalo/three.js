@@ -1,8 +1,13 @@
 import ReferenceNode from './ReferenceNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { nodeObject } from '../shadernode/ShaderNode.js';
+import { nodeObject } from '../tsl/TSLBase.js';
 
 class UserDataNode extends ReferenceNode {
+
+	static get type() {
+
+		return 'UserDataNode';
+
+	}
 
 	constructor( property, inputType, userData = null ) {
 
@@ -12,11 +17,11 @@ class UserDataNode extends ReferenceNode {
 
 	}
 
-	update( frame ) {
+	updateReference( state ) {
 
-		this.reference = this.userData !== null ? this.userData : frame.object.userData;
+		this.reference = this.userData !== null ? this.userData : state.object.userData;
 
-		super.update( frame );
+		return this.reference;
 
 	}
 
@@ -25,5 +30,3 @@ class UserDataNode extends ReferenceNode {
 export default UserDataNode;
 
 export const userData = ( name, inputType, userData ) => nodeObject( new UserDataNode( name, inputType, userData ) );
-
-addNodeClass( 'UserDataNode', UserDataNode );

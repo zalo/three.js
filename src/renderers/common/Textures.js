@@ -33,9 +33,11 @@ class Textures extends DataMap {
 		const mipHeight = size.height >> activeMipmapLevel;
 
 		let depthTexture = renderTarget.depthTexture || depthTextureMips[ activeMipmapLevel ];
+		const useDepthTexture = renderTarget.depthBuffer === true || renderTarget.stencilBuffer === true;
+
 		let textureNeedsUpdate = false;
 
-		if ( depthTexture === undefined ) {
+		if ( depthTexture === undefined && useDepthTexture ) {
 
 			depthTexture = new DepthTexture();
 			depthTexture.format = renderTarget.stencilBuffer ? DepthStencilFormat : DepthFormat;
@@ -50,17 +52,21 @@ class Textures extends DataMap {
 		if ( renderTargetData.width !== size.width || size.height !== renderTargetData.height ) {
 
 			textureNeedsUpdate = true;
-			depthTexture.needsUpdate = true;
 
-			depthTexture.image.width = mipWidth;
-			depthTexture.image.height = mipHeight;
+			if ( depthTexture ) {
+
+				depthTexture.needsUpdate = true;
+				depthTexture.image.width = mipWidth;
+				depthTexture.image.height = mipHeight;
+
+			}
 
 		}
 
 		renderTargetData.width = size.width;
 		renderTargetData.height = size.height;
 		renderTargetData.textures = textures;
-		renderTargetData.depthTexture = depthTexture;
+		renderTargetData.depthTexture = depthTexture || null;
 		renderTargetData.depth = renderTarget.depthBuffer;
 		renderTargetData.stencil = renderTarget.stencilBuffer;
 		renderTargetData.renderTarget = renderTarget;
@@ -68,7 +74,12 @@ class Textures extends DataMap {
 		if ( renderTargetData.sampleCount !== sampleCount ) {
 
 			textureNeedsUpdate = true;
-			depthTexture.needsUpdate = true;
+
+			if ( depthTexture ) {
+
+				depthTexture.needsUpdate = true;
+
+			}
 
 			renderTargetData.sampleCount = sampleCount;
 
@@ -88,7 +99,11 @@ class Textures extends DataMap {
 
 		}
 
-		this.updateTexture( depthTexture, options );
+		if ( depthTexture ) {
+
+			this.updateTexture( depthTexture, options );
+
+		}
 
 		// dispose handler
 
@@ -108,7 +123,11 @@ class Textures extends DataMap {
 
 				}
 
-				this._destroyTexture( depthTexture );
+				if ( depthTexture ) {
+
+					this._destroyTexture( depthTexture );
+
+				}
 
 				this.delete( renderTarget );
 
@@ -173,6 +192,8 @@ class Textures extends DataMap {
 			backend.createSampler( texture );
 			backend.createTexture( texture, options );
 
+			textureData.generation = texture.version;
+
 		} else {
 
 			const needsCreate = textureData.initialized !== true;
@@ -216,6 +237,7 @@ class Textures extends DataMap {
 						backend.createTexture( texture, options );
 
 						textureData.isDefaultTexture = false;
+						textureData.generation = texture.version;
 
 					}
 
@@ -232,6 +254,7 @@ class Textures extends DataMap {
 				backend.createDefaultTexture( texture );
 
 				textureData.isDefaultTexture = true;
+				textureData.generation = texture.version;
 
 			}
 
@@ -242,6 +265,7 @@ class Textures extends DataMap {
 		if ( textureData.initialized !== true ) {
 
 			textureData.initialized = true;
+			textureData.generation = texture.version;
 
 			//
 

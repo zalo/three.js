@@ -6,7 +6,7 @@ import NodeCode from './NodeCode.js';
 import NodeCache from './NodeCache.js';
 import ParameterNode from './ParameterNode.js';
 import FunctionNode from '../code/FunctionNode.js';
-import { createNodeMaterialFromType, default as NodeMaterial } from '../materials/NodeMaterial.js';
+import NodeMaterial from '../../materials/nodes/NodeMaterial.js';
 import { NodeUpdateType, defaultBuildStages, shaderStages } from './constants.js';
 
 import {
@@ -15,7 +15,7 @@ import {
 } from '../../renderers/common/nodes/NodeUniform.js';
 
 import { stack } from './StackNode.js';
-import { getCurrentStack, setCurrentStack } from '../shadernode/ShaderNode.js';
+import { getCurrentStack, setCurrentStack } from '../tsl/TSLBase.js';
 
 import CubeRenderTarget from '../../renderers/common/CubeRenderTarget.js';
 import ChainMap from '../../renderers/common/ChainMap.js';
@@ -55,9 +55,17 @@ const typeFromArray = new Map( [
 
 const toFloat = ( value ) => {
 
-	value = Number( value );
+	if ( /e/g.test( value ) ) {
 
-	return value + ( value % 1 ? '' : '.0' );
+		return String( value ).replace( /\+/g, '' );
+
+	} else {
+
+		value = Number( value );
+
+		return value + ( value % 1 ? '' : '.0' );
+
+	}
 
 };
 
@@ -74,10 +82,13 @@ class NodeBuilder {
 		this.camera = null;
 
 		this.nodes = [];
+		this.sequentialNodes = [];
 		this.updateNodes = [];
 		this.updateBeforeNodes = [];
 		this.updateAfterNodes = [];
 		this.hashNodes = {};
+
+		this.monitor = null;
 
 		this.lightsNode = null;
 		this.environmentNode = null;
@@ -106,8 +117,6 @@ class NodeBuilder {
 		this.stack = stack();
 		this.stacks = [];
 		this.tab = '\t';
-
-		this.instanceBindGroups = true;
 
 		this.currentFunctionNode = null;
 
@@ -277,6 +286,23 @@ class NodeBuilder {
 
 	}
 
+	sortBindingGroups() {
+
+		const bindingsGroups = this.getBindings();
+
+		bindingsGroups.sort( ( a, b ) => ( a.bindings[ 0 ].groupNode.order - b.bindings[ 0 ].groupNode.order ) );
+
+		for ( let i = 0; i < bindingsGroups.length; i ++ ) {
+
+			const bindingGroup = bindingsGroups[ i ];
+			this.bindingsIndexes[ bindingGroup.name ].group = i;
+
+			bindingGroup.index = i;
+
+		}
+
+	}
+
 	setHashNode( node, hash ) {
 
 		this.hashNodes[ hash ] = node;
@@ -295,13 +321,21 @@ class NodeBuilder {
 
 	}
 
+	addSequentialNode( node ) {
+
+		if ( this.sequentialNodes.includes( node ) === false ) {
+
+			this.sequentialNodes.push( node );
+
+		}
+
+	}
+
 	buildUpdateNodes() {
 
 		for ( const node of this.nodes ) {
 
 			const updateType = node.getUpdateType();
-			const updateBeforeType = node.getUpdateBeforeType();
-			const updateAfterType = node.getUpdateAfterType();
 
 			if ( updateType !== NodeUpdateType.NONE ) {
 
@@ -309,15 +343,22 @@ class NodeBuilder {
 
 			}
 
+		}
+
+		for ( const node of this.sequentialNodes ) {
+
+			const updateBeforeType = node.getUpdateBeforeType();
+			const updateAfterType = node.getUpdateAfterType();
+
 			if ( updateBeforeType !== NodeUpdateType.NONE ) {
 
-				this.updateBeforeNodes.push( node );
+				this.updateBeforeNodes.push( node.getSelf() );
 
 			}
 
 			if ( updateAfterType !== NodeUpdateType.NONE ) {
 
-				this.updateAfterNodes.push( node );
+				this.updateAfterNodes.push( node.getSelf() );
 
 			}
 
@@ -469,6 +510,15 @@ class NodeBuilder {
 
 	}
 
+	increaseUsage( node ) {
+
+		const nodeData = this.getDataFromNode( node );
+		nodeData.usageCount = nodeData.usageCount === undefined ? 1 : nodeData.usageCount + 1;
+
+		return nodeData.usageCount;
+
+	}
+
 	generateTexture( /* texture, textureProperty, uvSnippet */ ) {
 
 		console.warn( 'Abstract function.' );
@@ -596,7 +646,7 @@ class NodeBuilder {
 
 	}
 
-	needsColorSpaceToLinear( /*texture*/ ) {
+	needsToWorkingColorSpace( /*texture*/ ) {
 
 		return false;
 
@@ -915,9 +965,58 @@ class NodeBuilder {
 
 	}
 
-	addLineFlowCode( code ) {
+	addFlowCodeHierarchy( node, nodeBlock ) {
+
+		const { flowCodes, flowCodeBlock } = this.getDataFromNode( node );
+
+		let needsFlowCode = true;
+		let nodeBlockHierarchy = nodeBlock;
+
+		while ( nodeBlockHierarchy ) {
+
+			if ( flowCodeBlock.get( nodeBlockHierarchy ) === true ) {
+
+				needsFlowCode = false;
+				break;
+
+			}
+
+			nodeBlockHierarchy = this.getDataFromNode( nodeBlockHierarchy ).parentNodeBlock;
+
+		}
+
+		if ( needsFlowCode ) {
+
+			for ( const flowCode of flowCodes ) {
+
+				this.addLineFlowCode( flowCode );
+
+			}
+
+		}
+
+	}
+
+	addLineFlowCodeBlock( node, code, nodeBlock ) {
+
+		const nodeData = this.getDataFromNode( node );
+		const flowCodes = nodeData.flowCodes || ( nodeData.flowCodes = [] );
+		const codeBlock = nodeData.flowCodeBlock || ( nodeData.flowCodeBlock = new WeakMap() );
+
+		flowCodes.push( code );
+		codeBlock.set( nodeBlock, true );
+
+	}
+
+	addLineFlowCode( code, node = null ) {
 
 		if ( code === '' ) return this;
+
+		if ( node !== null && this.context.nodeBlock ) {
+
+			this.addLineFlowCodeBlock( node, code, this.context.nodeBlock );
+
+		}
 
 		code = this.tab + code;
 
@@ -995,27 +1094,24 @@ class NodeBuilder {
 
 		const layout = shaderNode.layout;
 
-		let inputs;
+		const inputs = {
+			[ Symbol.iterator ]() {
 
-		if ( shaderNode.isArrayInput ) {
-
-			inputs = [];
-
-			for ( const input of layout.inputs ) {
-
-				inputs.push( new ParameterNode( input.type, input.name ) );
-
-			}
-
-		} else {
-
-			inputs = {};
-
-			for ( const input of layout.inputs ) {
-
-				inputs[ input.name ] = new ParameterNode( input.type, input.name );
+				let index = 0;
+				const values = Object.values( this );
+				return {
+					next: () => ( {
+						value: values[ index ],
+						done: index ++ >= values.length
+					} )
+				};
 
 			}
+		};
+
+		for ( const input of layout.inputs ) {
+
+			inputs[ input.name ] = new ParameterNode( input.type, input.name );
 
 		}
 
@@ -1224,12 +1320,21 @@ class NodeBuilder {
 
 	build() {
 
-		const { object, material } = this;
-
+		const { object, material, renderer } = this;
 
 		if ( material !== null ) {
 
-			NodeMaterial.fromMaterial( material ).build( this );
+			let nodeMaterial = renderer.library.fromMaterial( material );
+
+			if ( nodeMaterial === null ) {
+
+				console.error( `NodeMaterial: Material "${ material.type }" is not compatible.` );
+
+				nodeMaterial = new NodeMaterial();
+
+			}
+
+			nodeMaterial.build( this );
 
 		} else {
 
@@ -1301,11 +1406,9 @@ class NodeBuilder {
 
 	}
 
-	createNodeMaterial( type = 'NodeMaterial' ) {
+	createNodeMaterial( type = 'NodeMaterial' ) { // @deprecated, r168
 
-		// TODO: Move Materials.js to outside of the Nodes.js in order to remove this function and improve tree-shaking support
-
-		return createNodeMaterialFromType( type );
+		throw new Error( `THREE.NodeBuilder: createNodeMaterial() was deprecated. Use new ${ type }() instead.` );
 
 	}
 

@@ -21,6 +21,7 @@
 
 			import * as THREE from 'three';
 			import { pass } from 'three/tsl';
+			import { afterImage } from 'three/addons/tsl/display/AfterImageNode.js';
 
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
@@ -63,7 +64,7 @@
 				const scenePassColor = scenePass.getTextureNode();
 
 				combinedPass = scenePassColor;
-				combinedPass = combinedPass.afterImage( params.damp );
+				combinedPass = afterImage( combinedPass, params.damp );
 
 				postProcessing.outputNode = combinedPass;
 

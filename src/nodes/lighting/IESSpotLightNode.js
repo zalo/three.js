@@ -1,12 +1,14 @@
 import SpotLightNode from './SpotLightNode.js';
-import { addLightNode } from './LightsNode.js';
 import { texture } from '../accessors/TextureNode.js';
-import { vec2 } from '../shadernode/ShaderNode.js';
-import { addNodeClass } from '../core/Node.js';
-
-import IESSpotLight from '../../lights/webgpu/IESSpotLight.js';
+import { vec2 } from '../tsl/TSLBase.js';
 
 class IESSpotLightNode extends SpotLightNode {
+
+	static get type() {
+
+		return 'IESSpotLightNode';
+
+	}
 
 	getSpotAttenuation( angleCosine ) {
 
@@ -33,7 +35,3 @@ class IESSpotLightNode extends SpotLightNode {
 }
 
 export default IESSpotLightNode;
-
-addNodeClass( 'IESSpotLightNode', IESSpotLightNode );
-
-addLightNode( IESSpotLight, IESSpotLightNode );

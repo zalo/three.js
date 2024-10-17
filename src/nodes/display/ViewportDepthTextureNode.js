@@ -1,7 +1,6 @@
 import ViewportTextureNode from './ViewportTextureNode.js';
-import { addNodeClass } from '../core/Node.js';
-import { addNodeElement, nodeProxy } from '../shadernode/ShaderNode.js';
-import { viewportTopLeft } from './ViewportNode.js';
+import { nodeProxy } from '../tsl/TSLBase.js';
+import { screenUV } from './ScreenNode.js';
 
 import { DepthTexture } from '../../textures/DepthTexture.js';
 
@@ -9,7 +8,13 @@ let sharedDepthbuffer = null;
 
 class ViewportDepthTextureNode extends ViewportTextureNode {
 
-	constructor( uvNode = viewportTopLeft, levelNode = null ) {
+	static get type() {
+
+		return 'ViewportDepthTextureNode';
+
+	}
+
+	constructor( uvNode = screenUV, levelNode = null ) {
 
 		if ( sharedDepthbuffer === null ) {
 
@@ -25,8 +30,4 @@ class ViewportDepthTextureNode extends ViewportTextureNode {
 
 export default ViewportDepthTextureNode;
 
-export const viewportDepthTexture = nodeProxy( ViewportDepthTextureNode );
-
-addNodeElement( 'viewportDepthTexture', viewportDepthTexture );
-
-addNodeClass( 'ViewportDepthTextureNode', ViewportDepthTextureNode );
+export const viewportDepthTexture = /*@__PURE__*/ nodeProxy( ViewportDepthTextureNode );

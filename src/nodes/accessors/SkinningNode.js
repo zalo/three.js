@@ -1,18 +1,24 @@
-import Node, { addNodeClass } from '../core/Node.js';
+import Node from '../core/Node.js';
 import { NodeUpdateType } from '../core/constants.js';
-import { nodeObject } from '../shadernode/ShaderNode.js';
+import { nodeObject } from '../tsl/TSLBase.js';
 import { attribute } from '../core/AttributeNode.js';
 import { reference, referenceBuffer } from './ReferenceNode.js';
 import { add } from '../math/OperatorNode.js';
-import { normalLocal } from './NormalNode.js';
-import { positionLocal, positionPrevious } from './PositionNode.js';
-import { tangentLocal } from './TangentNode.js';
+import { normalLocal } from './Normal.js';
+import { positionLocal, positionPrevious } from './Position.js';
+import { tangentLocal } from './Tangent.js';
 import { uniform } from '../core/UniformNode.js';
 import { buffer } from './BufferNode.js';
 
 const _frameId = new WeakMap();
 
 class SkinningNode extends Node {
+
+	static get type() {
+
+		return 'SkinningNode';
+
+	}
 
 	constructor( skinnedMesh, useReference = false ) {
 
@@ -183,5 +189,3 @@ export default SkinningNode;
 
 export const skinning = ( skinnedMesh ) => nodeObject( new SkinningNode( skinnedMesh ) );
 export const skinningReference = ( skinnedMesh ) => nodeObject( new SkinningNode( skinnedMesh, true ) );
-
-addNodeClass( 'SkinningNode', SkinningNode );
