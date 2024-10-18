@@ -21,7 +21,7 @@
 
 			import * as THREE from 'three';
 			import { pass, mrt, output, transformedNormalView, texture } from 'three/tsl';
-			import { ao, generateMagicSquareNoise } from 'three/addons/tsl/display/GTAONode.js';
+			import { ao } from 'three/addons/tsl/display/SSILVBNode.js';
 			import { denoise } from 'three/addons/tsl/display/DenoiseNode.js';
 
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -100,12 +100,12 @@
 
 				// ao
 
-				aoPass = ao( scenePassDepth, scenePassNormal, camera );
+				aoPass = ao( scenePassColor, scenePassDepth, scenePassNormal, camera );
 				blendPassAO = aoPass.getTextureNode().mul( scenePassColor );
 
 				// denoise (optional)
 
-				const noiseTexture = texture( generateMagicSquareNoise() );
+				const noiseTexture = texture( generateNoise() );
 				denoisePass = denoise( aoPass.getTextureNode(), scenePassDepth, scenePassNormal, noiseTexture, camera );
 				blendPassDenoise = denoisePass.mul( scenePassColor );
 
