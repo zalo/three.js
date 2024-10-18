@@ -45,7 +45,7 @@ class SSILVBNode extends TempNode {
 
 		this.useCorrectNormals = uniform( true );
 		this.HALF_PI = float( mul( 0.5, PI ) );
-		this.sliceCount = float( 8.0 );
+		this.sliceCount = uniform( 4 );
 		this.gl_FragCoord = vec3( screenCoordinate.x, screenCoordinate.y.oneMinus(), screenCoordinate.z ).toVar();
 
 	}
@@ -169,17 +169,19 @@ class SSILVBNode extends TempNode {
 			depth.greaterThanEqual( 1.0 ).discard();
 			
 			const position = getViewPosition( uvNode, depth, this.cameraProjectionMatrixInverse ).toVar();
+			position.z.negateAssign();
 			const normal = this.normalNode.rgb.normalize().toVar();
+			normal.z.negateAssign();
 			const camera = vec3( normalize( position.negate() ) ).toVar();
 		
-			const sliceRotation = float( PI2.div( float( this.sliceCount.sub( 1.0 ) ) ) ).toVar();
+			const sliceRotation = float( PI2.div( float( this.sliceCount ) ) ).toVar();
 			const sampleScale = float( this.radius.negate().mul( this.cameraProjectionMatrix.element( int( 0 ) ).element( int( 0 ) ) ).div( position.z ) ).toVar();
 			const sampleOffset = float( mul( 0.01, this.radius ) ).toVar();
 			const jitter = float( randf( int( this.gl_FragCoord.x ), int( this.gl_FragCoord.y ) ).sub( 0.5 ) ).toVar();
 
-			Loop( { start: 0.0, end: this.sliceCount.add( 0.5 ), type: 'float', name: 'slice', condition: '<' }, ( { slice } ) => {
+			Loop( { end: this.sliceCount, type: 'int', name: 'slice', condition: '<' }, ( { slice } ) => {
 		
-				const phi = float( sliceRotation.mul( slice.add( jitter ) ).add( PI ) ).toVar();
+				const phi = sliceRotation.mul( float( slice ).add( jitter ) ).toVar();
 				const omega = vec2( cos( phi ), sin( phi ) ).toVar();
 				const direction = vec3( omega.x, omega.y, 0.0 ).toVar();
 				const orthoDirection = vec3( direction.sub( dot( direction, camera ).mul( camera ) ) ).toVar();
@@ -196,7 +198,7 @@ class SSILVBNode extends TempNode {
 					const sampleStep = float( currentSample.add( jitter.mul( 5.0 ) ).div( this.SAMPLES ).add( sampleOffset ) ).toVar();
 					const sampleUV = vec2( uvNode.sub( sampleStep.mul( sampleScale ).mul( omega ).mul( aspect ) ) ).toVar();
 					const samplePosition = vec3( getViewPosition( sampleUV, sampleDepth( sampleUV ), this.cameraProjectionMatrixInverse ) ).toVar();
-					
+					samplePosition.z.negateAssign();
 					
 					const sampleNormalL = vec3( normalize( sampleNormal( sampleUV ) ) ).toVar();
 					const sampleLight = vec3( sampleColor( sampleUV ) ).toVar();
@@ -211,13 +213,9 @@ class SSILVBNode extends TempNode {
 					lighting.addAssign( sub( 1.0, float( bitCount( indirect.bitAnd( occlusion.bitNot() ) ) ).div( float( sectorCount ) ) ).mul( sampleLight ).mul( clamp( dot( normal, sampleHorizon ), 0.0, 1.0 ) ).mul( clamp( dot( sampleNormalL, sampleHorizon.negate() ), 0.0, 1.0 ) ) );
 					occlusion.bitOrAssign( indirect );
 		
-					currentSample.addAssign( 1.0 );
-		
 				} )
 		
 				visibility.addAssign( sub( 1.0, float( bitCount( occlusion ) ).div( float( sectorCount ) ) ) );
-		
-				slice.addAssign( 1.0 );
 		
 			} )
 		
