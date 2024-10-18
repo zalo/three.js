@@ -153,8 +153,8 @@
 
 				gui.add( params, 'distanceExponent' ).min( 1 ).max( 4 ).onChange( updateParameters );
 				gui.add( params, 'distanceFallOff' ).min( 0.01 ).max( 1 ).onChange( updateParameters );
-				gui.add( params, 'radius' ).min( 0.01 ).max( 1 ).onChange( updateParameters );
-				gui.add( params, 'scale' ).min( 0.01 ).max( 2 ).onChange( updateParameters );
+				gui.add( params, 'radius' ).min( 0.01 ).max( 5 ).onChange( updateParameters );
+				gui.add( params, 'scale' ).min( 0.01 ).max( 10 ).onChange( updateParameters );
 				gui.add( params, 'thickness' ).min( 0.01 ).max( 2 ).onChange( updateParameters );
 				const folder = gui.addFolder( 'Denoise settings' );
 				folder.add( params, 'denoiseRadius' ).min( 0.01 ).max( 10 ).name( 'radius' ).onChange( updateParameters );

@@ -164,78 +164,63 @@ class SSILVBNode extends TempNode {
 			const lighting = vec3( 0.0 ).toVar();
 			const frontBackHorizon = vec2( 0.0 ).toVar();
 			const aspect = vec2( this.cameraProjectionMatrix.element( int( 0 ) ).element( int( 0 ) ).div( this.cameraProjectionMatrix.element( int( 1 ) ).element( int( 1 ) ) ), 1.0 ).toVar();
+			
+			const depth = sampleDepth( uvNode ).toVar();
 			depth.greaterThanEqual( 1.0 ).discard();
-
 			
 			const position = getViewPosition( uvNode, depth, this.cameraProjectionMatrixInverse ).toVar();
 			const normal = this.normalNode.rgb.normalize().toVar();
 			const camera = vec3( normalize( position.negate() ) ).toVar();
 		
-			//If( this.useCorrectNormals.not(), () => {
-			//	normal.xyz.assign( normal.xyz.mul( 0.5 ).add( 0.5 ) );
-			//} );
-		
 			const sliceRotation = float( PI2.div( float( this.sliceCount.sub( 1.0 ) ) ) ).toVar();
 			const sampleScale = float( this.radius.negate().mul( this.cameraProjectionMatrix.element( int( 0 ) ).element( int( 0 ) ) ).div( position.z ) ).toVar();
 			const sampleOffset = float( mul( 0.01, this.radius ) ).toVar();
 			const jitter = float( randf( int( this.gl_FragCoord.x ), int( this.gl_FragCoord.y ) ).sub( 0.5 ) ).toVar();
+
+			Loop( { start: 0.0, end: this.sliceCount.add( 0.5 ), type: 'float', name: 'slice', condition: '<' }, ( { slice } ) => {
 		
-			{
+				const phi = float( sliceRotation.mul( slice.add( jitter ) ).add( PI ) ).toVar();
+				const omega = vec2( cos( phi ), sin( phi ) ).toVar();
+				const direction = vec3( omega.x, omega.y, 0.0 ).toVar();
+				const orthoDirection = vec3( direction.sub( dot( direction, camera ).mul( camera ) ) ).toVar();
+				const axis = vec3( cross( direction, camera ) ).toVar();
+				const projNormal = vec3( normal.sub( axis.mul( dot( normal, axis ) ) ) ).toVar();
+				const projLength = float( length( projNormal ) ).toVar();
+				const signN = float( sign( dot( orthoDirection, projNormal ) ) ).toVar();
+				const cosN = float( clamp( dot( projNormal, camera ).div( projLength ), 0.0, 1.0 ) ).toVar();
+				const n = float( signN.mul( acos( cosN ) ) ).toVar();
 		
-				//const slice = float( 0.0 ).toVar();
+
+				Loop( { start: 0.0, end: this.SAMPLES.add( 0.5 ), type: 'float', name: 'currentSample', condition: '<' }, ( { currentSample } ) => {
 		
-				//While( slice.lessThan( this.sliceCount.add( 0.5 ) ), () => {
-				Loop( { start: 0.0, end: this.sliceCount.add( 0.5 ), type: 'float', name: 'slice', condition: '<' }, ( { slice } ) => {
+					const sampleStep = float( currentSample.add( jitter.mul( 5.0 ) ).div( this.SAMPLES ).add( sampleOffset ) ).toVar();
+					const sampleUV = vec2( uvNode.sub( sampleStep.mul( sampleScale ).mul( omega ).mul( aspect ) ) ).toVar();
+					const samplePosition = vec3( getViewPosition( sampleUV, sampleDepth( sampleUV ), this.cameraProjectionMatrixInverse ) ).toVar();
+					
+					
+					const sampleNormalL = vec3( normalize( sampleNormal( sampleUV ) ) ).toVar();
+					const sampleLight = vec3( sampleColor( sampleUV ) ).toVar();
+					const sampleDistance = vec3( samplePosition.sub( position ) ).toVar();
+					const sampleLength = float( length( sampleDistance ) ).toVar();
+					const sampleHorizon = vec3( sampleDistance.div( sampleLength ) ).toVar();
+					frontBackHorizon.x.assign( dot( sampleHorizon, camera ) );
+					frontBackHorizon.y.assign( dot( normalize( sampleDistance.sub( camera.mul( this.thickness ) ) ), camera ) );
+					frontBackHorizon.assign( acos( frontBackHorizon ) );
+					frontBackHorizon.assign( clamp( frontBackHorizon.add( n ).add( this.HALF_PI ).div( PI ), 0.0, 1.0 ) );
+					indirect.assign( updateSectors( frontBackHorizon.x, frontBackHorizon.y, uint( 0 ) ) );
+					lighting.addAssign( sub( 1.0, float( bitCount( indirect.bitAnd( occlusion.bitNot() ) ) ).div( float( sectorCount ) ) ).mul( sampleLight ).mul( clamp( dot( normal, sampleHorizon ), 0.0, 1.0 ) ).mul( clamp( dot( sampleNormalL, sampleHorizon.negate() ), 0.0, 1.0 ) ) );
+					occlusion.bitOrAssign( indirect );
 		
-					const phi = float( sliceRotation.mul( slice.add( jitter ) ).add( PI ) ).toVar();
-					const omega = vec2( cos( phi ), sin( phi ) ).toVar();
-					const direction = vec3( omega.x, omega.y, 0.0 ).toVar();
-					const orthoDirection = vec3( direction.sub( dot( direction, camera ).mul( camera ) ) ).toVar();
-					const axis = vec3( cross( direction, camera ) ).toVar();
-					const projNormal = vec3( normal.sub( axis.mul( dot( normal, axis ) ) ) ).toVar();
-					const projLength = float( length( projNormal ) ).toVar();
-					const signN = float( sign( dot( orthoDirection, projNormal ) ) ).toVar();
-					const cosN = float( clamp( dot( projNormal, camera ).div( projLength ), 0.0, 1.0 ) ).toVar();
-					const n = float( signN.mul( acos( cosN ) ) ).toVar();
-		
-					{
-		
-						//const currentSample = float( 0.0 ).toVar();
-		
-						//While( currentSample.lessThan( this.SAMPLES.add( 0.5 ) ), () => {
-						Loop( { start: 0.0, end: this.SAMPLES.add( 0.5 ), type: 'float', name: 'currentSample', condition: '<' }, ( { currentSample } ) => {
-		
-							const sampleStep = float( currentSample.add( jitter.mul( 5.0 ) ).div( this.SAMPLES ).add( sampleOffset ) ).toVar();
-							const sampleUV = vec2( uvNode.sub( sampleStep.mul( sampleScale ).mul( omega ).mul( aspect ) ) ).toVar();
-							const samplePosition = vec3( getViewPosition( sampleUV, sampleDepth( sampleUV ), this.cameraProjectionMatrixInverse ) ).toVar();
-							
-							
-							const sampleNormalL = vec3( normalize( sampleNormal( sampleUV ) ) ).toVar();
-							const sampleLight = vec3( sampleColor( sampleUV ) ).toVar();
-							const sampleDistance = vec3( samplePosition.sub( position ) ).toVar();
-							const sampleLength = float( length( sampleDistance ) ).toVar();
-							const sampleHorizon = vec3( sampleDistance.div( sampleLength ) ).toVar();
-							frontBackHorizon.x.assign( dot( sampleHorizon, camera ) );
-							frontBackHorizon.y.assign( dot( normalize( sampleDistance.sub( camera.mul( this.thickness ) ) ), camera ) );
-							frontBackHorizon.assign( acos( frontBackHorizon ) );
-							frontBackHorizon.assign( clamp( frontBackHorizon.add( n ).add( this.HALF_PI ).div( PI ), 0.0, 1.0 ) );
-							indirect.assign( updateSectors( frontBackHorizon.x, frontBackHorizon.y, uint( 0 ) ) );
-							lighting.addAssign( sub( 1.0, float( bitCount( indirect.bitAnd( occlusion.bitNot() ) ) ).div( float( sectorCount ) ) ).mul( sampleLight ).mul( clamp( dot( normal, sampleHorizon ), 0.0, 1.0 ) ).mul( clamp( dot( sampleNormalL, sampleHorizon.negate() ), 0.0, 1.0 ) ) );
-							occlusion.bitOrAssign( indirect );
-		
-							currentSample.addAssign( 1.0 );
-		
-						} )
-		
-					}
-		
-					visibility.addAssign( sub( 1.0, float( bitCount( occlusion ) ).div( float( sectorCount ) ) ) );
-		
-					slice.addAssign( 1.0 );
+					currentSample.addAssign( 1.0 );
 		
 				} )
 		
-			}
+				visibility.addAssign( sub( 1.0, float( bitCount( occlusion ) ).div( float( sectorCount ) ) ) );
+		
+				slice.addAssign( 1.0 );
+		
+			} )
+		
 		
 			visibility.divAssign( this.sliceCount );
 			lighting.divAssign( this.sliceCount );
@@ -243,99 +228,6 @@ class SSILVBNode extends TempNode {
 			return vec4( visibility, visibility, visibility, 1.0 );
 		
 		} );
-		
-
-
-		/*
-		const ao = Fn( () => {
-
-			const depth = sampleDepth( uvNode ).toVar();
-
-			depth.greaterThanEqual( 1.0 ).discard();
-
-			const viewPosition = getViewPosition( uvNode, depth, this.cameraProjectionMatrixInverse ).toVar();
-			const viewNormal = this.normalNode.rgb.normalize().toVar();
-
-			const radiusToUse = this.radius;
-
-			const noiseResolution = textureSize( this.noiseNode, 0 );
-			let noiseUv = vec2( uvNode.x, uvNode.y.oneMinus() );
-			noiseUv = noiseUv.mul( this.resolution.div( noiseResolution ) );
-			const noiseTexel = sampleNoise( noiseUv );
-			const randomVec = noiseTexel.xyz.mul( 2.0 ).sub( 1.0 );
-			const tangent = vec3( randomVec.xy, 0.0 ).normalize();
-			const bitangent = vec3( tangent.y.mul( - 1.0 ), tangent.x, 0.0 );
-			const kernelMatrix = mat3( tangent, bitangent, vec3( 0.0, 0.0, 1.0 ) );
-
-			const DIRECTIONS = this.SAMPLES.lessThan( 30 ).select( 3, 5 ).toVar();
-			const STEPS = add( this.SAMPLES, DIRECTIONS.sub( 1 ) ).div( DIRECTIONS ).toVar();
-
-			const ao = float( 0 ).toVar();
-
-			Loop( { start: int( 0 ), end: DIRECTIONS, type: 'int', condition: '<' }, ( { i } ) => {
-
-				const angle = float( i ).div( float( DIRECTIONS ) ).mul( PI ).toVar();
-				const sampleDir = vec4( cos( angle ), sin( angle ), 0., add( 0.5, mul( 0.5, noiseTexel.w ) ) );
-				sampleDir.xyz = normalize( kernelMatrix.mul( sampleDir.xyz ) );
-
-				const viewDir = normalize( viewPosition.xyz.negate() ).toVar();
-				const sliceBitangent = normalize( cross( sampleDir.xyz, viewDir ) ).toVar();
-				const sliceTangent = cross( sliceBitangent, viewDir );
-				const normalInSlice = normalize( viewNormal.sub( sliceBitangent.mul( dot( viewNormal, sliceBitangent ) ) ) );
-
-				const tangentToNormalInSlice = cross( normalInSlice, sliceBitangent ).toVar();
-				const cosHorizons = vec2( dot( viewDir, tangentToNormalInSlice ), dot( viewDir, tangentToNormalInSlice.negate() ) ).toVar();
-
-				Loop( { end: STEPS, type: 'int', name: 'j', condition: '<' }, ( { j } ) => {
-
-					const sampleViewOffset = sampleDir.xyz.mul( radiusToUse ).mul( sampleDir.w ).mul( pow( div( float( j ).add( 1.0 ), float( STEPS ) ), this.distanceExponent ) );
-
-					// x
-
-					const sampleScreenPositionX = getScreenPosition( viewPosition.add( sampleViewOffset ), this.cameraProjectionMatrix ).toVar();
-					const sampleDepthX = sampleDepth( sampleScreenPositionX ).toVar();
-					const sampleSceneViewPositionX = getViewPosition( sampleScreenPositionX, sampleDepthX, this.cameraProjectionMatrixInverse ).toVar();
-					const viewDeltaX = sampleSceneViewPositionX.sub( viewPosition ).toVar();
-
-					If( abs( viewDeltaX.z ).lessThan( this.thickness ), () => {
-
-						const sampleCosHorizon = dot( viewDir, normalize( viewDeltaX ) );
-						cosHorizons.x.addAssign( max( 0, mul( sampleCosHorizon.sub( cosHorizons.x ), mix( 1.0, float( 2.0 ).div( float( j ).add( 2 ) ), this.distanceFallOff ) ) ) );
-
-					} );
-
-					// y
-
-					const sampleScreenPositionY = getScreenPosition( viewPosition.sub( sampleViewOffset ), this.cameraProjectionMatrix ).toVar();
-					const sampleDepthY = sampleDepth( sampleScreenPositionY ).toVar();
-					const sampleSceneViewPositionY = getViewPosition( sampleScreenPositionY, sampleDepthY, this.cameraProjectionMatrixInverse ).toVar();
-					const viewDeltaY = sampleSceneViewPositionY.sub( viewPosition ).toVar();
-
-					If( abs( viewDeltaY.z ).lessThan( this.thickness ), () => {
-
-						const sampleCosHorizon = dot( viewDir, normalize( viewDeltaY ) );
-						cosHorizons.y.addAssign( max( 0, mul( sampleCosHorizon.sub( cosHorizons.y ), mix( 1.0, float( 2.0 ).div( float( j ).add( 2 ) ), this.distanceFallOff ) ) ) );
-
-					} );
-
-				} );
-
-				const sinHorizons = sqrt( sub( 1.0, cosHorizons.mul( cosHorizons ) ) ).toVar();
-				const nx = dot( normalInSlice, sliceTangent );
-				const ny = dot( normalInSlice, viewDir );
-				const nxb = mul( 0.5, acos( cosHorizons.y ).sub( acos( cosHorizons.x ) ).add( sinHorizons.x.mul( cosHorizons.x ).sub( sinHorizons.y.mul( cosHorizons.y ) ) ) );
-				const nyb = mul( 0.5, sub( 2.0, cosHorizons.x.mul( cosHorizons.x ) ).sub( cosHorizons.y.mul( cosHorizons.y ) ) );
-				const occlusion = nx.mul( nxb ).add( ny.mul( nyb ) );
-				ao.addAssign( occlusion );
-
-			} );
-
-			ao.assign( clamp( ao.div( DIRECTIONS ), 0, 1 ) );
-			ao.assign( pow( ao, this.scale ) );
-
-			return vec4( vec3( ao ), 1.0 );
-
-		} );*/
 
 		const material = this._material || ( this._material = new NodeMaterial() );
 		material.fragmentNode = ao().context( builder.getSharedContext() );
