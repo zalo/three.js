@@ -4,6 +4,7 @@ import {
 	RepeatWrapping,
 	Vector2,
 	Vector3,
+	GLSL3
 } from 'three';
 
 /**
@@ -38,7 +39,7 @@ const SSILVBShader = {
 		cameraProjectionMatrix: { value: new Matrix4() },
 		cameraProjectionMatrixInverse: { value: new Matrix4() },
 		cameraWorldMatrix: { value: new Matrix4() },
-		radius: { value: 0.1 },
+		radius: { value: 12.0 },
 		distanceExponent: { value: 1. },
 		thickness: { value: 1. },
 		distanceFallOff: { value: 1. },
@@ -47,6 +48,8 @@ const SSILVBShader = {
 		sceneBoxMax: { value: new Vector3( 1, 1, 1 ) },
 		useCorrectNormals: { value: false },
 	},
+
+	glslVersion: GLSL3,
 
 	vertexShader: /* glsl */`
 
@@ -60,6 +63,8 @@ const SSILVBShader = {
 	fragmentShader: /* glsl */`
 		// Adapted from "Screen Space Indirect Lighting with Visibility Bitmask" by Olivier Therrien, et al.
 		// https://cdrinmatane.github.io/posts/cgspotlight-slides/
+
+		#define MAX_RAY 32u
 
 		precision highp float;
 		precision highp sampler2D;
@@ -76,11 +81,12 @@ const SSILVBShader = {
 		uniform mat4 cameraProjectionMatrix;
 		uniform mat4 cameraProjectionMatrixInverse;		
 		uniform mat4 cameraWorldMatrix;
-		uniform float radius;
+		//uniform float radius;
 		uniform float distanceExponent;
 		uniform float thickness;
 		uniform float scale;
 		uniform bool useCorrectNormals;
+		uniform vec2 _ScreenParams;
 		#if SCENE_CLIP_BOX == 1
 			uniform vec3 sceneBoxMin;
 			uniform vec3 sceneBoxMax;
@@ -170,6 +176,30 @@ const SSILVBShader = {
 			return mod(52.9829189 * mod(0.06711056 * float(x) + 0.00583715 * float(y), 1.0), 1.0);
 		}
 
+		// From http://byteblacksmith.com/improvements-to-the-canonical-one-liner-glsl-rand-for-opengl-es-2-0/
+		float rand2(vec2 co) {
+			float a = 12.9898;
+			float b = 78.233;
+			float c = 43758.5453;
+			float dt = dot(co.xy, vec2(a, b));
+			float sn = mod(dt, 3.14);
+			return fract(sin(sn) * c);
+		}
+
+		vec2 GTAOFastAcos(vec2 x) {
+			vec2 outVal = -0.156583 * abs(x) + halfPi;
+			outVal *= sqrt(1.0 - abs(x));
+			//return x >= 0.0 ? outVal : pi - outVal; // uhhh does this really work in HLSL?
+			return vec2(x.x >= 0.0 ? outVal.x : pi - outVal.x, 
+						x.y >= 0.0 ? outVal.y : pi - outVal.y);
+		}
+
+		float GTAOFastAcos(float x) {
+			float outVal = -0.156583 * abs(x) + halfPi;
+			outVal *= sqrt(1.0 - abs(x));
+			return x >= 0.0 ? outVal : pi - outVal;
+		}
+
 		// https://graphics.stanford.edu/%7Eseander/bithacks.html
 		uint bitCount(uint value) {
 			value = value - ((value >> 1u) & 0x55555555u);
@@ -177,83 +207,223 @@ const SSILVBShader = {
 			return ((value + (value >> 4u) & 0xF0F0F0Fu) * 0x1010101u) >> 24u;
 		}
 
-		// https://cdrinmatane.github.io/posts/ssaovb-code/
+		//// https://graphics.stanford.edu/%7Eseander/bithacks.html
+		//uint bitCount(uint v) {
+		//	v = v - ((v >> 1u) & 0x55555555u);                    // reuse input as temporary
+		//	v = (v & 0x33333333u) + ((v >> 2u) & 0x33333333u);     // temp
+		//	return ((v + (v >> 4u) & 0xF0F0F0Fu) * 0x1010101u) >> 24u; // count
+		//}
+
+		//uint bitCount(uint value) {
+		//	uint count = 0u;
+		//	while (value != 0u) {
+		//		count++;
+		//		value &= value - 1u;
+		//	}
+		//	return count;
+		//}
+
+		//uint bitCount(uint x) {
+		//	uint i;
+		//	uint res = 0u;
+		//	for(uint i = 0u; i < 32u; i++) {
+		//		uint mask = 1u << i;
+		//		if ((x & mask) == 1u) { res ++; }
+		//	}
+		//	return res;
+		//}
+
 		const uint sectorCount = 32u;
-		uint updateSectors(float minHorizon, float maxHorizon, uint outBitfield) {
-			uint startBit = uint(minHorizon * float(sectorCount));
-			uint horizonAngle = uint(round((maxHorizon - minHorizon) * float(sectorCount)));
-			uint angleBit = horizonAngle > 0u ? uint(0xFFFFFFFFu >> (sectorCount - horizonAngle)) : 0u;
-			uint currentBitfield = angleBit << startBit;
-			return outBitfield | currentBitfield;
+		uint ComputeOccludedBitfield(float minHorizon, float maxHorizon, inout uint globalOccludedBitfield, out uint numOccludedZones) {
+			uint startHorizonInt = uint(minHorizon * float(MAX_RAY));
+			uint angleHorizonInt = uint(ceil((maxHorizon - minHorizon) * float(MAX_RAY)));
+			uint angleHorizonBitfield = angleHorizonInt > 0u ? uint(0xFFFFFFFFu >> (MAX_RAY - angleHorizonInt)) : 0u;
+			uint currentOccludedBitfield = angleHorizonBitfield << startHorizonInt;
+			currentOccludedBitfield = currentOccludedBitfield & (~globalOccludedBitfield);
+			globalOccludedBitfield = globalOccludedBitfield | currentOccludedBitfield;
+			numOccludedZones = bitCount(currentOccludedBitfield);
+			return currentOccludedBitfield;
 		}
+
+		// From http://lolengine.net/blog/2013/07/27/rgb-to-hsv-in-glsl
+		// All components are in the range [0…1], including hue.
+		vec3 RgbToHsv(vec3 c) {
+			vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+			vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+			vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+
+			float d = q.x - min(q.w, q.y);
+			float e = 1.0e-10;
+			return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+		}
+		vec3 HsvToRgb(vec3 c) {
+			vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+			vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+			return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+		}
+
+		// Approximates luminance from an RGB value
+		// https://github.com/mrdooz/kumi/blob/master/effects/luminance.hlsl
+		float Luminance(vec3 color) {
+			return dot(color, vec3(0.299f, 0.587f, 0.114f));
+		}
+
+		vec3 HorizonSampling(bool directionIsRight, float radius, vec3 posVS, vec2 slideDir_TexelSize, float initialRayStep, 
+			vec2 uv, vec3 viewDir, vec3 normalVS, float n, inout uint globalOccludedBitfield, vec3 planeNormal, inout vec3 debug) {
+
+			int _StepCount = 32;
+			//        var renderResolution = new Vector2(cam.pixelWidth, cam.pixelHeight);
+        	// halfprojScale = (float)renderResolution.y / (Mathf.Tan(cam.fieldOfView * Mathf.Deg2Rad * 0.5f) * 2) * 0.5f;
+			//_HalfProjScale
+
+			float stepRadius = (radius * (resolution.x * 0.5)) / float(_StepCount);
+			stepRadius /= (float(_StepCount + 1));
+			float radiusVS = max(1.0, float(_StepCount-1)) * stepRadius;
+			float samplingDirection = directionIsRight ? 1.0 : -1.0;
+			vec3 col = vec3(0.0);
+			vec3 lastSamplePosVS = posVS;
+				
+			for (uint j = 0u; j < uint(_StepCount); j++) {
+
+				float _ExpFactor = 1.0;
+
+				float offset = pow(abs((stepRadius * (float(j) + initialRayStep)) / radiusVS), _ExpFactor) * radiusVS;
+
+				vec2 uvOffset = slideDir_TexelSize * max(offset, 1.0 + float(j));
+				vec2 sampleUV = uv + uvOffset * samplingDirection;
+
+
+				if(sampleUV.x <= 0.0 || sampleUV.y <= 0.0 || sampleUV.x >= 1.0 || sampleUV.y >= 1.0)
+					break;
+				
+				bool _MipOptimization = false;
+				int mipLevelOffset = 0;//_MipOptimization ? min((int(j) + 1) / 2, 4) : 0;
+				vec3 samplePosVS = getViewPosition(sampleUV, getDepth(sampleUV));
+				samplePosVS.z = -samplePosVS.z;
+				vec3 pixelToSample = normalize(samplePosVS - posVS);
+				bool _LinearThickness = false;
+				float _Thickness = 1.0;
+				float linearThicknessMultiplier = 1.0; //_LinearThickness ? saturate(samplePosVS.z / _ProjectionParams.z) * 100 : 
+				vec3 pixelToSampleBackface = normalize((samplePosVS - (linearThicknessMultiplier * viewDir * _Thickness )) - posVS);
+
+				vec2 frontBackHorizon = vec2(dot(pixelToSample, viewDir), dot(pixelToSampleBackface, viewDir));
+				frontBackHorizon = GTAOFastAcos(clamp(frontBackHorizon, -1.0, 1.0));
+				frontBackHorizon = saturate(((samplingDirection * -frontBackHorizon) - n + halfPi) / pi);
+				//frontBackHorizon = saturate(frontBackHorizon*(1.0+1.5*pi/float(MAX_RAY))-1.5*halfPi/float(MAX_RAY)); // Remamp bitfield on one sector narrower hemisphere
+				frontBackHorizon = directionIsRight ? frontBackHorizon.yx : frontBackHorizon.xy; // Front/Back get inverted depending on angle
+
+				debug = vec3(frontBackHorizon, 0.0);
+
+				uint numOccludedZones;
+				ComputeOccludedBitfield(frontBackHorizon.x, frontBackHorizon.y, globalOccludedBitfield, numOccludedZones);
+				
+        		//ebug = vec3(float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0);
+        		//ebug *= 0.5;
+
+				vec3 lightNormalVS = vec3(0.0);
+				if(numOccludedZones > 0u) // If a ray hit the sample, that sample is visible from shading point
+				{
+					//vec3 lightColor = SAMPLE_TEXTURE2D_X_LOD(_LightPyramidTexture, s_point_clamp_sampler, sampleUV, mipLevelOffset).rgb;
+					vec3 lightColor = texture(tColor, sampleUV).rgb; // Consider mipLevelOffset
+					if(Luminance(lightColor) > 0.001) // Continue if there is light at that location (intensity > 0)
+					{
+						vec3 lightDirectionVS = normalize(pixelToSample);
+						float normalDotLightDirection = saturate(dot(normalVS, lightDirectionVS));
+
+						if (normalDotLightDirection > 0.001) // Continue if light is facing surface normal
+						{
+							//#ifdef NORMAL_APPROXIMATION
+							//lightNormalVS = -samplingDirection * cross(normalize(samplePosVS-lastSamplePosVS), planeNormal);
+							//#else
+							//lightNormalVS = GetNormalPyramidVS(sampleUV, mipLevelOffset); //GetNormalVS(sampleUV * resolution.xy);
+							//#endif
+							lightNormalVS = getViewNormal(sampleUV);
+							
+							float _BackfaceLighting = 0.0;
+
+							// Intensity of outgoing light in the direction of the shading point
+							float lightNormalDotLightDirection = dot(lightNormalVS, -lightDirectionVS);
+							lightNormalDotLightDirection = _BackfaceLighting > 0.0 && dot(lightNormalVS, viewDir) > 0.0 ? 
+								(sign(lightNormalDotLightDirection) < 0.0 ? abs(lightNormalDotLightDirection) * _BackfaceLighting : abs(lightNormalDotLightDirection)) : 
+								saturate(lightNormalDotLightDirection);
+							
+							col.xyz += (float(numOccludedZones)/float(MAX_RAY)) * lightColor * normalDotLightDirection * lightNormalDotLightDirection;
+						}
+					}
+				}
+				lastSamplePosVS = samplePosVS;
+			}
+			
+			return col;
+		}
+
 
 		// get indirect lighting and ambient occlusion
 		void main() {
-			uint indirect = 0u;
-			uint occlusion = 0u;
 
-			float visibility = 0.0;
-			vec3 lighting = vec3(0.0);
-			vec2 frontBackHorizon = vec2(0.0);
-			//vec2 aspect = screenSize.yx / screenSize.x;
-			//vec3 position = texture(screenPosition, fragUV).rgb
 			vec2 aspect = vec2(cameraProjectionMatrix[0][0] / cameraProjectionMatrix[1][1], 1.0);
 			float depth = getDepth(vUv.xy);
 			if (depth >= 1.0) { discard; return; }
 
-			vec3 position = getViewPosition(vUv, depth);
-			vec3 camera = normalize(-position);
-			vec3 normal = normalize(getViewNormal(vUv.xy));
-			if (!useCorrectNormals) { normal.xyz = normal.xyz * 0.5 + 0.5; }
+			vec3 posVS = getViewPosition(vUv, depth);
+			posVS.z = -posVS.z;
+			vec3 normalVS = normalize(getViewNormal(vUv.xy));
+			normalVS = vec3(normalVS.xy, -normalVS.z);
+			vec3 viewDir = normalize(-posVS);
 
-			float sliceRotation = pi / float(sliceCount - 1.0);
-			float sampleScale = (-radius * cameraProjectionMatrix[0][0]) / position.z;
-			float sampleOffset = 0.01 * scale;
-			float jitter = randf(int(gl_FragCoord.x), int(gl_FragCoord.y)) - 0.5;
+			float random = randf(int(gl_FragCoord.x), int(gl_FragCoord.y));
+			float _TemporalDirections = random; // TODO: TemporalDirections
+			float noiseOffset         = random;//SpatialOffsets(gl_FragCoord.xy);   // TODO: SpatialOffsets
+			float noiseDirection      = random;//GradientNoise(gl_FragCoord.xy); // TODO: GradientNoise
+			//float initialRayStep = fract(noiseOffset + _TemporalOffsets) + (randf(int(gl_FragCoord.x), int(gl_FragCoord.y)) * 2.0 - 1.0) * 1.0 * float(1); // 1 or 0
+			float initialRayStep = (random * 18.0 - 8.0);
 
-			for (float slice = 0.0; slice < sliceCount + 0.5; slice += 1.0) {
-				float phi = sliceRotation * (slice + jitter) + pi;
-				vec2 omega = vec2(cos(phi), sin(phi));
-				vec3 direction = vec3(omega.x, omega.y, 0.0);
-				vec3 orthoDirection = direction - dot(direction, camera) * camera;
-				vec3 axis = cross(direction, camera);
-				vec3 projNormal = normal - axis * dot(normal, axis);
-				float projLength = length(projNormal);
+			int _RotationCount = 8;
 
-				float signN = sign(dot(orthoDirection, projNormal));
-				float cosN = clamp(dot(projNormal, camera) / projLength, 0.0, 1.0);
-				float n = signN * acos(cosN);
+    		float ao = 0.0;
+    		vec3 col = vec3(0.0);
 
-				for (float currentSample = 0.0; currentSample < sampleCount + 0.5; currentSample += 1.0) {
-					float sampleStep = (currentSample + jitter) / sampleCount + sampleOffset;
-					vec2 sampleUV = vUv.xy - sampleStep * sampleScale * omega * aspect;
-					vec3 samplePosition = getViewPosition(sampleUV, getDepth(sampleUV));
-					vec3 sampleNormal = normalize(getViewNormal(sampleUV));
-					vec3 sampleLight = texture(tColor, sampleUV).rgb;
-					vec3 sampleDistance = samplePosition - position;
-					float sampleLength = length(sampleDistance);
-					vec3 sampleHorizon = sampleDistance / sampleLength;
+			float radius = 12.0;
+			vec3 debug = vec3(0.0);
 
-					frontBackHorizon.x = dot(sampleHorizon, camera);
-					frontBackHorizon.y = dot(normalize(sampleDistance - camera * thickness), camera);
-
-					frontBackHorizon = acos(frontBackHorizon);
-					frontBackHorizon = clamp((frontBackHorizon + n + halfPi) / pi, 0.0, 1.0);
-
-					indirect = updateSectors(frontBackHorizon.x, frontBackHorizon.y, 0u);
-					lighting += (1.0 - float(bitCount(indirect & ~occlusion)) / float(sectorCount)) *
-						sampleLight * clamp(dot(normal, sampleHorizon), 0.0, 1.0) *
-						clamp(dot(sampleNormal, -sampleHorizon), 0.0, 1.0);
-					occlusion |= indirect;
-				}
-				visibility += 1.0 - float(bitCount(occlusion)) / float(sectorCount);
+			//int i = 0;
+			for (int i = 0; i < _RotationCount; i++) {
+				float rotationAngle = (float(i) + noiseDirection + _TemporalDirections) * (pi / float(_RotationCount));
+				vec3 sliceDir = vec3(vec2(cos(rotationAngle), sin(rotationAngle)), 0.0);
+				vec2 slideDir_TexelSize = sliceDir.xy * (1.0 / resolution.xy);
+				uint globalOccludedBitfield = 0u;
+				
+				vec3 planeNormal = normalize(cross(sliceDir, viewDir));
+				vec3 tangent = cross(viewDir, planeNormal);
+				vec3 projectedNormal = normalVS - planeNormal * dot(normalVS, planeNormal);
+				vec3 projectedNormalNormalized = normalize(projectedNormal);
+				vec3 realTangent = cross(projectedNormalNormalized, planeNormal);
+				
+				float cos_n = clamp(dot(projectedNormalNormalized, viewDir), -1.0, 1.0);
+				float n = -sign(dot(projectedNormal, tangent)) * acos(cos_n);
+				
+				//col += HorizonSampling( true, radius, posVS, slideDir_TexelSize, initialRayStep, vUv, viewDir, normalVS, n, globalOccludedBitfield, planeNormal, debug);
+				col += HorizonSampling(false, radius, posVS, slideDir_TexelSize, initialRayStep, vUv, viewDir, normalVS, n, globalOccludedBitfield, planeNormal, debug);
+				
+				ao += float(bitCount(globalOccludedBitfield)) / float(MAX_RAY);
 			}
 
-			visibility /= sliceCount;
-			lighting /= sliceCount;
+			float _AOIntensity = 2.0;
+			ao /= float(_RotationCount);
+			ao = saturate(pow(1.0-saturate(ao), _AOIntensity));
 
-			//lighting += texture(tColor, vUv.xy).rgb;
-			gl_FragColor = vec4(visibility, visibility, visibility, 1.0);// lighting, visibility); //
+			col /= float(_RotationCount);
+
+			float _GIIntensity = 10.0;
+			col = col * _GIIntensity;
+
+			// Clamp the final saturation
+			//col = RgbToHsv(col);
+			//col.z = clamp(col.z, 0.0, 7); 
+			//// Convert back to HSV space
+			//col = HsvToRgb(col);
+
+			gl_FragColor = vec4(ao, ao, ao, 1.0); // col, ao); //vec4(viewDir.z, viewDir.z, viewDir.z, 1.0); //
 		}`
 
 };
