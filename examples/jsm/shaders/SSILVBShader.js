@@ -26,6 +26,7 @@ const SSILVBShader = {
 		SCREEN_SPACE_RADIUS: 0.0,
 		SCREEN_SPACE_RADIUS_SCALE: 100.0,
 		SCENE_CLIP_BOX: 0.0,
+		SLICES: 4,
 	},
 
 	uniforms: {
@@ -40,13 +41,10 @@ const SSILVBShader = {
 		cameraProjectionMatrixInverse: { value: new Matrix4() },
 		cameraWorldMatrix: { value: new Matrix4() },
 		radius: { value: 12.0 },
-		distanceExponent: { value: 1. },
 		thickness: { value: 1. },
-		distanceFallOff: { value: 1. },
 		scale: { value: 1. },
 		sceneBoxMin: { value: new Vector3( - 1, - 1, - 1 ) },
 		sceneBoxMax: { value: new Vector3( 1, 1, 1 ) },
-		useCorrectNormals: { value: false },
 	},
 
 	glslVersion: GLSL3,
@@ -81,7 +79,7 @@ const SSILVBShader = {
 		uniform mat4 cameraProjectionMatrix;
 		uniform mat4 cameraProjectionMatrixInverse;		
 		uniform mat4 cameraWorldMatrix;
-		//uniform float radius;
+		uniform float radius;
 		uniform float distanceExponent;
 		uniform float thickness;
 		uniform float scale;
@@ -271,7 +269,7 @@ const SSILVBShader = {
 		vec3 HorizonSampling(bool directionIsRight, float radius, vec3 posVS, vec2 slideDir_TexelSize, float initialRayStep, 
 			vec2 uv, vec3 viewDir, vec3 normalVS, float n, inout uint globalOccludedBitfield, vec3 planeNormal, inout vec3 debug) {
 
-			int _StepCount = 32;
+			int _StepCount = int(sampleCount);
 			//        var renderResolution = new Vector2(cam.pixelWidth, cam.pixelHeight);
         	// halfprojScale = (float)renderResolution.y / (Mathf.Tan(cam.fieldOfView * Mathf.Deg2Rad * 0.5f) * 2) * 0.5f;
 			//_HalfProjScale
@@ -302,23 +300,26 @@ const SSILVBShader = {
 				samplePosVS.z = -samplePosVS.z;
 				vec3 pixelToSample = normalize(samplePosVS - posVS);
 				bool _LinearThickness = false;
-				float _Thickness = 1.0;
+				//float _Thickness = 1.0;
 				float linearThicknessMultiplier = 1.0; //_LinearThickness ? saturate(samplePosVS.z / _ProjectionParams.z) * 100 : 
-				vec3 pixelToSampleBackface = normalize((samplePosVS - (linearThicknessMultiplier * viewDir * _Thickness )) - posVS);
+				vec3 pixelToSampleBackface = normalize((samplePosVS - (linearThicknessMultiplier * viewDir * thickness )) - posVS);
 
 				vec2 frontBackHorizon = vec2(dot(pixelToSample, viewDir), dot(pixelToSampleBackface, viewDir));
+				frontBackHorizon = directionIsRight ? frontBackHorizon.yx : frontBackHorizon.xy; // Front/Back get inverted depending on angle
 				frontBackHorizon = GTAOFastAcos(clamp(frontBackHorizon, -1.0, 1.0));
 				frontBackHorizon = saturate(((samplingDirection * -frontBackHorizon) - n + halfPi) / pi);
 				//frontBackHorizon = saturate(frontBackHorizon*(1.0+1.5*pi/float(MAX_RAY))-1.5*halfPi/float(MAX_RAY)); // Remamp bitfield on one sector narrower hemisphere
 				frontBackHorizon = directionIsRight ? frontBackHorizon.yx : frontBackHorizon.xy; // Front/Back get inverted depending on angle
+
+				frontBackHorizon = directionIsRight ? 1.0 - frontBackHorizon : frontBackHorizon;
 
 				debug = vec3(frontBackHorizon, 0.0);
 
 				uint numOccludedZones;
 				ComputeOccludedBitfield(frontBackHorizon.x, frontBackHorizon.y, globalOccludedBitfield, numOccludedZones);
 				
-        		//ebug = vec3(float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0);
-        		//ebug *= 0.5;
+        		//debug = vec3(float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0);
+        		//debug *= 0.5;
 
 				vec3 lightNormalVS = vec3(0.0);
 				if(numOccludedZones > 0u) // If a ray hit the sample, that sample is visible from shading point
@@ -378,12 +379,12 @@ const SSILVBShader = {
 			//float initialRayStep = fract(noiseOffset + _TemporalOffsets) + (randf(int(gl_FragCoord.x), int(gl_FragCoord.y)) * 2.0 - 1.0) * 1.0 * float(1); // 1 or 0
 			float initialRayStep = (random * 18.0 - 8.0);
 
-			int _RotationCount = 8;
+			int _RotationCount = SLICES;
 
     		float ao = 0.0;
     		vec3 col = vec3(0.0);
 
-			float radius = 12.0;
+			//float radius = 12.0;
 			vec3 debug = vec3(0.0);
 
 			//int i = 0;
@@ -402,13 +403,13 @@ const SSILVBShader = {
 				float cos_n = clamp(dot(projectedNormalNormalized, viewDir), -1.0, 1.0);
 				float n = -sign(dot(projectedNormal, tangent)) * acos(cos_n);
 				
-				//col += HorizonSampling( true, radius, posVS, slideDir_TexelSize, initialRayStep, vUv, viewDir, normalVS, n, globalOccludedBitfield, planeNormal, debug);
+				col += HorizonSampling( true, radius, posVS, slideDir_TexelSize, initialRayStep, vUv, viewDir, normalVS, n, globalOccludedBitfield, planeNormal, debug);
 				col += HorizonSampling(false, radius, posVS, slideDir_TexelSize, initialRayStep, vUv, viewDir, normalVS, n, globalOccludedBitfield, planeNormal, debug);
 				
 				ao += float(bitCount(globalOccludedBitfield)) / float(MAX_RAY);
 			}
 
-			float _AOIntensity = 2.0;
+			float _AOIntensity = scale;
 			ao /= float(_RotationCount);
 			ao = saturate(pow(1.0-saturate(ao), _AOIntensity));
 

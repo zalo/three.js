@@ -132,13 +132,11 @@
 				} );
 
 				const aoParameters = {
-					radius: 1.0,
-					distanceExponent: 1.,
-					thickness: 0.6,
+					radius: 12.0,
+					thickness: 1.0,
 					scale: 1.,
-					samples: 16,
-					screenSpaceRadius: false,
-					useCorrectNormals: true
+					aosamples: 32,
+					slices: 2
 				};
 				const pdParameters = {
 					lumaPhi: 10.,
@@ -152,13 +150,11 @@
 				ssilvbPass.updateSSILVBMaterial( aoParameters );
 				ssilvbPass.updatePdMaterial( pdParameters );
 				gui.add( ssilvbPass, 'blendIntensity' ).min( 0 ).max( 1 ).step( 0.01 );
-				gui.add( aoParameters, 'useCorrectNormals' ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) )
-				gui.add( aoParameters, 'radius' ).min( 0.01 ).max( 1 ).step( 0.01 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
-				gui.add( aoParameters, 'distanceExponent' ).min( 1 ).max( 4 ).step( 0.01 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
+				gui.add( aoParameters, 'slices' ).min( 1 ).max( 8 ).step( 1 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
+				gui.add( aoParameters, 'radius' ).min( 0.01 ).max( 25 ).step( 0.01 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
 				gui.add( aoParameters, 'thickness' ).min( 0.01 ).max( 1.0 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
-				gui.add( aoParameters, 'scale' ).min( 0.01 ).max( 2.0 ).step( 0.01 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
-				gui.add( aoParameters, 'samples' ).min( 2 ).max( 32 ).step( 1 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
-				gui.add( aoParameters, 'screenSpaceRadius' ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
+				gui.add( aoParameters, 'scale' ).min( 0.01 ).max( 5.0 ).step( 0.01 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
+				gui.add( aoParameters, 'aosamples' ).min( 2 ).max( 64 ).step( 1 ).onChange( () => ssilvbPass.updateSSILVBMaterial( aoParameters ) );
 				gui.add( pdParameters, 'lumaPhi' ).min( 0 ).max( 20 ).step( 0.01 ).onChange( () => ssilvbPass.updatePdMaterial( pdParameters ) );
 				gui.add( pdParameters, 'depthPhi' ).min( 0.01 ).max( 20 ).step( 0.01 ).onChange( () => ssilvbPass.updatePdMaterial( pdParameters ) );
 				gui.add( pdParameters, 'normalPhi' ).min( 0.01 ).max( 20 ).step( 0.01 ).onChange( () => ssilvbPass.updatePdMaterial( pdParameters ) );

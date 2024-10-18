@@ -263,9 +263,16 @@ class SSILVBPass extends Pass {
 
 		}
 
-		if ( parameters.samples !== undefined && parameters.samples !== this.ssilvbMaterial.defines.SAMPLES ) {
+		if ( parameters.aosamples !== undefined && parameters.aosamples !== this.ssilvbMaterial.defines.SAMPLES ) {
 
-			this.ssilvbMaterial.defines.SAMPLES = parameters.samples;
+			this.ssilvbMaterial.defines.SAMPLES = parameters.aosamples;
+			this.ssilvbMaterial.needsUpdate = true;
+
+		}
+
+		if ( parameters.slices !== undefined && parameters.slices !== this.ssilvbMaterial.defines.SLICES ) {
+
+			this.ssilvbMaterial.defines.SLICES = parameters.slices;
 			this.ssilvbMaterial.needsUpdate = true;
 
 		}
