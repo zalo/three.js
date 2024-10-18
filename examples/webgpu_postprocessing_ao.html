@@ -21,7 +21,7 @@
 
 			import * as THREE from 'three';
 			import { pass, mrt, output, transformedNormalView, texture } from 'three/tsl';
-			import { ao } from 'three/addons/tsl/display/GTAONode.js';
+			import { ao, generateMagicSquareNoise } from 'three/addons/tsl/display/GTAONode.js';
 			import { denoise } from 'three/addons/tsl/display/DenoiseNode.js';
 
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -38,6 +38,7 @@
 			let aoPass, denoisePass, blendPassAO, blendPassDenoise, scenePassColor;
 
 			const params = {
+				output: "AO Only + Denoise",
 				distanceExponent: 1,
 				distanceFallOff: 1,
 				radius: 0.25,
@@ -77,7 +78,7 @@
 				controls = new OrbitControls( camera, renderer.domElement );
 				controls.target.set( 0, 0.5, 0 );
 				controls.update();
-				controls.enablePan = false;
+				//controls.enablePan = false;
 				controls.enableDamping = true;
 
 				stats = new Stats();
@@ -104,11 +105,11 @@
 
 				// denoise (optional)
 
-				const noiseTexture = texture( generateNoise() );
+				const noiseTexture = texture( generateMagicSquareNoise() );
 				denoisePass = denoise( aoPass.getTextureNode(), scenePassDepth, scenePassNormal, noiseTexture, camera );
 				blendPassDenoise = denoisePass.mul( scenePassColor );
 
-				postProcessing.outputNode = blendPassDenoise;
+				postProcessing.outputNode = denoisePass;//blendPassDenoise;
 
 				//
 
@@ -135,42 +136,33 @@
 
 				const gui = new GUI();
 				gui.title( 'AO settings' );
+
+				gui.add( params, 'output', {
+					'Default': blendPassDenoise,
+					'Diffuse': scenePassColor,
+					'AO Only': aoPass,
+					'AO Only + Denoise': denoisePass,
+					'Depth': scenePassDepth,
+					'Normal': scenePassNormal
+				} ).onChange( function ( value ) {
+
+					postProcessing.outputNode = value;
+					postProcessing.needsUpdate = true;
+
+				} );
+
 				gui.add( params, 'distanceExponent' ).min( 1 ).max( 4 ).onChange( updateParameters );
 				gui.add( params, 'distanceFallOff' ).min( 0.01 ).max( 1 ).onChange( updateParameters );
 				gui.add( params, 'radius' ).min( 0.01 ).max( 1 ).onChange( updateParameters );
 				gui.add( params, 'scale' ).min( 0.01 ).max( 2 ).onChange( updateParameters );
 				gui.add( params, 'thickness' ).min( 0.01 ).max( 2 ).onChange( updateParameters );
-				gui.add( params, 'denoised' ).onChange( updatePassChain );
-				gui.add( params, 'enabled' ).onChange( updatePassChain );
 				const folder = gui.addFolder( 'Denoise settings' );
 				folder.add( params, 'denoiseRadius' ).min( 0.01 ).max( 10 ).name( 'radius' ).onChange( updateParameters );
 				folder.add( params, 'lumaPhi' ).min( 0.01 ).max( 10 ).onChange( updateParameters );
 				folder.add( params, 'depthPhi' ).min( 0.01 ).max( 10 ).onChange( updateParameters );
 				folder.add( params, 'normalPhi' ).min( 0.01 ).max( 10 ).onChange( updateParameters );
 
-			}
 
-			function updatePassChain() {
-
-				if ( params.enabled === true ) {
-
-					if ( params.denoised === true ) {
-
-						postProcessing.outputNode = blendPassDenoise;
-
-					} else {
-
-						postProcessing.outputNode = blendPassAO;
-
-					}
-
-				} else {
-
-					postProcessing.outputNode = scenePassColor;
-
-				}
-
-				postProcessing.needsUpdate = true;
 
 
 			}
