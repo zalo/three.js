@@ -20,6 +20,7 @@ const SSILVBShader = {
 	defines: {
 		PERSPECTIVE_CAMERA: 1,
 		SAMPLES: 16,
+		SLICES: 4,
 		NORMAL_VECTOR_TYPE: 1,
 		DEPTH_SWIZZLING: 'x',
 		SCREEN_SPACE_RADIUS: 0.0,
@@ -89,7 +90,7 @@ const SSILVBShader = {
 		const float pi = 3.14159265359;
 		const float twoPi = 2.0 * pi;
 		const float halfPi = 0.5 * pi;
-		const float sliceCount = 4.0;
+		const int sliceCount = SLICES;
 		float sampleCount = float(SAMPLES);
 
 		#include <common>
@@ -206,13 +207,14 @@ const SSILVBShader = {
 			vec3 normal = normalize(getViewNormal(vUv.xy));
 			if (!useCorrectNormals) { normal.xyz = normal.xyz * 0.5 + 0.5; }
 
-			float sliceRotation = pi / float(sliceCount - 1.0);
+			float sliceRotation = twoPi / float(sliceCount);
 			float sampleScale = (-radius * cameraProjectionMatrix[0][0]) / position.z;
-			float sampleOffset = 0.01 * scale;
+			//float sampleOffset = 0.01;// * radius;
 			float jitter = randf(int(gl_FragCoord.x), int(gl_FragCoord.y)) - 0.5;
+			float sampleOffset = (0.01 * radius) * jitter;
 
-			for (float slice = 0.0; slice < sliceCount + 0.5; slice += 1.0) {
-				float phi = sliceRotation * (slice + jitter) + pi;
+			for (int slice = 0; slice < sliceCount; slice ++) {
+				float phi = sliceRotation * (float(slice) + jitter) + pi;
 				vec2 omega = vec2(cos(phi), sin(phi));
 				vec3 direction = vec3(omega.x, omega.y, 0.0);
 				vec3 orthoDirection = direction - dot(direction, camera) * camera;
@@ -249,8 +251,9 @@ const SSILVBShader = {
 				visibility += 1.0 - float(bitCount(occlusion)) / float(sectorCount);
 			}
 
-			visibility /= sliceCount;
-			lighting /= sliceCount;
+			visibility /= float(sliceCount);
+			lighting   /= float(sliceCount);
+			visibility = saturate(pow(saturate(visibility), scale));
 
 			//lighting += texture(tColor, vUv.xy).rgb;
 			gl_FragColor = vec4(visibility, visibility, visibility, 1.0);// lighting, visibility); //

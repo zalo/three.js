@@ -270,6 +270,13 @@ class SSILVBPass extends Pass {
 
 		}
 
+		if ( parameters.slices !== undefined && parameters.slices !== this.ssilvbMaterial.defines.SLICES ) {
+
+			this.ssilvbMaterial.defines.SLICES = parameters.slices;
+			this.ssilvbMaterial.needsUpdate = true;
+
+		}
+
 		if ( parameters.screenSpaceRadius !== undefined && ( parameters.screenSpaceRadius ? 1 : 0 ) !== this.ssilvbMaterial.defines.SCREEN_SPACE_RADIUS ) {
 
 			this.ssilvbMaterial.defines.SCREEN_SPACE_RADIUS = parameters.screenSpaceRadius ? 1 : 0;
