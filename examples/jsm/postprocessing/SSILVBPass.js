@@ -277,19 +277,6 @@ class SSILVBPass extends Pass {
 
 		}
 
-		if ( parameters.screenSpaceRadius !== undefined && ( parameters.screenSpaceRadius ? 1 : 0 ) !== this.ssilvbMaterial.defines.SCREEN_SPACE_RADIUS ) {
-
-			this.ssilvbMaterial.defines.SCREEN_SPACE_RADIUS = parameters.screenSpaceRadius ? 1 : 0;
-			this.ssilvbMaterial.needsUpdate = true;
-
-		}
-
-		if ( parameters.useCorrectNormals !== undefined ) {
-
-			this.ssilvbMaterial.uniforms.useCorrectNormals.value = parameters.useCorrectNormals;
-
-		}
-
 	}
 
 	updatePdMaterial( parameters ) {

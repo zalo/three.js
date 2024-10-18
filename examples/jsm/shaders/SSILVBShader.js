@@ -41,6 +41,7 @@ const SSILVBShader = {
 		cameraProjectionMatrixInverse: { value: new Matrix4() },
 		cameraWorldMatrix: { value: new Matrix4() },
 		radius: { value: 12.0 },
+		distanceExponent: { value: 1.7 },
 		thickness: { value: 1. },
 		scale: { value: 1. },
 		sceneBoxMin: { value: new Vector3( - 1, - 1, - 1 ) },
@@ -283,9 +284,7 @@ const SSILVBShader = {
 				
 			for (uint j = 0u; j < uint(_StepCount); j++) {
 
-				float _ExpFactor = 1.0;
-
-				float offset = pow(abs((stepRadius * (float(j) + initialRayStep)) / radiusVS), _ExpFactor) * radiusVS;
+				float offset = pow(abs((stepRadius * (float(j) + initialRayStep)) / radiusVS), distanceExponent) * radiusVS;
 
 				vec2 uvOffset = slideDir_TexelSize * max(offset, 1.0 + float(j));
 				vec2 sampleUV = uv + uvOffset * samplingDirection;
@@ -310,16 +309,10 @@ const SSILVBShader = {
 				frontBackHorizon = saturate(((samplingDirection * -frontBackHorizon) - n + halfPi) / pi);
 				//frontBackHorizon = saturate(frontBackHorizon*(1.0+1.5*pi/float(MAX_RAY))-1.5*halfPi/float(MAX_RAY)); // Remamp bitfield on one sector narrower hemisphere
 				frontBackHorizon = directionIsRight ? frontBackHorizon.yx : frontBackHorizon.xy; // Front/Back get inverted depending on angle
-
 				frontBackHorizon = directionIsRight ? 1.0 - frontBackHorizon : frontBackHorizon;
-
-				debug = vec3(frontBackHorizon, 0.0);
 
 				uint numOccludedZones;
 				ComputeOccludedBitfield(frontBackHorizon.x, frontBackHorizon.y, globalOccludedBitfield, numOccludedZones);
-				
-        		//debug = vec3(float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0, float(globalOccludedBitfield)/4294967295.0);
-        		//debug *= 0.5;
 
 				vec3 lightNormalVS = vec3(0.0);
 				if(numOccludedZones > 0u) // If a ray hit the sample, that sample is visible from shading point
@@ -423,6 +416,10 @@ const SSILVBShader = {
 			//col.z = clamp(col.z, 0.0, 7); 
 			//// Convert back to HSV space
 			//col = HsvToRgb(col);
+			col = RgbToHsv(col);
+			col.z = clamp(col.z, 0.0, 0.7); 
+			// Convert back to HSV space
+			col = HsvToRgb(col);
 
 			gl_FragColor = vec4(ao, ao, ao, 1.0); // col, ao); //vec4(viewDir.z, viewDir.z, viewDir.z, 1.0); //
 		}`
