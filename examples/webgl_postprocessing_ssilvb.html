@@ -24,7 +24,8 @@
 			{
 				"imports": {
 					"three": "../build/three.module.js",
-					"three/addons/": "./jsm/"
+					"three/addons/": "./jsm/",
+					"stats-gl": "https://cdn.jsdelivr.net/npm/stats-gl@2.2.8/dist/main.js"
 				}
 			}
 		</script>
@@ -32,7 +33,7 @@
 		<script type="module">
 
 			import * as THREE from 'three';
-			import Stats from 'three/addons/libs/stats.module.js';
+			import Stats from 'stats-gl';
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -69,6 +70,8 @@
 				document.body.appendChild( renderer.domElement );
 
 				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+				stats.init( renderer ); // this will patch the threejs render function so no need to call begin() or end()
+
 
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color( 0xbfe3dd );
@@ -197,6 +200,7 @@
 				stats.begin();
 				composer.render();
 				stats.end();
+				stats.update();
 
 			}
 
