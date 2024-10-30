@@ -65,7 +65,7 @@ const SSILVBShader = {
 		// https://cdrinmatane.github.io/posts/cgspotlight-slides/
 
 		#define MAX_RAY 32u
-		#define isPerspectiveCam false
+		#define isPerspectiveCam true
 		#define GTVBAO_SLICE_SAMPLING_MODE 3
 
 		#if 1
@@ -1141,7 +1141,7 @@ const SSILVBShader = {
 						
 						if(isPerspectiveCam)
 						{
-						#if 1
+						#if 0
 							deltaPosBack = VPos_from_SPos(vec3(samplePos, sampleDepth + Thickness)) - positionVS;
 						#else
 							// also valid, but not consistent with reference ray marcher
