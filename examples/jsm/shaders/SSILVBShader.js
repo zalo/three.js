@@ -43,7 +43,7 @@ const SSILVBShader = {
 		cameraWorldMatrixInverse: { value: new Matrix4() },
 		radius: { value: 12.0 },
 		distanceExponent: { value: 1.7 },
-		thickness: { value: 1. },
+		thickness: { value: 0.5 },
 		scale: { value: 1. },
 		sceneBoxMin: { value: new Vector3( - 1, - 1, - 1 ) },
 		sceneBoxMax: { value: new Vector3( 1, 1, 1 ) },
@@ -65,7 +65,7 @@ const SSILVBShader = {
 		// https://cdrinmatane.github.io/posts/cgspotlight-slides/
 
 		#define MAX_RAY 32u
-		#define isPerspectiveCam true
+		#define isPerspectiveCam false
 		#define GTVBAO_SLICE_SAMPLING_MODE 3
 
 		#if 1
@@ -74,8 +74,8 @@ const SSILVBShader = {
 			#define USE_HQ_ACOS
 		#endif
 
-		#define RAY_MARCH_SAMPLE_COUNT 32.0
-		#define RAY_MARCH_RADIUS 512.0
+		//#define RAY_MARCH_SAMPLE_COUNT 32.0
+		//#define RAY_MARCH_RADIUS 512.0
 		#define USE_UNIFORM_HEMISHPHERE_WEIGHTING false
 
 		#define nearZ 1.0 //0.125 // 1.0 ?
@@ -1112,9 +1112,9 @@ const SSILVBShader = {
 				{
 					vec2 rayDir = dir.xy * d;
 					
-					const float count = RAY_MARCH_SAMPLE_COUNT;
+					const float count = float(SAMPLES);//RAY_MARCH_SAMPLE_COUNT;
 					
-					const float s = pow(RAY_MARCH_RADIUS, 1.0/count);
+					float s = pow(radius, 1.0/count); // const RAY_MARCH_RADIUS 
 					
 					float t = pow(s, rnd01.x);// init t: [1, s]
 					
@@ -1134,7 +1134,7 @@ const SSILVBShader = {
 						
 						vec3 samplePosVS = VPos_from_SPos(vec3(samplePos, sampleDepth));
 
-						float Thickness = 0.5;
+						float Thickness = thickness;
 
 						vec3 deltaPosFront = samplePosVS - positionVS;
 						vec3 deltaPosBack  = deltaPosFront - V * Thickness;
@@ -1236,9 +1236,10 @@ const SSILVBShader = {
     		uint pxId = EvalHilbertCurve(uvu, 9u);
 			//pxId = 0u;
 
-			uint count = 1u;
+			uint count = uint(SLICES);//SLICE_COUNT;
         	vec3 ssao = GTVBAO(uv0, wpos, N, pxId, count);
-			gl_FragColor = vec4(ssao, 1.0); //vec4(uvu.x, uvu.y, 0.0, 1.0);//vec4(vec3(float(pxId)/1000000.0), 1.0); // vec4(N, 1.0); //
+			//gl_FragColor = vec4(ssao, 1.0); //vec4(uvu.x, uvu.y, 0.0, 1.0);//vec4(vec3(float(pxId)/1000000.0), 1.0); // vec4(N, 1.0); //
+			gl_FragColor = vec4(vec3(saturate(pow(saturate(ssao.x), scale))), 1.0);
 		}`
 
 };
