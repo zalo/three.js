@@ -25,6 +25,7 @@ import { generateMagicSquareNoise, SSILVBShader, SSILVBDepthShader, SSILVBBlendS
 import { generatePdSamplePointInitializer, PoissonDenoiseShader } from '../shaders/PoissonDenoiseShader.js';
 import { CopyShader } from '../shaders/CopyShader.js';
 import { SimplexNoise } from '../math/SimplexNoise.js';
+import { Matrix4 } from '../../../src/Three.WebGPU.Nodes.js';
 
 class SSILVBPass extends Pass {
 
@@ -362,7 +363,7 @@ class SSILVBPass extends Pass {
 		this.ssilvbMaterial.uniforms.cameraProjectionMatrix.value.copy( this.camera.projectionMatrix );
 		this.ssilvbMaterial.uniforms.cameraProjectionMatrixInverse.value.copy( this.camera.projectionMatrixInverse );
 		this.ssilvbMaterial.uniforms.cameraWorldMatrix.value.copy( this.camera.matrixWorld );
-		this.ssilvbMaterial.uniforms.cameraWorldMatrixInverse.value.copy( this.camera.matrix );
+		this.ssilvbMaterial.uniforms.cameraWorldMatrixInverse.value.copy( new Matrix4().copy( this.camera.matrixWorld ).invert() );
 		this.renderPass( renderer, this.ssilvbMaterial, this.ssilvbRenderTarget, 0xffffff, 1.0 );
 
 		// render poisson denoise

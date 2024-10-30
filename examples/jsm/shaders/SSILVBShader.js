@@ -188,22 +188,29 @@ const SSILVBShader = {
 
 		// ====== View <-> World ====== //
 		vec3 VPos_from_WPos(vec3 wpos) {
-			return normalize((cameraWorldMatrixInverse * vec4(wpos, 1.0)).xyz);
+			vec3 vpos = (cameraWorldMatrixInverse * vec4(wpos, 1.0)).xyz;
+			vpos.z *= -1.0;
+			return vpos;
 		}
 
 		vec3 VVec_from_WVec(vec3 wvec) {
-			return normalize((cameraWorldMatrixInverse * vec4(wvec, 0.0)).xyz);
+			vec3 vvec = normalize((cameraWorldMatrixInverse * vec4(wvec, 0.0)).xyz);
+			vvec.z *= -1.0;
+			return vvec;
 		}
 
 		// ====== Screen <-> View ====== //
 		vec3 SPos_from_VPos(vec3 vpos) {
+			vpos.z *= -1.0;
 			vec3 spos = getSceneUvAndDepth(vpos);
 			
 			return vec3(spos.xy * iResolution.xy, spos.z);
 		}
 
 		vec3 VPos_from_SPos(vec3 spos) {
-			return getViewPosition(spos.xy / iResolution.xy, spos.z);
+			vec3 vpos = getViewPosition(spos.xy / iResolution.xy, spos.z);
+			vpos.z *= -1.0;
+			return vpos;
 		}
 
 		// https://blog.demofox.org/2022/01/01/interleaved-gradient-noise-a-different-kind-of-low-discrepancy-sequence/
@@ -469,7 +476,7 @@ const SSILVBShader = {
 
 		#define SEED uvec4(0x5C995C6Du, 0x6A3C6A57u, 0xC65536CBu, 0x3563995Fu)
 
-		// Melissa E. O’Neill - "PCG: A Family of Simple Fast Space-Efficient Statistically Good Algorithms for Random Number Generation"
+		// Melissa E. O'Neill - "PCG: A Family of Simple Fast Space-Efficient Statistically Good Algorithms for Random Number Generation"
 		// https://www.cs.hmc.edu/tr/hmc-cs-2014-0905.pdf
 
 		// Mark Jarzynski & Marc Olano - "Hash Functions for GPU Rendering"
@@ -940,15 +947,17 @@ const SSILVBShader = {
 		}
 
 
-		float GTVBAO(vec2 uv0, vec3 wpos, vec3 N, uint pxId, uint dirCount) {
+		vec3 GTVBAO(vec2 uv0, vec3 wpos, vec3 N, uint pxId, uint dirCount) {
 			//if(doTempAccu) pxId += uint(iFrame) * 98u;// 135u 153u (159u) 169u 193 208 224 242 258u (273u) 276u 279u
 
 			vec3 positionVS = VPos_from_WPos(wpos);
 			vec3 normalVS   = VVec_from_WVec(N);
 			
 			vec3 V = isPerspectiveCam ? -normalize(positionVS) : vec3(0.0, 0.0, -1.0);
-			
+
 			vec2 rayStart = SPos_from_VPos(positionVS).xy;
+
+			//return vec3(rayStart, 0.0) / 1000.0;
 
 			float ao = 0.0;
 			
@@ -1081,7 +1090,7 @@ const SSILVBShader = {
 					vec3 projN = normalVS - sliceN * dot(normalVS, sliceN);
 
 					float projNSqrLen = dot(projN, projN);
-					if(projNSqrLen == 0.0) return 1.0;
+					if(projNSqrLen == 0.0) return vec3(1.0);
 
 					projNRcpLen = inversesqrt(projNSqrLen);
 
@@ -1142,7 +1151,7 @@ const SSILVBShader = {
 
 						// project samples onto unit circle and compute angles relative to V
 						vec2 horCos = vec2(dot(normalize(deltaPosFront), V), 
-										dot(normalize(deltaPosBack ), V));
+										   dot(normalize(deltaPosBack ), V));
 
 						vec2 horAng = ACos(horCos) * d;
 
@@ -1203,7 +1212,7 @@ const SSILVBShader = {
 			
 			ao /= float(dirCount);
 			
-			return ao;
+			return vec3(ao);
 		}
 
 
@@ -1213,7 +1222,7 @@ const SSILVBShader = {
 			float depth = getDepth(vUv.xy);
 			if (depth >= 1.0) { discard; return; }
 
-			vec2 uv0 = gl_FragCoord.xy / iResolution.xy;
+			vec2 uv0 = gl_FragCoord.xy;// / iResolution.xy;
 			uvec2 uvu = uvec2(uv0.xy - 0.5);
 
 			// randomly shift noise pattern around
@@ -1225,10 +1234,11 @@ const SSILVBShader = {
 
 			// linearize uv in a locality preserving way
     		uint pxId = EvalHilbertCurve(uvu, 9u);
+			//pxId = 0u;
 
 			uint count = 1u;
-        	float ssao = GTVBAO(uv0, wpos, N, pxId, count);
-			gl_FragColor = vec4(ssao, ssao, ssao, 1.0);
+        	vec3 ssao = GTVBAO(uv0, wpos, N, pxId, count);
+			gl_FragColor = vec4(ssao, 1.0); //vec4(uvu.x, uvu.y, 0.0, 1.0);//vec4(vec3(float(pxId)/1000000.0), 1.0); // vec4(N, 1.0); //
 		}`
 
 };
