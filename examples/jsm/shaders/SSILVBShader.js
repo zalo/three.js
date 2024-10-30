@@ -1023,8 +1023,8 @@ const SSILVBShader = {
 				#else
 					// approximate slice dir importance sampling
 					
-					float rnd01 = Float01(h * rPhi1);// 'Hilbert R1 Blue Noise' by paniq: https://www.shadertoy.com/view/3tB3z3
-					//rnd01 = IGN(floor(uv0), USE_TEMP_ACCU_COND ? uint(iFrame) : 0u);
+					//float rnd01 = Float01(h * rPhi1);// 'Hilbert R1 Blue Noise' by paniq: https://www.shadertoy.com/view/3tB3z3
+					float rnd01 = IGN(floor(uv0), 0u);//USE_TEMP_ACCU_COND ? uint(iFrame) : 0u);
 
 					// set up View Vec Space <-> View Space mapping
 					vec4   Q_toV = GetQuaternion(V);
