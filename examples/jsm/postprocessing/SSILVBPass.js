@@ -63,7 +63,7 @@ class SSILVBPass extends Pass {
 		} );
 		this.ssilvbMaterial.defines.PERSPECTIVE_CAMERA = this.camera.isPerspectiveCamera ? 1 : 0;
 		this.ssilvbMaterial.uniforms.tNoise.value = this.ssilvbNoiseTexture;
-		this.ssilvbMaterial.uniforms.resolution.value.set( this.width, this.height );
+		this.ssilvbMaterial.uniforms.iResolution.value.set( this.width, this.height );
 		this.ssilvbMaterial.uniforms.cameraNear.value = this.camera.near;
 		this.ssilvbMaterial.uniforms.cameraFar.value = this.camera.far;
 
@@ -362,6 +362,7 @@ class SSILVBPass extends Pass {
 		this.ssilvbMaterial.uniforms.cameraProjectionMatrix.value.copy( this.camera.projectionMatrix );
 		this.ssilvbMaterial.uniforms.cameraProjectionMatrixInverse.value.copy( this.camera.projectionMatrixInverse );
 		this.ssilvbMaterial.uniforms.cameraWorldMatrix.value.copy( this.camera.matrixWorld );
+		this.ssilvbMaterial.uniforms.cameraWorldMatrixInverse.value.copy( this.camera.matrix );
 		this.renderPass( renderer, this.ssilvbMaterial, this.ssilvbRenderTarget, 0xffffff, 1.0 );
 
 		// render poisson denoise
@@ -503,7 +504,7 @@ class SSILVBPass extends Pass {
 		this.normalRenderTarget.setSize( width, height );
 		this.pdRenderTarget.setSize( width, height );
 
-		this.ssilvbMaterial.uniforms.resolution.value.set( width, height );
+		this.ssilvbMaterial.uniforms.iResolution.value.set( width, height );
 		this.ssilvbMaterial.uniforms.cameraProjectionMatrix.value.copy( this.camera.projectionMatrix );
 		this.ssilvbMaterial.uniforms.cameraProjectionMatrixInverse.value.copy( this.camera.projectionMatrixInverse );
 
