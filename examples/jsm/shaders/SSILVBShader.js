@@ -47,6 +47,7 @@ const SSILVBShader = {
 		scale: { value: 1. },
 		sceneBoxMin: { value: new Vector3( - 1, - 1, - 1 ) },
 		sceneBoxMax: { value: new Vector3( 1, 1, 1 ) },
+		frameNumber: { value: 0 },
 	},
 
 	glslVersion: GLSL3,
@@ -106,6 +107,7 @@ const SSILVBShader = {
 			uniform vec3 sceneBoxMin;
 			uniform vec3 sceneBoxMax;
 		#endif
+		uniform uint frameNumber;
 
 		const float pi = 3.14159265359;
 		const float twoPi = 2.0 * pi;
@@ -972,8 +974,8 @@ const SSILVBShader = {
 				#if GTVBAO_SLICE_SAMPLING_MODE == 1
 					// sample slice dir uniformly and later compute slice_weight accordingly
 					
-					float rnd01 = Float01(h * rPhi1);
-					//rnd01 = IGN(floor(uv0), USE_TEMP_ACCU_COND ? uint(iFrame) : 0u);
+					//float rnd01 = Float01(h * rPhi1);
+					float rnd01 = IGN(floor(uv0), uint(frameNumber));
 
 					dir = vec2(cos(rnd01 * Pi), sin(rnd01 * Pi));
 
@@ -1024,7 +1026,7 @@ const SSILVBShader = {
 					// approximate slice dir importance sampling
 					
 					//float rnd01 = Float01(h * rPhi1);// 'Hilbert R1 Blue Noise' by paniq: https://www.shadertoy.com/view/3tB3z3
-					float rnd01 = IGN(floor(uv0), 0u);//USE_TEMP_ACCU_COND ? uint(iFrame) : 0u);
+					float rnd01 = IGN(floor(uv0), frameNumber);
 
 					// set up View Vec Space <-> View Space mapping
 					vec4   Q_toV = GetQuaternion(V);
@@ -1226,7 +1228,7 @@ const SSILVBShader = {
 			uvec2 uvu = uvec2(uv0.xy - 0.5);
 
 			// randomly shift noise pattern around
-			//if(USE_TEMP_ACCU_COND) uvu += Hash(uvec2(iFrame, 0u), 0xBD1E0BB0u).xy;
+			uvu += Hash(uvec2(uint(frameNumber), 0u), 0xBD1E0BB0u).xy;
 
 			vec3 wpos = getWorldPosition(vUv, depth);
 			vec3 N    = normalize(getWorldNormal(vUv.xy));
@@ -1234,7 +1236,6 @@ const SSILVBShader = {
 
 			// linearize uv in a locality preserving way
     		uint pxId = EvalHilbertCurve(uvu, 9u);
-			//pxId = 0u;
 
 			uint count = uint(SLICES);//SLICE_COUNT;
         	vec3 ssao = GTVBAO(uv0, wpos, N, pxId, count);

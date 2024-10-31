@@ -42,10 +42,12 @@ class SSILVBPass extends Pass {
 		this._renderGBuffer = true;
 		this._visibilityCache = new Map();
 		this.blendIntensity = 1.;
+		this.frameNumber = 0;
 
 		this.pdRings = 2.;
 		this.pdRadiusExponent = 2.;
 		this.pdSamples = 16;
+		this.useTemporalJitter = false;
 
 		this.ssilvbNoiseTexture = generateMagicSquareNoise();
 		this.pdNoiseTexture = this.generateNoise();
@@ -67,6 +69,7 @@ class SSILVBPass extends Pass {
 		this.ssilvbMaterial.uniforms.iResolution.value.set( this.width, this.height );
 		this.ssilvbMaterial.uniforms.cameraNear.value = this.camera.near;
 		this.ssilvbMaterial.uniforms.cameraFar.value = this.camera.far;
+		this.ssilvbMaterial.uniforms.frameNumber.value = this.frameNumber;
 
 		this.normalMaterial = new MeshNormalMaterial();
 		this.normalMaterial.blending = NoBlending;
@@ -264,6 +267,8 @@ class SSILVBPass extends Pass {
 
 		}
 
+		this.useTemporalJitter = parameters.temporalJitter || false;
+
 		if ( parameters.aosamples !== undefined && parameters.aosamples !== this.ssilvbMaterial.defines.SAMPLES ) {
 
 			this.ssilvbMaterial.defines.SAMPLES = parameters.aosamples;
@@ -360,10 +365,12 @@ class SSILVBPass extends Pass {
 
 		this.ssilvbMaterial.uniforms.cameraNear.value = this.camera.near;
 		this.ssilvbMaterial.uniforms.cameraFar.value = this.camera.far;
-		this.ssilvbMaterial.uniforms.cameraProjectionMatrix.value.copy( this.camera.projectionMatrix );
+		this.ssilvbMaterial.uniforms.cameraProjectionMatrix       .value.copy( this.camera.projectionMatrix );
 		this.ssilvbMaterial.uniforms.cameraProjectionMatrixInverse.value.copy( this.camera.projectionMatrixInverse );
-		this.ssilvbMaterial.uniforms.cameraWorldMatrix.value.copy( this.camera.matrixWorld );
-		this.ssilvbMaterial.uniforms.cameraWorldMatrixInverse.value.copy( new Matrix4().copy( this.camera.matrixWorld ).invert() );
+		this.ssilvbMaterial.uniforms.cameraWorldMatrix            .value.copy( this.camera.matrixWorld );
+		this.ssilvbMaterial.uniforms.cameraWorldMatrixInverse     .value.copy( new Matrix4().copy( this.camera.matrixWorld ).invert() );
+		this.ssilvbMaterial.uniforms.frameNumber.value = this.frameNumber;
+		if (this.useTemporalJitter) { this.frameNumber += 1; }
 		this.renderPass( renderer, this.ssilvbMaterial, this.ssilvbRenderTarget, 0xffffff, 1.0 );
 
 		// render poisson denoise
