@@ -72,7 +72,6 @@ const SSILVBShader = {
 		#if 1
 			// use high quality variants (so there is no unintentional bias when comparing to reference)
 			#define USE_HQ_APPROX_SLICE_IMPORTANCE_SAMPLING
-			#define USE_HQ_ACOS
 		#endif
 
 		//#define RAY_MARCH_SAMPLE_COUNT 32.0
@@ -568,22 +567,13 @@ const SSILVBShader = {
 			return (h >> 22u) ^ h;
 		}
 
-
-		
-		float ACos_Approx(float x) {
-			float v = x < 0.0 ? Pi : 0.0;
-			
-			x = abs(x);
-
+		float ACos_Approx(float x)
+		{
 			// minimizes max abs(ACos_Approx(cos(x)) - x)
-			float s = 0.21545;
-			float s1 = -(s + 1.0);
-			
-			float u = (x * s + s1) * x + 1.0;
-			
-			float ang = abs(v - Pi05 * sqrt(clamp(u, 0.0, 1.0)));
-			
-			return ang;
+			float u = 1.5708 + (-0.204912 + 0.0483293 * abs(x)) * abs(x);
+				u *= sqrt(1.0 - abs(x));
+					
+			return x >= 0.0 ? u : Pi - u;
 		}
 
 		uint  Hash(uint  h, uint seed) { return pcg(h, seed); }
@@ -674,16 +664,9 @@ const SSILVBShader = {
 		float Hash11(uvec2 v, uint seed) { return Float11(pcg3(uvec3(v, 0u), seed).x); }
 		float Hash11(uint  v, uint seed) { return Float11(pcg(v, seed)); }
 
-
-		#ifdef USE_HQ_ACOS
-		float ACos(float x) {   
-			return acos(clamp(x, -1.0, 1.0));
-		}
-		#else
 		float ACos(float x) {
 			return ACos_Approx(x);
 		}
-		#endif
 
 		vec2 ACos(vec2 v) {
 			return vec2(ACos(v.x), ACos(v.y));
