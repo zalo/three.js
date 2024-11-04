@@ -65,6 +65,21 @@ const SSILVBShader = {
 		// Adapted from "Screen Space Indirect Lighting with Visibility Bitmask" by Olivier Therrien, et al.
 		// https://cdrinmatane.github.io/posts/cgspotlight-slides/
 
+		#define MAX_RAY 32u
+		#define isPerspectiveCam true
+		#define GTVBAO_SLICE_SAMPLING_MODE 3
+
+		#if 1
+			// use high quality variants (so there is no unintentional bias when comparing to reference)
+			#define USE_HQ_APPROX_SLICE_IMPORTANCE_SAMPLING
+		#endif
+
+		//#define RAY_MARCH_SAMPLE_COUNT 32.0
+		//#define RAY_MARCH_RADIUS 512.0
+		#define USE_UNIFORM_HEMISHPHERE_WEIGHTING false
+
+		#define nearZ 1.0 //0.125 // 1.0 ?
+
 		precision highp float;
 		precision highp sampler2D;
 
@@ -78,7 +93,7 @@ const SSILVBShader = {
 		uniform float cameraNear;
 		uniform float cameraFar;
 		uniform mat4 cameraProjectionMatrix;
-		uniform mat4 cameraProjectionMatrixInverse;
+		uniform mat4 cameraProjectionMatrixInverse;		
 		uniform mat4 cameraWorldMatrix;
 		uniform mat4 cameraWorldMatrixInverse;
 		uniform float radius;
@@ -87,6 +102,10 @@ const SSILVBShader = {
 		uniform float scale;
 		uniform bool useCorrectNormals;
 		uniform vec2 _ScreenParams;
+		#if SCENE_CLIP_BOX == 1
+			uniform vec3 sceneBoxMin;
+			uniform vec3 sceneBoxMax;
+		#endif
 		uniform uint frameNumber;
 
 		const float pi = 3.14159265359;
@@ -113,8 +132,48 @@ const SSILVBShader = {
 			return textureLod(tDepth, uv.xy, 0.0).DEPTH_SWIZZLING;
 		}
 
+		float fetchDepth(const ivec2 uv) {   
+			return texelFetch(tDepth, uv.xy, 0).DEPTH_SWIZZLING;
+		}
+
+		float getViewZ(const in float depth) {
+			#if PERSPECTIVE_CAMERA == 1
+				return perspectiveDepthToViewZ(depth, cameraNear, cameraFar);
+			#else
+				return orthographicDepthToViewZ(depth, cameraNear, cameraFar);
+			#endif
+		}
+
+		vec3 computeNormalFromDepth(const vec2 uv) {
+			vec2 size = vec2(textureSize(tDepth, 0));
+			ivec2 p = ivec2(uv * size);
+			float c0 = fetchDepth(p);
+			float l2 = fetchDepth(p - ivec2(2, 0));
+			float l1 = fetchDepth(p - ivec2(1, 0));
+			float r1 = fetchDepth(p + ivec2(1, 0));
+			float r2 = fetchDepth(p + ivec2(2, 0));
+			float b2 = fetchDepth(p - ivec2(0, 2));
+			float b1 = fetchDepth(p - ivec2(0, 1));
+			float t1 = fetchDepth(p + ivec2(0, 1));
+			float t2 = fetchDepth(p + ivec2(0, 2));
+			float dl = abs((2.0 * l1 - l2) - c0);
+			float dr = abs((2.0 * r1 - r2) - c0);
+			float db = abs((2.0 * b1 - b2) - c0);
+			float dt = abs((2.0 * t1 - t2) - c0);
+			vec3 ce = getViewPosition(uv, c0).xyz;
+			vec3 dpdx = (dl < dr) ? ce - getViewPosition((uv - vec2(1.0 / size.x, 0.0)), l1).xyz : -ce + getViewPosition((uv + vec2(1.0 / size.x, 0.0)), r1).xyz;
+			vec3 dpdy = (db < dt) ? ce - getViewPosition((uv - vec2(0.0, 1.0 / size.y)), b1).xyz : -ce + getViewPosition((uv + vec2(0.0, 1.0 / size.y)), t1).xyz;
+			return normalize(cross(dpdx, dpdy));
+		}
+
 		vec3 getViewNormal(const vec2 uv) {
-			return unpackRGBToNormal(textureLod(tNormal, uv, 0.).rgb);
+			#if NORMAL_VECTOR_TYPE == 2
+				return normalize(textureLod(tNormal, uv, 0.).rgb);
+			#elif NORMAL_VECTOR_TYPE == 1
+				return unpackRGBToNormal(textureLod(tNormal, uv, 0.).rgb);
+			#else
+				return computeNormalFromDepth(uv);
+			#endif
 		}
 
 		vec3 getWorldNormal(const vec2 uv) {
@@ -236,7 +295,7 @@ const SSILVBShader = {
 			uint c = 0u;// accumulated cost
 			uint p = 0u;// current pattern
 
-			for(uint i = N-1u; i < N; i--)
+			for(uint i = N; --i < N;)
 			{
 				uvec2 m = (uv >> i) & 1u;// local uv
 
@@ -286,6 +345,41 @@ const SSILVBShader = {
 			x = reverse_bits(x);
 			
 			return x;
+		}
+
+		// from https://www.shadertoy.com/view/3ldXzM | license: unclear
+		uvec2 sobol_2d(uint index) 
+		{
+			uvec2 p = uvec2(0u);
+			uvec2 d = uvec2(0x80000000u);
+
+			for(; index != 0u; index >>= 1u) 
+			{
+				if((index & 1u) != 0u) 
+				{
+					p ^= d;
+				}
+
+				d.x >>= 1u;  // 1st dimension Sobol matrix, is same as base 2 Van der Corput
+				d.y ^= d.y >> 1u; // 2nd dimension Sobol matrix
+			}
+			
+			return p;
+		}
+
+		// license: unclear
+		uvec2 shuffled_scrambled_sobol_2d(uint index, uint seed) 
+		{
+			index = nested_uniform_scramble(index, seed);
+			
+			uvec2 p = sobol_2d(index);
+			
+			seed = seed * 2891336453u + 1u;
+			p.x = nested_uniform_scramble(p.x, seed );
+			seed = seed * 2891336453u + 1u;
+			p.y = nested_uniform_scramble(p.y, seed);
+		
+			return p;
 		}
 
 		uint shuffled_scrambled_sobol_angle01(uint x, uint seed) 
@@ -381,6 +475,8 @@ const SSILVBShader = {
 			return h * lcgM + 0x5C995C6Du;
 		}
 
+		#define SEED uvec4(0x5C995C6Du, 0x6A3C6A57u, 0xC65536CBu, 0x3563995Fu)
+
 		// Melissa E. O'Neill - "PCG: A Family of Simple Fast Space-Efficient Statistically Good Algorithms for Random Number Generation"
 		// https://www.cs.hmc.edu/tr/hmc-cs-2014-0905.pdf
 
@@ -413,7 +509,7 @@ const SSILVBShader = {
 
 		uvec3 pcg3(uvec3 h, uint seed)
 		{
-			uvec3 c = (seed << 1u) ^ uvec3(0x5C995C6Du, 0x6A3C6A57u, 0xC65536CBu);
+			uvec3 c = (seed << 1u) ^ SEED.xyz;
 			
 			return pcg3Permute(h * lcgM + c);
 		}
@@ -446,7 +542,7 @@ const SSILVBShader = {
 
 		uvec4 pcg4(uvec4 h, uint seed)
 		{
-			uvec4 c = (seed << 1u) ^ uvec4(0x5C995C6Du, 0x6A3C6A57u, 0xC65536CBu, 0x3563995Fu);
+			uvec4 c = (seed << 1u) ^ SEED;
 
 			return pcg4Permute(h * lcgM + c);
 		}
@@ -462,7 +558,7 @@ const SSILVBShader = {
 
 		uint pcg(uint h, uint seed)
 		{
-			uint c = (seed << 1u) ^ 0x5C995C6Du;
+			uint c = (seed << 1u) ^ SEED.x;
 
 			h = h * lcgM + c;
 			
@@ -480,10 +576,93 @@ const SSILVBShader = {
 			return x >= 0.0 ? u : Pi - u;
 		}
 
+		uint  Hash(uint  h, uint seed) { return pcg(h, seed); }
 		uvec2 Hash(uvec2 h, uint seed) { return pcg3(uvec3(h, 0u), seed).xy; }
+		uvec3 Hash(uvec3 h, uint seed) { return pcg3(h, seed); }
+		uvec4 Hash(uvec4 h, uint seed) { return pcg4(h, seed); }
+
+		vec4 Hash01x4(vec4  v, uint seed) { return Float01(pcg4(asuint2(v), seed)); }
+		vec4 Hash01x4(vec3  v, uint seed) { return Hash01x4(vec4(v, 0.0          ), seed); }
+		vec4 Hash01x4(vec2  v, uint seed) { return Hash01x4(vec4(v, 0.0, 0.0     ), seed); }
+		vec4 Hash01x4(float v, uint seed) { return Hash01x4(vec4(v, 0.0, 0.0, 0.0), seed); }
+
+		vec3 Hash01x3(vec4  v, uint seed) { return Float01(pcg4(asuint2(v), seed).xyz); }
+		vec3 Hash01x3(vec3  v, uint seed) { return Float01(pcg3(asuint2(v), seed)); }
+		vec3 Hash01x3(vec2  v, uint seed) { return Hash01x3(vec3(v, 0.0     ), seed); }
+		vec3 Hash01x3(float v, uint seed) { return Hash01x3(vec3(v, 0.0, 0.0), seed); }
+
+		vec2 Hash01x2(vec4  v, uint seed) { return Float01(pcg4(asuint2(v), seed).xy); }
+		vec2 Hash01x2(vec3  v, uint seed) { return Float01(pcg3(asuint2(v), seed).xy); }
+		vec2 Hash01x2(vec2  v, uint seed) { return Hash01x3(vec3(v, 0.0     ), seed).xy; }
+		vec2 Hash01x2(float v, uint seed) { return Hash01x3(vec3(v, 0.0, 0.0), seed).xy; }
+
+		float Hash01(vec4  v, uint seed) { return Float01(pcg4(asuint2(v), seed).x); }
+		float Hash01(vec3  v, uint seed) { return Float01(pcg3(asuint2(v), seed).x); }
+		float Hash01(vec2  v, uint seed) { return Float01(pcg3(asuint2(vec3(v, 0.0)), seed).x); }
+		float Hash01(float v, uint seed) { return Float01(pcg(asuint2(v), seed)); }
+
+
+		vec4 Hash11x4(vec4  v, uint seed) { return Float11(pcg4(asuint2(v), seed)); }
+		vec4 Hash11x4(vec3  v, uint seed) { return Hash11x4(vec4(v, 0.0          ), seed); }
+		vec4 Hash11x4(vec2  v, uint seed) { return Hash11x4(vec4(v, 0.0, 0.0     ), seed); }
+		vec4 Hash11x4(float v, uint seed) { return Hash11x4(vec4(v, 0.0, 0.0, 0.0), seed); }
+
+		vec3 Hash11x3(vec4  v, uint seed) { return Float11(pcg4(asuint2(v), seed).xyz); }
+		vec3 Hash11x3(vec3  v, uint seed) { return Float11(pcg3(asuint2(v), seed)); }
+		vec3 Hash11x3(vec2  v, uint seed) { return Hash11x3(vec3(v, 0.0     ), seed); }
+		vec3 Hash11x3(float v, uint seed) { return Hash11x3(vec3(v, 0.0, 0.0), seed); }
+
+		vec2 Hash11x2(vec4  v, uint seed) { return Float11(pcg4(asuint2(v), seed).xy); }
+		vec2 Hash11x2(vec3  v, uint seed) { return Float11(pcg3(asuint2(v), seed).xy); }
+		vec2 Hash11x2(vec2  v, uint seed) { return Hash11x3(vec3(v, 0.0     ), seed).xy; }
+		vec2 Hash11x2(float v, uint seed) { return Hash11x3(vec3(v, 0.0, 0.0), seed).xy; }
+
+		float Hash11(vec4  v, uint seed) { return Float11(pcg4(asuint2(v), seed).x); }
+		float Hash11(vec3  v, uint seed) { return Float11(pcg3(asuint2(v), seed).x); }
+		float Hash11(vec2  v, uint seed) { return Float11(pcg3(asuint2(vec3(v, 0.0)), seed).x); }
+		float Hash11(float v, uint seed) { return Float11(pcg(asuint2(v), seed)); }
+
+
+		vec4 Hash01x4(uvec4 v, uint seed) { return Float01(pcg4(v, seed)); }
+		vec4 Hash01x4(uvec3 v, uint seed) { return Hash01x4(uvec4(v, 0u        ), seed); }
+		vec4 Hash01x4(uvec2 v, uint seed) { return Hash01x4(uvec4(v, 0u, 0u    ), seed); }
+		vec4 Hash01x4(uint  v, uint seed) { return Hash01x4(uvec4(v, 0u, 0u, 0u), seed); }
+
+		vec3 Hash01x3(uvec4 v, uint seed) { return Float01(pcg4(v, seed).xyz); }
 		vec3 Hash01x3(uvec3 v, uint seed) { return Float01(pcg3(v, seed)); }
+		vec3 Hash01x3(uvec2 v, uint seed) { return Hash01x3(uvec3(v, 0u    ), seed); }
 		vec3 Hash01x3(uint  v, uint seed) { return Hash01x3(uvec3(v, 0u, 0u), seed); }
+
+		vec2 Hash01x2(uvec4 v, uint seed) { return Float01(pcg4(v, seed).xy); }
+		vec2 Hash01x2(uvec3 v, uint seed) { return Float01(pcg3(v, seed).xy); }
+		vec2 Hash01x2(uvec2 v, uint seed) { return Hash01x3(uvec3(v, 0u    ), seed).xy; }
 		vec2 Hash01x2(uint  v, uint seed) { return Hash01x3(uvec3(v, 0u, 0u), seed).xy; }
+
+		float Hash01(uvec4 v, uint seed) { return Float01(pcg4(v, seed).x); }
+		float Hash01(uvec3 v, uint seed) { return Float01(pcg3(v, seed).x); }
+		float Hash01(uvec2 v, uint seed) { return Float01(pcg3(uvec3(v, 0u), seed).x); }
+		float Hash01(uint  v, uint seed) { return Float01(pcg(v, seed)); }
+
+
+		vec4 Hash11x4(uvec4 v, uint seed) { return Float11(pcg4(v, seed)); }
+		vec4 Hash11x4(uvec3 v, uint seed) { return Hash11x4(uvec4(v, 0u        ), seed); }
+		vec4 Hash11x4(uvec2 v, uint seed) { return Hash11x4(uvec4(v, 0u, 0u    ), seed); }
+		vec4 Hash11x4(uint  v, uint seed) { return Hash11x4(uvec4(v, 0u, 0u, 0u), seed); }
+
+		vec3 Hash11x3(uvec4 v, uint seed) { return Float11(pcg4(v, seed).xyz); }
+		vec3 Hash11x3(uvec3 v, uint seed) { return Float11(pcg3(v, seed)); }
+		vec3 Hash11x3(uvec2 v, uint seed) { return Hash11x3(uvec3(v, 0u    ), seed); }
+		vec3 Hash11x3(uint  v, uint seed) { return Hash11x3(uvec3(v, 0u, 0u), seed); }
+
+		vec2 Hash11x2(uvec4 v, uint seed) { return Float11(pcg4(v, seed).xy); }
+		vec2 Hash11x2(uvec3 v, uint seed) { return Float11(pcg3(v, seed).xy); }
+		vec2 Hash11x2(uvec2 v, uint seed) { return Hash11x3(uvec3(v, 0u    ), seed).xy; }
+		vec2 Hash11x2(uint  v, uint seed) { return Hash11x3(uvec3(v, 0u, 0u), seed).xy; }
+
+		float Hash11(uvec4 v, uint seed) { return Float11(pcg4(v, seed).x); }
+		float Hash11(uvec3 v, uint seed) { return Float11(pcg3(v, seed).x); }
+		float Hash11(uvec2 v, uint seed) { return Float11(pcg3(uvec3(v, 0u), seed).x); }
+		float Hash11(uint  v, uint seed) { return Float11(pcg(v, seed)); }
 
 		float ACos(float x) {
 			return ACos_Approx(x);
@@ -499,6 +678,8 @@ const SSILVBShader = {
 
 		////////////////////////////////////////////////////////////////////////////////////// slice sampling
 		//==================================================================================//
+
+		#if 1
 		// vvsN: view vec space normal | rnd01: [0, 1]
 		vec2 SampleSliceDir(vec3 vvsN, float rnd01) {
 			float ang0 = rnd01 * Pi;
@@ -525,7 +706,36 @@ const SSILVBShader = {
 					s += (s - s * s) * 0.15;
 				}
 				
+			#ifdef USE_HQ_APPROX_SLICE_IMPORTANCE_SAMPLING
 				float y = acos(x * sin(s * Pi05)) * RcpPi05;// stretched acos
+			#else
+				// approximation (not that much faster)
+				float k = 0.21545;// asin approx param
+				
+				float xs;// inverse approx asin
+				{
+					float a = 0.5 + 0.5 / k;
+					float b = 0.5 - 0.5 / k;
+					float d = b * b;
+					float c = 4.0 / k;
+
+					xs = 0.5 - 0.5 * s;
+					xs = a - sqrt(d + c * (xs*xs));
+				}
+				
+				x *= xs;// stretch curve along x
+				
+				float y;// approx acos
+				{
+					float v = x > 0.0 ? 2.0 : 0.0;
+
+					float g = -k - 1.0;
+
+					float u = (abs(x) * k + g) * abs(x) + 1.0;
+
+					y = abs(v - sqrt(clamp(u, 0.0, 1.0)));        
+				}
+			#endif
 				
 				float ys = 1.0 / s;// remap curve along y
 				
@@ -537,6 +747,80 @@ const SSILVBShader = {
 			return vec2(dir.x * n.x - dir.y * n.y, 
 						dir.y * n.x + dir.x * n.y);
 		}
+
+		#else
+
+		float QBias(float x, float b) {
+			return x + (x - x*x) * b;
+		}
+
+		float SinStep(float x) {
+			return 0.5 - 0.5 * cos(x * Pi);
+		}
+
+		float InvSinStep(float x) {
+			return acos(1.0 - 2.0 * x) * RcpPi;
+		}
+
+		float InvSinStep(float x, float s) {
+			if(s < 0.00001) return x;
+			
+			float u = asin(sin(s * Pi05) * (1.0 - 2.0 * x));
+			
+			return 0.5 - u * (RcpPi / s);
+		}
+
+		float SampleSlice(float x, float sinNV) {
+			float s = QBias(sinNV, 0.15);
+			
+				x =    SinStep(x);
+			float y = InvSinStep(x, s);
+				y = InvSinStep(y);
+			
+			return y;
+		}
+
+		vec2 cmul(vec2 c0, vec2 c1) {
+			return vec2(c0.x * c1.x - c0.y * c1.y, 
+						c0.y * c1.x + c0.x * c1.y);
+		}
+
+		// vvsN: view vec space normal | rnd01: [0, 1]
+		vec2 SampleSliceDir(vec3 vvsN, float rnd01) {
+			float ang0 = rnd01 * Pi;
+			
+			vec2 dir0 = vec2(cos(ang0), sin(ang0));
+
+			float l = length(vvsN.xy);
+
+			if(l == 0.0) return dir0;
+			
+			// flip dir0 into hemi-circle of rsN.xy
+			dir0 *= dot(dir0, vvsN.xy) < 0.0 ? -1.0 : 1.0;
+			
+			vec2 n = vvsN.xy / l;    
+			
+			// align n with x-axis
+			dir0 = cmul(dir0, n * vec2(1.0, -1.0));
+
+			// sample slice angle
+			float ang;
+			{
+				float x = atan(-dir0.y / dir0.x) * RcpPi + 0.5;
+				float sinNV = l;
+
+				ang = SampleSlice(x, sinNV) * Pi - Pi05;
+			}
+			
+			// ray space slice direction
+			vec2 dir = vec2(cos(ang), sin(ang));
+			
+			// align x-axis with n
+			dir = cmul(dir, n);
+			
+			return dir;
+		}
+		#endif
 
 		//==================================================================================//
 		//////////////////////////////////////////////////////////////////////////////////////
@@ -653,8 +937,6 @@ const SSILVBShader = {
 
 			vec3 positionVS = VPos_from_WPos(wpos);
 			vec3 normalVS   = VVec_from_WVec(N);
-
-			bool isPerspectiveCam = true;//iProjection == 0.0;
 			
 			vec3 V = isPerspectiveCam ? -normalize(positionVS) : vec3(0.0, 0.0, -1.0);
 
@@ -672,6 +954,58 @@ const SSILVBShader = {
 				vec3 smplDirVS;// view space sampling vector
 				vec2 dir;// screen space sampling vector
 				{
+				#if GTVBAO_SLICE_SAMPLING_MODE == 1
+					// sample slice dir uniformly and later compute slice_weight accordingly
+					
+					//float rnd01 = Float01(h * rPhi1);
+					float rnd01 = IGN(floor(uv0), uint(frameNumber));
+
+					dir = vec2(cos(rnd01 * Pi), sin(rnd01 * Pi));
+
+					smplDirVS = vec3(dir.xy, 0.0);
+
+					if(isPerspectiveCam)
+					{
+						// set up View Vec Space -> View Space mapping
+						vec4 Q_toV = GetQuaternion(V);
+					
+						smplDirVS = Transform_Vz0Qz0(dir, Q_toV);
+
+						vec3 rayStart = SPos_from_VPos(positionVS);
+						vec3 rayEnd   = SPos_from_VPos(positionVS + smplDirVS*(nearZ*0.5));
+
+						vec3 rayDir   = rayEnd - rayStart;
+
+						rayDir /= length(rayDir.xy);
+
+						dir = rayDir.xy;
+					}
+					
+				#elif GTVBAO_SLICE_SAMPLING_MODE == 2
+					// sample cos lobe in world space and project dir to screen space to be used as slice dir
+					
+					vec2 s = Float11(shuffled_scrambled_sobol_2d(h, 0xCC925D21u));
+
+					vec3 cosDir = normalize(Sample_Sphere(s) + N);
+
+					smplDirVS = VVec_from_WVec(cosDir);
+
+					vec3 rayDir = smplDirVS;
+					
+					if(isPerspectiveCam)
+					{
+						rayDir = SPos_from_WPos(wpos + cosDir * (nearZ * 0.5)) - SPos_from_WPos(wpos);
+					}
+					
+					// 1 px step size
+					rayDir /= length(rayDir.xy);
+
+					dir = rayDir.xy;
+
+					// make orthogonal to V (alternatively use sliceN = normalize(sliceN);)
+					smplDirVS = normalize(smplDirVS - V * dot(V, smplDirVS));
+
+				#else
 					// approximate slice dir importance sampling
 					
 					//float rnd01 = Float01(h * rPhi1);// 'Hilbert R1 Blue Noise' by paniq: https://www.shadertoy.com/view/3tB3z3
@@ -694,13 +1028,41 @@ const SSILVBShader = {
 						smplDirVS = Transform_Vz0Qz0(dir, Q_toV);
 
 						vec3 rayStart = SPos_from_VPos(positionVS);
-						vec3 rayEnd   = SPos_from_VPos(positionVS + smplDirVS*(1.0*0.5)); // nearZ is the 1.0 here!
+						vec3 rayEnd   = SPos_from_VPos(positionVS + smplDirVS*(nearZ*0.5));
 
 						vec3 rayDir   = rayEnd - rayStart;
 
 						rayDir /= length(rayDir.xy);
 
 						dir = rayDir.xy;
+					}
+				#endif
+				
+					if(USE_UNIFORM_HEMISHPHERE_WEIGHTING)
+					{
+						float rnd01 = Float01(h * rPhi1);
+		
+						dir = vec2(cos(rnd01 * Pi), sin(rnd01 * Pi));
+						smplDirVS = vec3(dir, 0.0);
+						
+					#ifndef USE_ORIGNAL_VBAO_IF_UNIFORM_HEMISHPHERE_WEIGHTING_IS_ACTIVE
+						if(isPerspectiveCam)
+						{
+							// set up View Vec Space -> View Space mapping
+							vec4 Q_toV = GetQuaternion(V);
+					
+							smplDirVS = Transform_Vz0Qz0(dir, Q_toV);
+
+							vec3 rayStart = SPos_from_VPos(positionVS);
+							vec3 rayEnd   = SPos_from_VPos(positionVS + smplDirVS*(nearZ*0.5));
+
+							vec3 rayDir   = rayEnd - rayStart;
+
+							rayDir /= length(rayDir.xy);
+
+							dir = rayDir.xy;
+						}
+					#endif
 					}
 				}
 				//////////////////////////////////////////////////
@@ -762,9 +1124,14 @@ const SSILVBShader = {
 						vec3 deltaPosFront = samplePosVS - positionVS;
 						vec3 deltaPosBack  = deltaPosFront - V * Thickness;
 						
-						if(isPerspectiveCam) {
+						if(isPerspectiveCam)
+						{
+						#if 0
+							deltaPosBack = VPos_from_SPos(vec3(samplePos, sampleDepth + Thickness)) - positionVS;
+						#else
 							// also valid, but not consistent with reference ray marcher
 							deltaPosBack = deltaPosFront + normalize(samplePosVS) * Thickness;
+						#endif
 						}
 
 						// project samples onto unit circle and compute angles relative to V
@@ -779,12 +1146,26 @@ const SSILVBShader = {
 						// sampling direction flips min/max angles
 						hor01 = d >= 0.0 ? hor01.xy : hor01.yx;
 						
-						// map to slice relative distribution
-						hor01.x = SliceRelCDF_Cos(hor01.x, angN);
-						hor01.y = SliceRelCDF_Cos(hor01.y, angN);
+						if(!USE_UNIFORM_HEMISHPHERE_WEIGHTING)
+						{
+							// map to slice relative distribution
+							hor01.x = SliceRelCDF_Cos(hor01.x, angN);
+							hor01.y = SliceRelCDF_Cos(hor01.y, angN);
 
-						// jitter sample locations + clamp01
-						hor01 = clamp(hor01 + rnd01.y * (1.0/32.0), 0.0, 1.0);
+							// jitter sample locations + clamp01
+							hor01 = clamp(hor01 + rnd01.y * (1.0/32.0), 0.0, 1.0);
+						}
+					#ifndef USE_ORIGNAL_VBAO_IF_UNIFORM_HEMISHPHERE_WEIGHTING_IS_ACTIVE
+						else
+						{
+							// map to slice relative distribution
+							hor01.x = SliceRelCDF_Uniform(hor01.x, angN);
+							hor01.y = SliceRelCDF_Uniform(hor01.y, angN);
+
+							// jitter sample locations + clamp01
+							hor01 = clamp(hor01 + rnd01.y * (1.0/32.0), 0.0, 1.0);
+						}
+					#endif
 					
 						uint occBits0;// turn arc into bit mask
 						{
@@ -805,6 +1186,11 @@ const SSILVBShader = {
 				float occ0 = float(CountBits(occBits)) * (1.0/32.0);
 
 				float slice_weight = 1.0;
+				
+			#if GTVBAO_SLICE_SAMPLING_MODE == 1
+				// if we sample the slice dir from a uniform distribution we need to account for that here
+				slice_weight = 1.0/projNRcpLen * (cosN + angN * sin(angN));
+			#endif
 				
 				ao += (1.0 - occ0) * slice_weight;
 			}
