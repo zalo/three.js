@@ -1,5 +1,5 @@
 import { RenderTarget, Vector2, TempNode, QuadMesh, NodeMaterial, RendererUtils, MathUtils } from 'three/webgpu';
-import { clamp, normalize, reference, nodeObject, Fn, NodeUpdateType, uniform, vec4, passTexture, uv, logarithmicDepthToViewZ, viewZToPerspectiveDepth, getViewPosition, screenCoordinate, float, sub, fract, dot, vec2, rand, vec3, Loop, mul, PI, cos, sin, uint, cross, acos, sign, pow, luminance, If, max, abs, Break, sqrt, HALF_PI, div, ceil, shiftRight, convertToTexture, bool, getNormalFromDepth } from 'three/tsl';
+import { clamp, normalize, reference, nodeObject, Fn, NodeUpdateType, uniform, vec4, passTexture, uv, logarithmicDepthToViewZ, viewZToPerspectiveDepth, getViewPosition, screenCoordinate, float, sub, fract, dot, vec2, rand, vec3, Loop, mul, PI, cos, sin, uint, cross, acos, sign, pow, luminance, If, max, abs, Break, sqrt, HALF_PI, div, ceil, shiftRight, convertToTexture, bool, getNormalFromDepth, property, floor } from 'three/tsl';
 
 const _quadMesh = /*@__PURE__*/ new QuadMesh();
 const _size = /*@__PURE__*/ new Vector2();
@@ -426,6 +426,69 @@ class SSGINode extends TempNode {
 			]
 		} );
 
+
+		const hash = Fn( ( [ pin ] ) => {
+
+			const p = pin.toVar();
+			p.assign( fract( p.mul( fract( p.mul( 528.48 ) ) ).mul( 2649.97 ) ) );
+			p.assign( mul( 4., p ).mul( sub( 1., p ) ) );
+
+			return p.mul( p );
+
+		}, { p: 'float', return: 'float' } );
+
+		const hash22 = /*@__PURE__*/ Fn( ( [ p ] ) => {
+
+			const res = property( 'vec2' );
+			res.x.assign( hash( dot( p, vec2( 1., sqrt( 2. ) ) ) ) );
+			res.y.assign( hash( res.x ) );
+
+			return res;
+
+		}, { p: 'vec2', return: 'vec2' } );
+
+		const hash21 = /*@__PURE__*/ Fn( ( [ p ] ) => {
+
+			const res = property( 'vec2' );
+			res.x.assign( hash( p ) );
+			res.y.assign( hash( res.x ) );
+
+			return res;
+
+		}, { p: 'float', return: 'vec2' } );
+
+		const perlin = /*@__PURE__*/ Fn( ( [ p ] ) => {
+
+			const pi = floor( p );
+			const pf = p.sub( pi );
+			const a = vec2( 0., 1. );
+
+			return hash22( pi.add( a.xx ) ).mul( sub( 1., pf.x ) ).mul( sub( 1., pf.y ) ).add( hash22( pi.add( a.xy ) ).mul( sub( 1., pf.x ) ).mul( pf.y ) ).add( hash22( pi.add( a.yx ) ).mul( pf.x ).mul( sub( 1., pf.y ) ) ).add( hash22( pi.add( a.yy ) ).mul( pf.x ).mul( pf.y ) );
+
+		}, { p: 'vec2', return: 'vec2' } );
+
+		const singrid = /*@__PURE__*/ Fn( ( [ p, angle ] ) => {
+
+			return mul( 0.5, sin( cos( angle ).mul( p.x ).add( sin( angle ).mul( p.y ) ) ).mul( sin( sin( angle ).negate().mul( p.x ).add( cos( angle ).mul( p.y ) ) ) ).add( 1. ) );
+
+		}, { p: 'vec2', angle: 'float', return: 'float' } );
+
+		//technically this is not a blue noise, but a single freqency noise, the spectrum should look like a gaussian peak around a frequency
+
+		const blue = /*@__PURE__*/ Fn( ( [ p_immutable, seed_immutable ] ) => {
+
+			const seed = seed_immutable.toVar();
+			const p = p_immutable.toVar();
+			seed.assign( mul( 100., hash( seed ) ) );
+			const shift = mul( 20., hash21( seed ) );
+			p.addAssign( shift );
+			const pnoise = perlin( mul( 0.25, p ).add( seed ) );
+
+			//bilinear interpolation between sin grids
+			return singrid( mul( 1.5, p ), 0. ).mul( pnoise.x.mul( pnoise.y ).add( sub( 1., pnoise.x ).mul( sub( 1., pnoise.y ) ) ) ).add( mul( 0.95, singrid( mul( 1.6, p ), 3.14159 * 0.33 ) ).mul( sub( 1., pnoise.x ) ).mul( pnoise.y ) ).add( mul( 1.05, singrid( mul( 1.7, p ), 3.14159 * 0.66 ) ).mul( sub( 1., pnoise.y ) ).mul( pnoise.x ) );
+
+		}, { p: 'vec2', seed: 'float', return: 'float' } );
+
 		const GTAOFastAcos = Fn( ( [ value ] ) => {
 
 			const outVal = abs( value ).mul( float( - 0.156583 ) ).add( HALF_PI );
@@ -576,7 +639,7 @@ class SSGINode extends TempNode {
 
 			const noiseOffset = spatialOffsets( screenCoordinate );
 			const noiseDirection = gradientNoise( screenCoordinate );
-			const initialRayStep = fract( noiseOffset.add( this._temporalOffset ) ).add( rand( uvNode.add( this._temporalDirection )  ).mul( 2 ).sub( 1 ) );
+			const initialRayStep = fract( noiseOffset.add( this._temporalOffset ) ).add( blue( screenCoordinate, this._temporalDirection )  ).mul( 2 ).sub( 1 );
 
 			const ao = float( 0 );
 			const color = vec3( 0 );
