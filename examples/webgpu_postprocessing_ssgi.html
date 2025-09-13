@@ -28,7 +28,8 @@
 		<script type="module">
 
 			import * as THREE from 'three/webgpu';
-			import { pass, mrt, output, normalView, diffuseColor, velocity, add, vec3, vec4, directionToColor, colorToDirection, sample } from 'three/tsl';
+			import { pass, mrt, output, normalView, diffuseColor, velocity, add, vec3, vec4, directionToColor, colorToDirection, sample, mix } from 'three/tsl';
+			import { unocclusion } from 'three/addons/tsl/display/UnocclusionNode.js';
 			import { ssgi } from 'three/addons/tsl/display/SSGINode.js';
 			import { traa } from 'three/addons/tsl/display/TRAANode.js';
 
@@ -119,7 +120,11 @@
 				// traa
 
 				const traaPass = traa( compositePass, scenePassDepth, scenePassVelocity, camera );
-				postProcessing.outputNode = traaPass;
+				const unocclusionPass = unocclusion( scenePassDepth, scenePassVelocity, camera );
+
+				const superPass = vec4( mix( traaPass.rgb, vec3 ( 1, 0 , 0), unocclusionPass.r ), scenePassColor.a );
+
+				postProcessing.outputNode = superPass;
 
 				//
 
