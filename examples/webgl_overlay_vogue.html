@@ -1,0 +1,1484 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - overlay showcase</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+		<style>
+			:root {
+				--ink: #0d0d0f;
+				--obsidian: #141418;
+				--smoke: #1c1c22;
+				--graphite: #28282e;
+				--silver: #888894;
+				--pearl: #e8e8ec;
+				--white: #fafafa;
+				--ember: #ff4d2a;
+				--flame: #ff6b4a;
+				--electric: #4dffff;
+				--violet: #8844ff;
+				--gold: #ffcc00;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			html {
+				background: var(--ink);
+			}
+
+			body {
+				margin: 0;
+				padding: 0;
+				background: transparent;
+				color: var(--pearl);
+				font-family: 'DM Sans', system-ui, sans-serif;
+				font-weight: 300;
+				line-height: 1.7;
+				letter-spacing: 0.01em;
+				overflow-x: hidden;
+			}
+
+			#canvas-bg, #canvas-fg {
+				position: fixed;
+				width: 100vw;
+				height: 100vh;
+				top: 0;
+				left: 0;
+				pointer-events: none;
+			}
+
+			#canvas-bg canvas, #canvas-fg canvas {
+				pointer-events: none;
+			}
+
+			#canvas-bg { z-index: -100; }
+			#canvas-fg { z-index: 100; }
+
+			/* ═══════════════════════════════════════════════════
+			   HERO SECTION
+			   ═══════════════════════════════════════════════════ */
+			.hero {
+				height: 100vh;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+				position: relative;
+				overflow: hidden;
+			}
+
+			.hero-eyebrow {
+				font-family: 'Space Mono', monospace;
+				font-size: 0.65rem;
+				letter-spacing: 0.4em;
+				text-transform: uppercase;
+				color: var(--ember);
+				margin-bottom: 1.5rem;
+				opacity: 0;
+				animation: fadeSlideUp 1s ease-out 0.2s forwards;
+			}
+
+			.hero-title {
+				font-family: 'Playfair Display', Georgia, serif;
+				font-size: clamp(4rem, 12vw, 10rem);
+				font-weight: 400;
+				line-height: 0.9;
+				margin: 0;
+				text-align: center;
+				color: var(--white);
+				position: relative;
+				opacity: 0;
+				animation: fadeSlideUp 1s ease-out 0.4s forwards;
+			}
+
+			.hero-title em {
+				font-style: italic;
+				color: var(--ember);
+			}
+
+			.hero-subtitle {
+				font-family: 'Space Mono', monospace;
+				font-size: 0.8rem;
+				letter-spacing: 0.15em;
+				color: var(--silver);
+				margin-top: 2rem;
+				text-transform: uppercase;
+				opacity: 0;
+				animation: fadeSlideUp 1s ease-out 0.6s forwards;
+			}
+
+			.scroll-prompt {
+				position: absolute;
+				bottom: 3rem;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 0.75rem;
+				opacity: 0;
+				animation: fadeSlideUp 1s ease-out 1s forwards;
+			}
+
+			.scroll-prompt span {
+				font-family: 'Space Mono', monospace;
+				font-size: 0.6rem;
+				letter-spacing: 0.3em;
+				text-transform: uppercase;
+				color: var(--silver);
+			}
+
+			.scroll-line {
+				width: 1px;
+				height: 60px;
+				background: linear-gradient(180deg, var(--ember), transparent);
+				animation: scrollPulse 2s ease-in-out infinite;
+			}
+
+			@keyframes scrollPulse {
+				0%, 100% { transform: scaleY(1); opacity: 1; }
+				50% { transform: scaleY(0.6); opacity: 0.5; }
+			}
+
+			@keyframes fadeSlideUp {
+				from { opacity: 0; transform: translateY(40px); }
+				to { opacity: 1; transform: translateY(0); }
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   CONTENT WRAPPER
+			   ═══════════════════════════════════════════════════ */
+			.content {
+				max-width: 720px;
+				margin: 0 auto;
+				padding: 0 2rem 12rem;
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   SECTIONS
+			   ═══════════════════════════════════════════════════ */
+			.section {
+				padding: 8rem 0;
+				position: relative;
+			}
+
+			.section-marker {
+				font-family: 'Space Mono', monospace;
+				font-size: 0.6rem;
+				letter-spacing: 0.3em;
+				text-transform: uppercase;
+				color: var(--ember);
+				margin-bottom: 1.5rem;
+				display: flex;
+				align-items: center;
+				gap: 1rem;
+			}
+
+			.section-marker::before {
+				content: '';
+				width: 2rem;
+				height: 1px;
+				background: var(--ember);
+			}
+
+			h2 {
+				font-family: 'Playfair Display', Georgia, serif;
+				font-size: clamp(2rem, 5vw, 3.5rem);
+				font-weight: 400;
+				line-height: 1.15;
+				margin: 0 0 2rem;
+				color: var(--white);
+			}
+
+			h2 em {
+				font-style: italic;
+				color: var(--silver);
+			}
+
+			p {
+				margin: 0 0 1.5rem;
+				color: var(--silver);
+				font-size: 1rem;
+			}
+
+			.lead {
+				font-size: 1.15rem;
+				color: var(--pearl);
+				line-height: 1.8;
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   FEATURE BLOCKS - 3D will frame these
+			   ═══════════════════════════════════════════════════ */
+			.feature-block {
+				background: var(--obsidian);
+				border: 1px solid var(--graphite);
+				padding: 3rem;
+				margin: 4rem 0;
+				position: relative;
+				overflow: hidden;
+			}
+
+			.feature-block::before {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 3px;
+				background: linear-gradient(90deg, var(--ember), var(--flame), var(--gold));
+			}
+
+			.feature-block::after {
+				content: '';
+				position: absolute;
+				top: 3px;
+				left: 0;
+				width: 3px;
+				height: calc(100% - 3px);
+				background: linear-gradient(180deg, var(--ember), transparent);
+			}
+
+			.feature-block h3 {
+				font-family: 'Space Mono', monospace;
+				font-size: 0.85rem;
+				font-weight: 700;
+				letter-spacing: 0.1em;
+				text-transform: uppercase;
+				color: var(--white);
+				margin: 0 0 1rem;
+			}
+
+			.feature-block p {
+				margin: 0;
+				font-size: 0.95rem;
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   CAPABILITIES GRID
+			   ═══════════════════════════════════════════════════ */
+			.capabilities {
+				display: grid;
+				grid-template-columns: repeat(2, 1fr);
+				gap: 1px;
+				background: var(--graphite);
+				margin: 4rem 0;
+			}
+
+			.capability {
+				background: var(--obsidian);
+				padding: 2.5rem;
+				transition: background 0.3s ease;
+			}
+
+			.capability:hover {
+				background: var(--smoke);
+			}
+
+			.capability-number {
+				font-family: 'Playfair Display', Georgia, serif;
+				font-size: 3rem;
+				font-style: italic;
+				color: var(--ember);
+				line-height: 1;
+				margin-bottom: 1rem;
+			}
+
+			.capability h4 {
+				font-family: 'DM Sans', sans-serif;
+				font-size: 1rem;
+				font-weight: 500;
+				color: var(--white);
+				margin: 0 0 0.75rem;
+			}
+
+			.capability p {
+				font-size: 0.85rem;
+				margin: 0;
+				color: var(--silver);
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   CODE DISPLAY
+			   ═══════════════════════════════════════════════════ */
+			.code-block {
+				background: var(--ink);
+				border-left: 3px solid var(--ember);
+				padding: 2rem;
+				margin: 3rem 0;
+				overflow-x: auto;
+				position: relative;
+			}
+
+			.code-block::before {
+				content: 'THREE.JS';
+				position: absolute;
+				top: 1rem;
+				right: 1rem;
+				font-family: 'Space Mono', monospace;
+				font-size: 0.55rem;
+				letter-spacing: 0.2em;
+				color: var(--graphite);
+			}
+
+			pre {
+				margin: 0;
+				font-family: 'Space Mono', monospace;
+				font-size: 0.8rem;
+				line-height: 1.8;
+				color: var(--silver);
+			}
+
+			.code-keyword { color: var(--ember); }
+			.code-string { color: var(--electric); }
+			.code-comment { color: var(--graphite); }
+			.code-number { color: var(--gold); }
+
+			/* ═══════════════════════════════════════════════════
+			   STATISTICS ROW
+			   ═══════════════════════════════════════════════════ */
+			.stats {
+				display: flex;
+				justify-content: space-between;
+				padding: 4rem 0;
+				border-top: 1px solid var(--graphite);
+				border-bottom: 1px solid var(--graphite);
+				margin: 4rem 0;
+			}
+
+			.stat {
+				text-align: center;
+				flex: 1;
+			}
+
+			.stat-value {
+				font-family: 'Playfair Display', Georgia, serif;
+				font-size: clamp(3rem, 8vw, 5rem);
+				font-style: italic;
+				color: var(--white);
+				line-height: 1;
+			}
+
+			.stat-label {
+				font-family: 'Space Mono', monospace;
+				font-size: 0.6rem;
+				letter-spacing: 0.25em;
+				text-transform: uppercase;
+				color: var(--silver);
+				margin-top: 0.75rem;
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   KEYBOARD HINTS
+			   ═══════════════════════════════════════════════════ */
+			.keys {
+				display: flex;
+				gap: 1rem;
+				flex-wrap: wrap;
+				margin: 2rem 0;
+			}
+
+			.key-combo {
+				display: flex;
+				align-items: center;
+				gap: 0.75rem;
+				padding: 0.75rem 1.25rem;
+				background: var(--obsidian);
+				border: 1px solid var(--graphite);
+			}
+
+			kbd {
+				font-family: 'Space Mono', monospace;
+				font-size: 0.9rem;
+				color: var(--ember);
+				background: var(--ink);
+				padding: 0.25rem 0.6rem;
+				border: 1px solid var(--graphite);
+			}
+
+			.key-desc {
+				font-size: 0.8rem;
+				color: var(--silver);
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   QUOTE BLOCK
+			   ═══════════════════════════════════════════════════ */
+			blockquote {
+				margin: 4rem 0;
+				padding: 0 0 0 2rem;
+				border-left: 1px solid var(--ember);
+			}
+
+			blockquote p {
+				font-family: 'Playfair Display', Georgia, serif;
+				font-size: 1.5rem;
+				font-style: italic;
+				color: var(--pearl);
+				line-height: 1.5;
+				margin: 0;
+			}
+
+			blockquote cite {
+				display: block;
+				font-family: 'Space Mono', monospace;
+				font-size: 0.7rem;
+				font-style: normal;
+				letter-spacing: 0.2em;
+				text-transform: uppercase;
+				color: var(--silver);
+				margin-top: 1rem;
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   FOOTER
+			   ═══════════════════════════════════════════════════ */
+			footer {
+				text-align: center;
+				padding: 4rem 2rem;
+				border-top: 1px solid var(--graphite);
+			}
+
+			footer p {
+				font-size: 0.8rem;
+				color: var(--silver);
+			}
+
+			footer a {
+				color: var(--ember);
+				text-decoration: none;
+				border-bottom: 1px solid transparent;
+				transition: border-color 0.3s ease;
+			}
+
+			footer a:hover {
+				border-color: var(--ember);
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   DEBUG OVERLAY
+			   ═══════════════════════════════════════════════════ */
+			#debug {
+				position: fixed;
+				bottom: 1.5rem;
+				left: 1.5rem;
+				font-family: 'Space Mono', monospace;
+				font-size: 0.65rem;
+				letter-spacing: 0.1em;
+				color: var(--ember);
+				background: var(--ink);
+				padding: 0.5rem 1rem;
+				border: 1px solid var(--graphite);
+				z-index: 1000;
+				pointer-events: none;
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   RESPONSIVE
+			   ═══════════════════════════════════════════════════ */
+			@media (max-width: 768px) {
+				.capabilities {
+					grid-template-columns: 1fr;
+				}
+
+				.stats {
+					flex-direction: column;
+					gap: 3rem;
+				}
+
+				.section {
+					padding: 5rem 0;
+				}
+
+				.feature-block {
+					padding: 2rem;
+				}
+			}
+
+			/* ═══════════════════════════════════════════════════
+			   NOISE TEXTURE OVERLAY
+			   ═══════════════════════════════════════════════════ */
+			body::before {
+				content: '';
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+				opacity: 0.03;
+				pointer-events: none;
+				z-index: 9999;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="canvas-bg"></div>
+		<div id="canvas-fg"></div>
+
+		<section class="hero">
+			<span class="hero-eyebrow">Three.js Experiment</span>
+			<h1 class="hero-title">Depth<br><em>Unbound</em></h1>
+			<p class="hero-subtitle">WebGL Objects Weaving Through HTML</p>
+			<div class="scroll-prompt">
+				<span>Scroll</span>
+				<div class="scroll-line"></div>
+			</div>
+		</section>
+
+		<div class="content">
+			<section class="section">
+				<span class="section-marker">01 — Concept</span>
+				<h2>Breaking the <em>Plane</em></h2>
+				<p class="lead">
+					What if 3D objects could exist both in front of and behind your HTML content?
+					This technique shatters the traditional z-index paradigm, allowing WebGL geometry
+					to pierce through the document layer itself.
+				</p>
+				<p>
+					The geometric forms you see are not mere decorations. They occupy true 3D space,
+					synchronized with your scroll position, creating an impossible spatial relationship
+					between markup and mesh.
+				</p>
+			</section>
+
+			<div class="feature-block" data-frame="1">
+				<h3>Dual Canvas Architecture</h3>
+				<p>
+					Two WebGL renderers operate in parallel—one at z-index -100 for background elements,
+					another at z-index 100 for foreground. The camera's near and far clipping planes
+					split the scene at a precise depth threshold, sorting objects by their distance
+					from the viewer.
+				</p>
+			</div>
+
+			<section class="section">
+				<span class="section-marker">02 — Capabilities</span>
+				<h2>Technical <em>Features</em></h2>
+
+				<div class="capabilities">
+					<div class="capability">
+						<div class="capability-number">01</div>
+						<h4>Depth Splitting</h4>
+						<p>Objects seamlessly transition between foreground and background based on Z-position</p>
+					</div>
+					<div class="capability">
+						<div class="capability-number">02</div>
+						<h4>Scroll Synchronization</h4>
+						<p>Camera position perfectly tracks page scroll for spatial coherence</p>
+					</div>
+					<div class="capability">
+						<div class="capability-number">03</div>
+						<h4>PBR Materials</h4>
+						<p>Physically-based rendering with metallic, emissive, and transmissive surfaces</p>
+					</div>
+					<div class="capability">
+						<div class="capability-number">04</div>
+						<h4>Element Framing</h4>
+						<p>HTML elements mapped to 3D decorations that respond to their boundaries</p>
+					</div>
+				</div>
+			</section>
+
+			<div class="feature-block" data-frame="2">
+				<h3>The Splitting Plane</h3>
+				<p>
+					At Z = 0 in world space, the scene divides. Objects with positive Z coordinates
+					render in front of HTML; negative Z renders behind. Watch the torus knot—its form
+					physically intersects this invisible boundary, half emerging into your space.
+				</p>
+			</div>
+
+			<section class="section">
+				<span class="section-marker">03 — Implementation</span>
+				<h2>How It <em>Works</em></h2>
+
+				<div class="code-block">
+					<pre><span class="code-comment">// The core rendering logic</span>
+<span class="code-keyword">const</span> splitDepth = <span class="code-number">5.0</span>;
+
+<span class="code-comment">// Background pass: far objects</span>
+camera.near = splitDepth;
+camera.far = <span class="code-number">1000</span>;
+rendererBg.<span class="code-keyword">render</span>(scene, camera);
+
+<span class="code-comment">// Foreground pass: near objects</span>
+camera.near = <span class="code-number">0.1</span>;
+camera.far = splitDepth + <span class="code-number">0.01</span>;
+rendererFg.<span class="code-keyword">render</span>(scene, camera);</pre>
+				</div>
+
+				<p>
+					Each frame renders twice with different frustum configurations. The epsilon offset
+					prevents Z-fighting at the boundary. A forced pixels-per-meter calculation ensures
+					1:1 mapping between screen pixels and world units.
+				</p>
+			</section>
+
+			<div class="stats">
+				<div class="stat">
+					<div class="stat-value">2</div>
+					<div class="stat-label">Render Passes</div>
+				</div>
+				<div class="stat">
+					<div class="stat-value">60</div>
+					<div class="stat-label">FPS Target</div>
+				</div>
+				<div class="stat">
+					<div class="stat-value">∞</div>
+					<div class="stat-label">Depth Layers</div>
+				</div>
+			</div>
+
+			<section class="section">
+				<span class="section-marker">04 — Controls</span>
+				<h2>Rendering <em>Modes</em></h2>
+				<p>
+					Toggle between rendering modes to understand how depth splitting works.
+					In combined mode, observe how geometry smoothly crosses the HTML boundary.
+				</p>
+
+				<div class="keys">
+					<div class="key-combo">
+						<kbd>1</kbd>
+						<span class="key-desc">Background only</span>
+					</div>
+					<div class="key-combo">
+						<kbd>2</kbd>
+						<span class="key-desc">Foreground only</span>
+					</div>
+					<div class="key-combo">
+						<kbd>3</kbd>
+						<span class="key-desc">Combined view</span>
+					</div>
+				</div>
+			</section>
+
+			<blockquote>
+				<p>"The screen is not a boundary—it's a threshold between dimensions."</p>
+				<cite>— On Spatial Interface Design</cite>
+			</blockquote>
+
+			<section class="section">
+				<span class="section-marker">05 — Applications</span>
+				<h2>Use <em>Cases</em></h2>
+				<p>
+					Product showcases where 3D models emerge from specification sheets.
+					Data visualizations that extend beyond their containers.
+					Portfolio sites that blur the line between interface and artwork.
+					Immersive documentation where examples literally come to life.
+				</p>
+				<p>
+					The technique preserves all benefits of semantic HTML—accessibility,
+					SEO, progressive enhancement—while adding dimensional depth impossible
+					with traditional CSS transforms.
+				</p>
+			</section>
+
+			<div class="feature-block" data-frame="3">
+				<h3>Pixel-Perfect Alignment</h3>
+				<p>
+					A forced pixels-per-meter calculation ensures 3D coordinates map precisely
+					to screen space. HTML element boundaries become 3D coordinates. The worlds
+					align perfectly regardless of viewport dimensions or device pixel ratio.
+				</p>
+			</div>
+		</div>
+
+		<footer>
+			<p>
+				Based on <a href="https://github.com/zalo/ThreeOverlay" target="_blank">ThreeOverlay</a>
+				by Johnathon Selstad
+			</p>
+		</footer>
+
+		<div id="debug">MODE: Combined</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+			import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+			let camera, scene, rendererBg, rendererFg;
+			let containerBg, containerFg;
+			let pixelsPerMeter, forcedPixelsPerMeter = 100.0;
+			let cameraDepth = 5.0;
+			let renderingMode = 2;
+			let isMobile = false;
+			let time = 0;
+
+			// Scene objects
+			const floatingObjects = [];
+			const frameObjects = [];
+			const particles = [];
+			let particleSystem;
+			let heroTorus, heroKnot;
+			let contentElement;
+
+			// Colors matching CSS
+			const EMBER = 0xff4d2a;
+			const FLAME = 0xff6b4a;
+			const ELECTRIC = 0x4dffff;
+			const VIOLET = 0x8844ff;
+			const GOLD = 0xffcc00;
+			const PEARL = 0xe8e8ec;
+			const OBSIDIAN = 0x141418;
+
+			init();
+
+			function init() {
+
+				containerBg = document.getElementById( 'canvas-bg' );
+				containerFg = document.getElementById( 'canvas-fg' );
+				contentElement = document.querySelector( '.content' );
+
+				checkMobile();
+
+				// Scene
+				scene = new THREE.Scene();
+				scene.fog = new THREE.FogExp2( 0x0d0d0f, 0.025 );
+
+				// Camera
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 1000 );
+				camera.position.set( 0.0, 0.0, cameraDepth );
+				camera.layers.enableAll();
+				scene.add( camera );
+
+				forcePixelsPerMeter();
+
+				// Lighting
+				createLighting();
+
+				// Create all 3D content
+				createHeroGeometry();
+				createFloatingShapes();
+				createParticleField();
+				createFrameDecorations();
+				createStraddlingElements();
+
+				// Background renderer
+				rendererBg = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
+				rendererBg.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
+				rendererBg.setClearColor( 0x000000, 0 );
+				rendererBg.toneMapping = THREE.ACESFilmicToneMapping;
+				rendererBg.toneMappingExposure = 1.2;
+				rendererBg.setAnimationLoop( animate );
+				containerBg.appendChild( rendererBg.domElement );
+
+				// Foreground renderer
+				rendererFg = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
+				rendererFg.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
+				rendererFg.setClearColor( 0x000000, 0 );
+				rendererFg.toneMapping = THREE.ACESFilmicToneMapping;
+				rendererFg.toneMappingExposure = 1.2;
+				containerFg.appendChild( rendererFg.domElement );
+
+				// Events
+				window.addEventListener( 'resize', onWindowResize );
+				window.addEventListener( 'orientationchange', onWindowResize );
+				window.addEventListener( 'scroll', onScroll );
+				document.addEventListener( 'keydown', onKeyDown );
+
+				onWindowResize();
+
+			}
+
+			function createLighting() {
+
+				// Ambient
+				const ambient = new THREE.AmbientLight( 0x222228, 2 );
+				scene.add( ambient );
+
+				// Ember point light (foreground emphasis)
+				const emberLight = new THREE.PointLight( EMBER, 100, 30 );
+				emberLight.position.set( 3, -2, 4 );
+				scene.add( emberLight );
+
+				// Electric accent light (background)
+				const electricLight = new THREE.PointLight( ELECTRIC, 60, 25 );
+				electricLight.position.set( -4, -10, -4 );
+				scene.add( electricLight );
+
+				// Violet fill
+				const violetLight = new THREE.PointLight( VIOLET, 40, 20 );
+				violetLight.position.set( 0, -25, 2 );
+				scene.add( violetLight );
+
+				// Gold accent
+				const goldLight = new THREE.PointLight( GOLD, 50, 25 );
+				goldLight.position.set( 4, -40, -2 );
+				scene.add( goldLight );
+
+			}
+
+			function createHeroGeometry() {
+
+				// Large torus that straddles the split plane at z=0
+				// Parts at z > 0 will be in foreground, z < 0 in background
+				const torusGeom = new THREE.TorusGeometry( 2.5, 0.15, 32, 100 );
+				const torusMat = new THREE.MeshPhysicalMaterial( {
+					color: EMBER,
+					metalness: 0.9,
+					roughness: 0.1,
+					emissive: EMBER,
+					emissiveIntensity: 0.3
+				} );
+
+				heroTorus = new THREE.Mesh( torusGeom, torusMat );
+				// Position at z=0 so it straddles the split plane
+				heroTorus.position.set( 3.5, -4.5, 0 );
+				heroTorus.rotation.x = Math.PI * 0.3;
+				heroTorus.rotation.y = 0.5;
+				scene.add( heroTorus );
+
+				// Torus knot that dramatically crosses the boundary
+				const knotGeom = new THREE.TorusKnotGeometry( 1.2, 0.35, 128, 32, 2, 3 );
+				const knotMat = new THREE.MeshPhysicalMaterial( {
+					color: PEARL,
+					metalness: 1.0,
+					roughness: 0.05,
+					envMapIntensity: 2.0
+				} );
+
+				heroKnot = new THREE.Mesh( knotGeom, knotMat );
+				// This one oscillates through z=0
+				heroKnot.position.set( -3, -3, 0 );
+				heroKnot.userData.baseZ = 0;
+				scene.add( heroKnot );
+
+			}
+
+			function createFloatingShapes() {
+
+				// Materials palette
+				const materials = {
+					ember: new THREE.MeshPhysicalMaterial( {
+						color: EMBER,
+						metalness: 0.8,
+						roughness: 0.2,
+						emissive: EMBER,
+						emissiveIntensity: 0.15
+					} ),
+					electric: new THREE.MeshPhysicalMaterial( {
+						color: ELECTRIC,
+						metalness: 0.9,
+						roughness: 0.1,
+						emissive: ELECTRIC,
+						emissiveIntensity: 0.2,
+						transparent: true,
+						opacity: 0.9
+					} ),
+					glass: new THREE.MeshPhysicalMaterial( {
+						color: 0xffffff,
+						metalness: 0.0,
+						roughness: 0.0,
+						transmission: 0.95,
+						thickness: 1.5,
+						ior: 1.5
+					} ),
+					gold: new THREE.MeshPhysicalMaterial( {
+						color: GOLD,
+						metalness: 1.0,
+						roughness: 0.2,
+						emissive: GOLD,
+						emissiveIntensity: 0.1
+					} ),
+					violet: new THREE.MeshPhysicalMaterial( {
+						color: VIOLET,
+						metalness: 0.7,
+						roughness: 0.3,
+						emissive: VIOLET,
+						emissiveIntensity: 0.2
+					} )
+				};
+
+				// Shape definitions with positions
+				// z > 0 = foreground (in front of HTML)
+				// z < 0 = background (behind HTML)
+				// z ≈ 0 = straddles the boundary
+				const shapes = [
+					// Foreground shapes (z > 0) - slower animation
+					{ type: 'icosahedron', size: 0.6, pos: [ 4, -8, 2 ], mat: 'ember', speed: 0.15 },
+					{ type: 'octahedron', size: 0.5, pos: [ -3.5, -18, 1.5 ], mat: 'electric', speed: 0.12 },
+					{ type: 'dodecahedron', size: 0.4, pos: [ 4.5, -28, 2.5 ], mat: 'gold', speed: 0.1 },
+					{ type: 'tetrahedron', size: 0.55, pos: [ -4, -38, 1.8 ], mat: 'violet', speed: 0.14 },
+					{ type: 'icosahedron', size: 0.45, pos: [ 3, -48, 2 ], mat: 'ember', speed: 0.11 },
+
+					// Background shapes (z < 0) - normal animation
+					{ type: 'octahedron', size: 0.8, pos: [ -4, -12, -3 ], mat: 'glass', speed: 0.4 },
+					{ type: 'icosahedron', size: 1.0, pos: [ 5, -22, -4 ], mat: 'electric', speed: 0.5 },
+					{ type: 'dodecahedron', size: 0.7, pos: [ -3, -32, -2.5 ], mat: 'violet', speed: 0.45 },
+					{ type: 'tetrahedron', size: 0.9, pos: [ 4, -42, -3.5 ], mat: 'gold', speed: 0.35 },
+					{ type: 'octahedron', size: 0.6, pos: [ -4.5, -52, -2 ], mat: 'ember', speed: 0.4 },
+
+					// Straddling shapes (z ≈ 0)
+					{ type: 'icosahedron', size: 0.7, pos: [ 5, -15, 0 ], mat: 'gold', speed: 0.2 },
+					{ type: 'octahedron', size: 0.65, pos: [ -5, -25, 0 ], mat: 'electric', speed: 0.25 },
+					{ type: 'dodecahedron', size: 0.5, pos: [ 4, -35, 0 ], mat: 'violet', speed: 0.22 },
+				];
+
+				const geometries = {
+					icosahedron: ( size ) => new THREE.IcosahedronGeometry( size, 0 ),
+					octahedron: ( size ) => new THREE.OctahedronGeometry( size, 0 ),
+					dodecahedron: ( size ) => new THREE.DodecahedronGeometry( size, 0 ),
+					tetrahedron: ( size ) => new THREE.TetrahedronGeometry( size, 0 )
+				};
+
+				shapes.forEach( ( def, i ) => {
+
+					const geom = geometries[ def.type ]( def.size );
+					const mat = materials[ def.mat ].clone();
+					const mesh = new THREE.Mesh( geom, mat );
+
+					mesh.position.set( ...def.pos );
+					mesh.rotation.set( Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI );
+
+					mesh.userData.baseY = def.pos[ 1 ];
+					mesh.userData.baseZ = def.pos[ 2 ];
+					mesh.userData.rotSpeed = def.speed;
+					mesh.userData.bobOffset = Math.random() * Math.PI * 2;
+					mesh.userData.isForeground = def.pos[ 2 ] > 0;
+
+					scene.add( mesh );
+					floatingObjects.push( mesh );
+
+				} );
+
+				// Add wireframe spheres in background for depth
+				const wireframeMat = new THREE.MeshBasicMaterial( {
+					color: EMBER,
+					wireframe: true,
+					transparent: true,
+					opacity: 0.08
+				} );
+
+				for ( let i = 0; i < 5; i ++ ) {
+
+					const wireGeom = new THREE.IcosahedronGeometry( 2 + Math.random() * 2, 1 );
+					const wire = new THREE.Mesh( wireGeom, wireframeMat.clone() );
+					wire.position.set(
+						( Math.random() - 0.5 ) * 10,
+						-10 - i * 12,
+						-5 - Math.random() * 3
+					);
+					wire.userData.rotSpeed = 0.1 + Math.random() * 0.1;
+					scene.add( wire );
+					floatingObjects.push( wire );
+
+				}
+
+			}
+
+			function createParticleField() {
+
+				const particleCount = 400;
+				const positions = new Float32Array( particleCount * 3 );
+				const colors = new Float32Array( particleCount * 3 );
+
+				const colorPalette = [
+					new THREE.Color( EMBER ),
+					new THREE.Color( ELECTRIC ),
+					new THREE.Color( GOLD ),
+					new THREE.Color( PEARL )
+				];
+
+				for ( let i = 0; i < particleCount; i ++ ) {
+
+					positions[ i * 3 ] = ( Math.random() - 0.5 ) * 20;
+					positions[ i * 3 + 1 ] = -Math.random() * 70;
+					// Distribute particles across foreground and background
+					positions[ i * 3 + 2 ] = ( Math.random() * 12 ) - 6; // -6 to 6
+
+					const color = colorPalette[ Math.floor( Math.random() * colorPalette.length ) ];
+					colors[ i * 3 ] = color.r;
+					colors[ i * 3 + 1 ] = color.g;
+					colors[ i * 3 + 2 ] = color.b;
+
+					particles.push( {
+						index: i,
+						speed: 0.01 + Math.random() * 0.02,
+						amplitude: 0.3 + Math.random() * 0.5,
+						phase: Math.random() * Math.PI * 2
+					} );
+
+				}
+
+				const particleGeom = new THREE.BufferGeometry();
+				particleGeom.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
+				particleGeom.setAttribute( 'color', new THREE.BufferAttribute( colors, 3 ) );
+
+				const particleMat = new THREE.PointsMaterial( {
+					size: 0.05,
+					vertexColors: true,
+					transparent: true,
+					opacity: 0.8,
+					sizeAttenuation: true,
+					blending: THREE.AdditiveBlending
+				} );
+
+				particleSystem = new THREE.Points( particleGeom, particleMat );
+				scene.add( particleSystem );
+
+			}
+
+			function createFrameDecorations() {
+
+				// Create 3D frames around .feature-block elements
+				const blocks = document.querySelectorAll( '.feature-block' );
+
+				blocks.forEach( ( block, index ) => {
+
+					const frameGroup = new THREE.Group();
+					frameGroup.userData.element = block;
+					frameGroup.userData.index = index;
+
+					// Corner pieces - metallic cubes
+					const cornerGeom = new RoundedBoxGeometry( 0.2, 0.2, 0.2, 2, 0.03 );
+					const cornerMat = new THREE.MeshPhysicalMaterial( {
+						color: index === 0 ? EMBER : index === 1 ? ELECTRIC : GOLD,
+						metalness: 0.9,
+						roughness: 0.1,
+						emissive: index === 0 ? EMBER : index === 1 ? ELECTRIC : GOLD,
+						emissiveIntensity: 0.3
+					} );
+
+					for ( let c = 0; c < 4; c ++ ) {
+
+						const corner = new THREE.Mesh( cornerGeom, cornerMat );
+						corner.userData.cornerIndex = c;
+						frameGroup.add( corner );
+
+					}
+
+					// Edge lines
+					const lineMat = new THREE.LineBasicMaterial( {
+						color: index === 0 ? EMBER : index === 1 ? ELECTRIC : GOLD,
+						transparent: true,
+						opacity: 0.5
+					} );
+
+					// Top edge
+					const topLineGeom = new THREE.BufferGeometry();
+					const topLine = new THREE.Line( topLineGeom, lineMat );
+					topLine.userData.edge = 'top';
+					frameGroup.add( topLine );
+
+					// Bottom edge
+					const bottomLineGeom = new THREE.BufferGeometry();
+					const bottomLine = new THREE.Line( bottomLineGeom, lineMat.clone() );
+					bottomLine.userData.edge = 'bottom';
+					frameGroup.add( bottomLine );
+
+					scene.add( frameGroup );
+					frameObjects.push( frameGroup );
+
+				} );
+
+				updateFramePositions();
+
+			}
+
+			function createStraddlingElements() {
+
+				// Large rings positioned exactly at z=0 to dramatically show the split
+				const ringMat = new THREE.MeshPhysicalMaterial( {
+					color: EMBER,
+					metalness: 0.95,
+					roughness: 0.05,
+					emissive: EMBER,
+					emissiveIntensity: 0.2,
+					side: THREE.DoubleSide
+				} );
+
+				const ringPositions = [
+					{ y: -6, radius: 3, rotation: [ Math.PI * 0.4, 0.3, 0 ] },
+					{ y: -20, radius: 2.5, rotation: [ Math.PI * 0.35, -0.2, 0.1 ] },
+					{ y: -35, radius: 2.8, rotation: [ Math.PI * 0.45, 0.4, -0.1 ] },
+					{ y: -50, radius: 2.2, rotation: [ Math.PI * 0.3, -0.3, 0.2 ] },
+				];
+
+				ringPositions.forEach( ( def, i ) => {
+
+					const ringGeom = new THREE.TorusGeometry( def.radius, 0.04, 16, 64 );
+					const mat = ringMat.clone();
+
+					// Alternate colors
+					if ( i % 3 === 1 ) mat.color.setHex( ELECTRIC );
+					if ( i % 3 === 2 ) mat.color.setHex( GOLD );
+					mat.emissive.copy( mat.color );
+
+					const ring = new THREE.Mesh( ringGeom, mat );
+					ring.position.set( 0, def.y, 0 ); // Exactly at z=0
+					ring.rotation.set( ...def.rotation );
+					ring.userData.baseY = def.y;
+					ring.userData.rotSpeed = 0.002;
+
+					scene.add( ring );
+					floatingObjects.push( ring );
+
+				} );
+
+				// Floating bars/lines that cross the boundary
+				const barGeom = new THREE.BoxGeometry( 0.03, 3, 0.03 );
+				const barMat = new THREE.MeshBasicMaterial( {
+					color: PEARL,
+					transparent: true,
+					opacity: 0.4
+				} );
+
+				for ( let i = 0; i < 8; i ++ ) {
+
+					const bar = new THREE.Mesh( barGeom, barMat.clone() );
+					bar.position.set(
+						( Math.random() - 0.5 ) * 8,
+						-8 - i * 7,
+						( Math.random() - 0.5 ) * 0.5 // Near z=0
+					);
+					bar.rotation.z = Math.random() * Math.PI;
+					bar.rotation.x = Math.random() * 0.5;
+					bar.material.opacity = 0.2 + Math.random() * 0.3;
+
+					scene.add( bar );
+
+				}
+
+			}
+
+			function updateFramePositions() {
+
+				frameObjects.forEach( frame => {
+
+					const element = frame.userData.element;
+					const rect = element.getBoundingClientRect();
+
+					const centerX = ( rect.left + window.scrollX + rect.width * 0.5 ) / pixelsPerMeter;
+					const centerY = ( rect.top + window.scrollY + rect.height * 0.5 ) / -pixelsPerMeter;
+					const width = rect.width / pixelsPerMeter;
+					const height = rect.height / pixelsPerMeter;
+
+					// Position frame group at element center
+					frame.position.set( centerX, centerY, 0 );
+
+					const hw = width * 0.5 + 0.15;
+					const hh = height * 0.5 + 0.15;
+
+					// Position corners with Z oscillation to cross split plane
+					const t = time * 2 + frame.userData.index;
+					const cornerPositions = [
+						[ -hw, hh, Math.sin( t ) * 1.5 ],
+						[ hw, hh, Math.sin( t + 1 ) * 1.5 ],
+						[ -hw, -hh, Math.sin( t + 2 ) * 1.5 ],
+						[ hw, -hh, Math.sin( t + 3 ) * 1.5 ]
+					];
+
+					frame.children.forEach( ( child, i ) => {
+
+						if ( child.userData.cornerIndex !== undefined ) {
+
+							const pos = cornerPositions[ child.userData.cornerIndex ];
+							if ( pos ) {
+
+								child.position.set( ...pos );
+								child.rotation.x += 0.01;
+								child.rotation.y += 0.015;
+
+							}
+
+						}
+
+						// Update edge lines
+						if ( child.userData.edge === 'top' ) {
+
+							const points = [
+								new THREE.Vector3( -hw, hh, cornerPositions[ 0 ][ 2 ] ),
+								new THREE.Vector3( hw, hh, cornerPositions[ 1 ][ 2 ] )
+							];
+							child.geometry.setFromPoints( points );
+
+						}
+
+						if ( child.userData.edge === 'bottom' ) {
+
+							const points = [
+								new THREE.Vector3( -hw, -hh, cornerPositions[ 2 ][ 2 ] ),
+								new THREE.Vector3( hw, -hh, cornerPositions[ 3 ][ 2 ] )
+							];
+							child.geometry.setFromPoints( points );
+
+						}
+
+					} );
+
+				} );
+
+			}
+
+			function recomputePixelsPerMeter() {
+
+				const oldPosition = camera.position.clone();
+				camera.position.set( 0.0, 0.0, cameraDepth );
+				camera.updateMatrixWorld();
+				camera.updateProjectionMatrix();
+
+				const testPoint = new THREE.Vector3( 0.0, 0, 0.0 );
+				testPoint.project( camera );
+				testPoint.y = 1.0 / window.innerHeight;
+				testPoint.unproject( camera );
+
+				camera.position.copy( oldPosition );
+				camera.updateMatrixWorld();
+				camera.updateProjectionMatrix();
+
+				pixelsPerMeter = 1.0 / ( testPoint.y * 2.0 );
+				return pixelsPerMeter;
+
+			}
+
+			function forcePixelsPerMeter() {
+
+				for ( let i = 0; i < 10; i ++ ) {
+
+					const curPixelsPerMeter = recomputePixelsPerMeter();
+					camera.fov *= curPixelsPerMeter / forcedPixelsPerMeter;
+					camera.updateProjectionMatrix();
+
+				}
+
+			}
+
+			function checkMobile() {
+
+				isMobile = /^((?!chrome|android).)*safari/i.test( navigator.userAgent );
+
+			}
+
+			function setScroll() {
+
+				const scrollX = window.scrollX;
+				const scrollY = window.scrollY;
+
+				camera.position.set(
+					( scrollX + window.innerWidth * 0.5 ) / pixelsPerMeter,
+					-( scrollY + window.innerHeight * 0.5 ) / pixelsPerMeter,
+					cameraDepth
+				);
+
+				if ( isMobile ) {
+
+					containerBg.style.position = 'absolute';
+					containerFg.style.position = 'absolute';
+					containerBg.style.width = '100%';
+					containerFg.style.width = '100%';
+					containerBg.style.height = '100%';
+					containerFg.style.height = '100%';
+					containerBg.style.transform = `translate(${scrollX}px, ${scrollY}px)`;
+					containerFg.style.transform = `translate(${scrollX}px, ${scrollY}px)`;
+
+				} else {
+
+					containerBg.style.position = 'fixed';
+					containerFg.style.position = 'fixed';
+					containerBg.style.width = '100vw';
+					containerFg.style.width = '100vw';
+					containerBg.style.height = '100vh';
+					containerFg.style.height = '100vh';
+					containerBg.style.transform = '';
+					containerFg.style.transform = '';
+
+				}
+
+			}
+
+			function updateAnimations() {
+
+				// Content anchor for relative positioning
+				const contentRect = contentElement.getBoundingClientRect();
+				const contentCenterX = ( contentRect.left + window.scrollX + contentRect.width * 0.5 ) / pixelsPerMeter;
+
+				// Hero torus - slow rotation, straddles z=0
+				if ( heroTorus ) {
+
+					heroTorus.rotation.x += 0.002;
+					heroTorus.rotation.z += 0.001;
+					heroTorus.position.x = contentCenterX + 3.5;
+
+				}
+
+				// Hero knot - oscillates through z=0
+				if ( heroKnot ) {
+
+					heroKnot.rotation.y += 0.003;
+					heroKnot.rotation.x += 0.002;
+					heroKnot.position.x = contentCenterX - 3;
+					// Oscillate through the split plane
+					heroKnot.position.z = Math.sin( time * 0.5 ) * 2;
+
+				}
+
+				// Floating objects
+				floatingObjects.forEach( ( obj, i ) => {
+
+					const speed = obj.userData.rotSpeed || 0.3;
+					const offset = obj.userData.bobOffset || i;
+					const isForeground = obj.userData.isForeground;
+
+					obj.rotation.y += speed * 0.02;
+					obj.rotation.x += speed * 0.01;
+
+					// Gentle bob
+					if ( obj.userData.baseY !== undefined ) {
+
+						const bobAmount = isForeground ? 0.1 : 0.3;
+						obj.position.y = obj.userData.baseY + Math.sin( time * 0.5 + offset ) * bobAmount;
+
+					}
+
+					// Center relative to content
+					if ( obj.position.z > -5 && obj.position.z < 5 ) {
+
+						// Only adjust X for objects near the viewport depth
+						// Keep their relative X offset from center
+
+					}
+
+				} );
+
+				// Particles
+				if ( particleSystem ) {
+
+					const positions = particleSystem.geometry.attributes.position;
+
+					particles.forEach( p => {
+
+						const i = p.index;
+						positions.array[ i * 3 ] += Math.sin( time * p.speed + p.phase ) * 0.003;
+						positions.array[ i * 3 + 2 ] += Math.cos( time * p.speed + p.phase ) * 0.002;
+
+					} );
+
+					positions.needsUpdate = true;
+
+				}
+
+				// Frame decorations
+				updateFramePositions();
+
+			}
+
+			function render() {
+
+				if ( renderingMode === 2 ) {
+
+					// Combined: background first, then foreground
+					camera.near = cameraDepth;
+					camera.far = 1000;
+					camera.updateProjectionMatrix();
+					rendererBg.render( scene, camera );
+
+					camera.near = 0.1;
+					camera.far = cameraDepth + 0.01;
+					camera.updateProjectionMatrix();
+					rendererFg.render( scene, camera );
+
+				} else {
+
+					camera.near = 0.1;
+					camera.far = 1000;
+					camera.updateProjectionMatrix();
+
+					if ( renderingMode === 0 ) {
+
+						rendererBg.render( scene, camera );
+						rendererFg.clear();
+
+					} else {
+
+						rendererBg.clear();
+						rendererFg.render( scene, camera );
+
+					}
+
+				}
+
+			}
+
+			function onWindowResize() {
+
+				const width = window.innerWidth;
+				const height = window.innerHeight;
+
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+
+				rendererBg.setSize( width, height );
+				rendererFg.setSize( width, height );
+
+				forcePixelsPerMeter();
+				updateFramePositions();
+				setScroll();
+
+			}
+
+			function onScroll() {
+
+				setScroll();
+				render();
+
+			}
+
+			function onKeyDown( event ) {
+
+				switch ( event.code ) {
+
+					case 'Digit1':
+						renderingMode = 0;
+						updateDebug();
+						break;
+
+					case 'Digit2':
+						renderingMode = 1;
+						updateDebug();
+						break;
+
+					case 'Digit3':
+						renderingMode = 2;
+						updateDebug();
+						break;
+
+				}
+
+			}
+
+			function updateDebug() {
+
+				const modes = [ 'Background Only', 'Foreground Only', 'Combined' ];
+				document.getElementById( 'debug' ).textContent = `MODE: ${modes[ renderingMode ]}`;
+
+			}
+
+			function animate() {
+
+				time += 0.016;
+
+				updateAnimations();
+				setScroll();
+				render();
+
+			}
+
+		</script>
+	</body>
+</html>

@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - advanced overlay</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@300;400&family=Outfit:wght@200;400;600&display=swap" rel="stylesheet">
+		<style>
+			:root {
+				--neon-cyan: #00f5ff;
+				--neon-magenta: #ff00ff;
+				--neon-yellow: #f0ff00;
+				--neon-orange: #ff6b00;
+				--dark-bg: #0a0a0f;
+				--dark-card: rgba(15, 15, 25, 0.85);
+				--text-primary: #e8e8f0;
+				--text-secondary: #8888aa;
+				--accent-gradient: linear-gradient(135deg, var(--neon-cyan), var(--neon-magenta));
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				background-color: var(--dark-bg);
+				color: var(--text-primary);
+				font-family: 'Outfit', sans-serif;
+				font-weight: 200;
+				line-height: 1.8;
+				margin: 0;
+				overflow-x: hidden;
+			}
+
+			#canvas-bg, #canvas-fg {
+				position: fixed;
+				width: 100vw;
+				height: 100vh;
+				top: 0;
+				left: 0;
+				pointer-events: none;
+			}
+
+			#canvas-bg canvas, #canvas-fg canvas {
+				pointer-events: none;
+			}
+
+			#canvas-bg { z-index: -100; }
+			#canvas-fg { z-index: 100; }
+
+			/* Decorative Glow Orbs */
+			.glow-orb {
+				position: fixed;
+				border-radius: 50%;
+				filter: blur(100px);
+				pointer-events: none;
+				z-index: -50;
+				opacity: 0.3;
+			}
+
+			.glow-orb.cyan {
+				width: 400px;
+				height: 400px;
+				background: var(--neon-cyan);
+				top: 20%;
+				left: -10%;
+				animation: orbFloat1 15s ease-in-out infinite;
+			}
+
+			.glow-orb.magenta {
+				width: 300px;
+				height: 300px;
+				background: var(--neon-magenta);
+				bottom: 20%;
+				right: -5%;
+				animation: orbFloat2 12s ease-in-out infinite;
+			}
+
+			@keyframes orbFloat1 {
+				0%, 100% { transform: translate(0, 0); }
+				50% { transform: translate(50px, 30px); }
+			}
+
+			@keyframes orbFloat2 {
+				0%, 100% { transform: translate(0, 0); }
+				50% { transform: translate(-40px, -20px); }
+			}
+
+			/* Hero Section */
+			.hero {
+				height: 100vh;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+				text-align: center;
+				padding: 40px;
+				position: relative;
+			}
+
+			.hero-title {
+				font-family: 'Bebas Neue', sans-serif;
+				font-size: clamp(4rem, 15vw, 12rem);
+				letter-spacing: 0.05em;
+				margin: 0;
+				background: var(--accent-gradient);
+				-webkit-background-clip: text;
+				-webkit-text-fill-color: transparent;
+				background-clip: text;
+				text-shadow: 0 0 80px rgba(0, 245, 255, 0.5);
+				animation: titleGlow 3s ease-in-out infinite alternate;
+			}
+
+			@keyframes titleGlow {
+				0% { filter: drop-shadow(0 0 20px rgba(0, 245, 255, 0.4)); }
+				100% { filter: drop-shadow(0 0 40px rgba(255, 0, 255, 0.6)); }
+			}
+
+			.hero-subtitle {
+				font-family: 'JetBrains Mono', monospace;
+				font-size: clamp(0.8rem, 2vw, 1.1rem);
+				font-weight: 300;
+				color: var(--text-primary);
+				letter-spacing: 0.3em;
+				text-transform: uppercase;
+				margin-top: 1rem;
+				opacity: 0;
+				animation: fadeSlideUp 1s ease-out 0.5s forwards;
+				background: rgba(10, 10, 15, 0.6);
+				padding: 8px 20px;
+				border-radius: 4px;
+				backdrop-filter: blur(8px);
+			}
+
+			.scroll-indicator {
+				position: absolute;
+				bottom: 60px;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 8px;
+				opacity: 0;
+				animation: fadeSlideUp 1s ease-out 1s forwards;
+			}
+
+			.scroll-indicator span {
+				font-family: 'JetBrains Mono', monospace;
+				font-size: 0.7rem;
+				letter-spacing: 0.2em;
+				color: var(--text-secondary);
+			}
+
+			.scroll-arrow {
+				width: 24px;
+				height: 24px;
+				border-right: 2px solid var(--neon-cyan);
+				border-bottom: 2px solid var(--neon-cyan);
+				transform: rotate(45deg);
+				animation: scrollBounce 2s ease-in-out infinite;
+			}
+
+			@keyframes scrollBounce {
+				0%, 100% { transform: rotate(45deg) translateY(0); opacity: 1; }
+				50% { transform: rotate(45deg) translateY(10px); opacity: 0.5; }
+			}
+
+			@keyframes fadeSlideUp {
+				from { opacity: 0; transform: translateY(30px); }
+				to { opacity: 1; transform: translateY(0); }
+			}
+
+			/* Content Sections */
+			.content {
+				max-width: 900px;
+				margin: 0 auto;
+				padding: 0 40px 200px;
+			}
+
+			.section {
+				padding: 100px 0;
+				opacity: 0;
+				transform: translateY(40px);
+				transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+			}
+
+			.section.visible {
+				opacity: 1;
+				transform: translateY(0);
+			}
+
+			.section-label {
+				font-family: 'JetBrains Mono', monospace;
+				font-size: 0.75rem;
+				letter-spacing: 0.3em;
+				text-transform: uppercase;
+				color: var(--neon-cyan);
+				margin-bottom: 1rem;
+				display: inline-flex;
+				align-items: center;
+				gap: 1rem;
+				background: rgba(10, 10, 15, 0.7);
+				padding: 6px 14px 6px 0;
+				border-radius: 4px;
+				backdrop-filter: blur(8px);
+			}
+
+			.section-label::before {
+				content: '';
+				width: 40px;
+				height: 1px;
+				background: var(--neon-cyan);
+			}
+
+			h2 {
+				font-family: 'Bebas Neue', sans-serif;
+				font-size: clamp(2.5rem, 6vw, 4rem);
+				font-weight: 400;
+				margin: 0 0 2rem 0;
+				letter-spacing: 0.02em;
+				line-height: 1.1;
+				text-shadow: 0 2px 20px rgba(0, 0, 0, 0.8);
+			}
+
+			p {
+				margin: 0 0 1.5rem 0;
+				color: var(--text-secondary);
+				font-size: 1.1rem;
+			}
+
+			.highlight {
+				color: var(--text-primary);
+				font-weight: 400;
+			}
+
+			/* Content Cards */
+			.card {
+				background: var(--dark-card);
+				border: 1px solid rgba(255, 255, 255, 0.08);
+				border-radius: 12px;
+				padding: 28px 32px;
+				margin: 1.5rem 0;
+				backdrop-filter: blur(20px);
+				position: relative;
+			}
+
+			.card::before {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 20px;
+				right: 20px;
+				height: 1px;
+				background: linear-gradient(90deg, transparent, rgba(0, 245, 255, 0.4), transparent);
+			}
+
+			.card p {
+				color: var(--text-primary);
+			}
+
+			.card p:last-child {
+				margin-bottom: 0;
+			}
+
+			/* Feature Cards */
+			.feature-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+				gap: 24px;
+				margin-top: 3rem;
+			}
+
+			.feature-card {
+				background: var(--dark-card);
+				border: 1px solid rgba(255, 255, 255, 0.05);
+				border-radius: 16px;
+				padding: 32px;
+				backdrop-filter: blur(20px);
+				transition: all 0.4s ease;
+				position: relative;
+				overflow: hidden;
+			}
+
+			.feature-card::before {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 2px;
+				background: var(--accent-gradient);
+				opacity: 0;
+				transition: opacity 0.4s ease;
+			}
+
+			.feature-card:hover {
+				transform: translateY(-8px);
+				border-color: rgba(0, 245, 255, 0.2);
+				box-shadow: 0 20px 60px -20px rgba(0, 245, 255, 0.3);
+			}
+
+			.feature-card:hover::before {
+				opacity: 1;
+			}
+
+			.feature-icon {
+				width: 48px;
+				height: 48px;
+				border-radius: 12px;
+				background: linear-gradient(135deg, rgba(0, 245, 255, 0.2), rgba(255, 0, 255, 0.2));
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				margin-bottom: 1.5rem;
+				font-size: 1.5rem;
+			}
+
+			.feature-card h3 {
+				font-family: 'Outfit', sans-serif;
+				font-size: 1.25rem;
+				font-weight: 600;
+				margin: 0 0 0.75rem 0;
+			}
+
+			.feature-card p {
+				font-size: 0.95rem;
+				margin: 0;
+				line-height: 1.6;
+			}
+
+			/* Code Block */
+			.code-block {
+				background: rgba(10, 10, 20, 0.9);
+				border: 1px solid rgba(255, 255, 255, 0.12);
+				border-radius: 12px;
+				padding: 24px;
+				margin: 2rem 0;
+				overflow-x: auto;
+				position: relative;
+				backdrop-filter: blur(10px);
+			}
+
+			.code-block::before {
+				content: 'JAVASCRIPT';
+				position: absolute;
+				top: 12px;
+				right: 16px;
+				font-family: 'JetBrains Mono', monospace;
+				font-size: 0.65rem;
+				letter-spacing: 0.1em;
+				color: var(--text-secondary);
+				opacity: 0.5;
+			}
+
+			pre {
+				margin: 0;
+				font-family: 'JetBrains Mono', monospace;
+				font-size: 0.85rem;
+				line-height: 1.8;
+				color: var(--text-secondary);
+			}
+
+			.code-keyword { color: var(--neon-magenta); }
+			.code-string { color: var(--neon-yellow); }
+			.code-comment { color: #555577; }
+			.code-function { color: var(--neon-cyan); }
+
+			/* Stats Section */
+			.stats-row {
+				display: flex;
+				justify-content: space-between;
+				gap: 40px;
+				flex-wrap: wrap;
+			}
+
+			.stat {
+				text-align: center;
+				flex: 1;
+				min-width: 120px;
+			}
+
+			.stat-value {
+				font-family: 'Bebas Neue', sans-serif;
+				font-size: clamp(3rem, 8vw, 5rem);
+				background: var(--accent-gradient);
+				-webkit-background-clip: text;
+				-webkit-text-fill-color: transparent;
+				background-clip: text;
+				line-height: 1;
+			}
+
+			.stat-label {
+				font-family: 'JetBrains Mono', monospace;
+				font-size: 0.7rem;
+				letter-spacing: 0.2em;
+				text-transform: uppercase;
+				color: var(--text-secondary);
+				margin-top: 0.5rem;
+			}
+
+			/* Footer */
+			.footer {
+				text-align: center;
+				padding: 60px 40px;
+				border-top: 1px solid rgba(255, 255, 255, 0.05);
+			}
+
+			.footer p {
+				font-size: 0.9rem;
+			}
+
+			.footer a {
+				color: var(--neon-cyan);
+				text-decoration: none;
+				transition: color 0.3s ease;
+			}
+
+			.footer a:hover {
+				color: var(--neon-magenta);
+			}
+		</style>
+	</head>
+	<body>
+		<div class="glow-orb cyan"></div>
+		<div class="glow-orb magenta"></div>
+
+		<div id="canvas-bg"></div>
+		<div id="canvas-fg"></div>
+
+		<div class="hero">
+			<h1 class="hero-title">DIMENSIONAL</h1>
+			<p class="hero-subtitle">Where 3D pierces the web</p>
+			<div class="scroll-indicator">
+				<span>Scroll to explore</span>
+				<div class="scroll-arrow"></div>
+			</div>
+		</div>
+
+		<div class="content">
+			<section class="section">
+				<span class="section-label">Introduction</span>
+				<h2>Blending Dimensions</h2>
+				<div class="card">
+					<p>
+						Experience the <span class="highlight">convergence of WebGL and HTML</span> in a seamless spatial interface.
+						Three-dimensional objects pierce through the document plane, creating depth
+						that traditional web design cannot achieve. Watch as holographic frames
+						materialize around content and crystalline structures orbit through your viewport.
+					</p>
+					<p>
+						The system uses dual WebGL renderers with synchronized camera positioning, allowing
+						3D elements to exist in the same coordinate space as your scrollable document.
+					</p>
+				</div>
+			</section>
+
+			<section class="section">
+				<span class="section-label">Architecture</span>
+				<h2>Dual Renderer System</h2>
+				<div class="card">
+					<p>
+						The system employs <span class="highlight">two synchronized WebGL renderers</span> operating at different
+						depth layers. The background canvas renders objects beyond the HTML plane
+						while the foreground canvas captures elements that breach into viewer space.
+						The result: objects that appear to float in front of text while their
+						foundations remain anchored behind.
+					</p>
+				</div>
+				<div class="code-block">
+					<pre><span class="code-comment">// Split rendering by depth threshold</span>
+<span class="code-keyword">const</span> depthThreshold = <span class="code-string">5.0</span>;
+
+<span class="code-comment">// Background pass: objects beyond threshold</span>
+camera.near = depthThreshold;
+camera.far = <span class="code-string">1000</span>;
+rendererBg.<span class="code-function">render</span>(scene, camera);
+
+<span class="code-comment">// Foreground pass: objects closer than threshold</span>
+camera.near = <span class="code-string">0.1</span>;
+camera.far = depthThreshold + <span class="code-string">0.01</span>;
+rendererFg.<span class="code-function">render</span>(scene, camera);</pre>
+				</div>
+			</section>
+
+			<section class="section">
+				<span class="section-label">Capabilities</span>
+				<h2>Technical Features</h2>
+				<div class="feature-grid">
+					<div class="feature-card">
+						<div class="feature-icon">◐</div>
+						<h3>Bloom Effects</h3>
+						<p>Emissive glow with UnrealBloomPass that bleeds light into surrounding space.</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon">⬡</div>
+						<h3>Glass Refraction</h3>
+						<p>MeshPhysicalMaterial with transmission for crystal-like light bending.</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon">◈</div>
+						<h3>Particle Fields</h3>
+						<p>Floating point clouds that drift through dimensional layers with additive blending.</p>
+					</div>
+					<div class="feature-card">
+						<div class="feature-icon">✦</div>
+						<h3>Frame Rings</h3>
+						<p>Torus geometries positioned at z=0 threshold, straddling foreground and background.</p>
+					</div>
+				</div>
+			</section>
+
+			<section class="section">
+				<span class="section-label">Performance</span>
+				<h2>By The Numbers</h2>
+				<div class="card">
+					<div class="stats-row">
+						<div class="stat">
+							<div class="stat-value">2</div>
+							<div class="stat-label">Render Passes</div>
+						</div>
+						<div class="stat">
+							<div class="stat-value">60</div>
+							<div class="stat-label">FPS Target</div>
+						</div>
+						<div class="stat">
+							<div class="stat-value">0</div>
+							<div class="stat-label">Z-Fighting</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="section">
+				<span class="section-label">Depth Integration</span>
+				<h2>Straddling the Plane</h2>
+				<div class="card">
+					<p>
+						Notice how <span class="highlight">3D frames materialize around each content block</span>, extending
+						both in front of and behind the text plane. The large torus rings are positioned
+						exactly at z=0 - the splitting threshold - causing them to be rendered partially
+						in each pass, creating the illusion of piercing through the HTML layer.
+					</p>
+					<p>
+						Each element in 3D space is precisely positioned relative to its HTML
+						counterpart using a <span class="highlight">pixels-per-meter conversion</span>. This ensures consistent
+						spatial relationships regardless of viewport size or device pixel ratio.
+					</p>
+				</div>
+			</section>
+
+			<section class="section">
+				<span class="section-label">Applications</span>
+				<h2>Use Cases</h2>
+				<div class="card">
+					<p>
+						<span class="highlight">Product showcases</span> where 3D models float alongside specifications.
+						<span class="highlight">Interactive articles</span> with embedded visualizations.
+						<span class="highlight">Portfolio sites</span> that blend creativity with content.
+						<span class="highlight">Data dashboards</span> with dimensional charts that extend beyond the screen.
+					</p>
+					<p>
+						The technique works anywhere traditional web layouts need a touch of dimensional magic
+						while preserving accessibility and SEO benefits of semantic HTML.
+					</p>
+				</div>
+			</section>
+		</div>
+
+		<footer class="footer">
+			<p>
+				Built with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>
+				&mdash; The 3D library for the web
+			</p>
+		</footer>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+			import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+			import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+			import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+			import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+			import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+			let camera, scene, rendererBg, rendererFg;
+			let composerBg, composerFg;
+			let containerBg, containerFg;
+			let pixelsPerMeter, forcedPixelsPerMeter = 100.0;
+			let cameraDepth = 5.0;
+			let isMobile = false;
+
+			const floatingObjects = [];
+			const particles = [];
+			const elementFrames = [];
+			let torusKnot, icosahedron, octahedron;
+			let contentElement;
+			let time = 0;
+			let cubeTexture;
+
+			// Colors
+			const NEON_CYAN = 0x00f5ff;
+			const NEON_MAGENTA = 0xff00ff;
+			const NEON_YELLOW = 0xf0ff00;
+			const NEON_ORANGE = 0xff6b00;
+
+			// Load texture then init
+			const textureLoader = new THREE.TextureLoader();
+			textureLoader.load( 'textures/uv_grid_opengl.jpg', ( texture ) => {
+
+				texture.colorSpace = THREE.SRGBColorSpace;
+				texture.wrapS = THREE.RepeatWrapping;
+				texture.wrapT = THREE.RepeatWrapping;
+				cubeTexture = texture;
+				init();
+
+			} );
+
+			function init() {
+
+				containerBg = document.getElementById( 'canvas-bg' );
+				containerFg = document.getElementById( 'canvas-fg' );
+				contentElement = document.querySelector( '.content' );
+
+				checkMobile();
+
+				// Scene
+				scene = new THREE.Scene();
+				scene.fog = new THREE.FogExp2( 0x0a0a0f, 0.012 );
+
+				// Camera
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 1000 );
+				camera.position.set( 0.0, 0.0, cameraDepth );
+				camera.layers.enableAll();
+				scene.add( camera );
+
+				forcePixelsPerMeter();
+
+				// Lights
+				setupLights();
+
+				// Create visual elements
+				createFloatingGeometry();
+				createParticles();
+				createBackgroundGrids();
+				createElementFrames();
+
+				// Background renderer with bloom
+				rendererBg = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
+				rendererBg.setPixelRatio( Math.min( window.devicePixelRatio, 1 ) );
+				rendererBg.setClearColor( 0x000000, 0 );
+				rendererBg.toneMapping = THREE.ACESFilmicToneMapping;
+				rendererBg.toneMappingExposure = 1.0;
+				rendererBg.setAnimationLoop( animate );
+				containerBg.appendChild( rendererBg.domElement );
+
+				// Foreground renderer with bloom
+				rendererFg = new THREE.WebGLRenderer( { antialias: true, alpha: true } );
+				rendererFg.setPixelRatio( Math.min( window.devicePixelRatio, 1 ) );
+				rendererFg.setClearColor( 0x000000, 0 );
+				rendererFg.toneMapping = THREE.ACESFilmicToneMapping;
+				rendererFg.toneMappingExposure = 1.0;
+				containerFg.appendChild( rendererFg.domElement );
+
+				// Setup post-processing
+				setupPostProcessing();
+
+				// Event listeners
+				window.addEventListener( 'resize', onWindowResize );
+				window.addEventListener( 'orientationchange', onWindowResize );
+				window.addEventListener( 'scroll', onScroll );
+
+				// Intersection observer for section animations
+				setupScrollAnimations();
+
+				onWindowResize();
+
+			}
+
+			function setupLights() {
+
+				// Ambient light
+				const ambientLight = new THREE.AmbientLight( 0x222244, 3 );
+				scene.add( ambientLight );
+
+				// Cyan point light - foreground illumination
+				const pointLight1 = new THREE.PointLight( NEON_CYAN, 80, 40 );
+				pointLight1.position.set( 5, -3, 3 );
+				scene.add( pointLight1 );
+
+				// Magenta point light - mid-range
+				const pointLight2 = new THREE.PointLight( NEON_MAGENTA, 60, 35 );
+				pointLight2.position.set( -5, -8, 0 );
+				scene.add( pointLight2 );
+
+				// Yellow point light - background
+				const pointLight3 = new THREE.PointLight( NEON_YELLOW, 40, 25 );
+				pointLight3.position.set( 0, -15, -3 );
+				scene.add( pointLight3 );
+
+				// Orange accent light
+				const pointLight4 = new THREE.PointLight( NEON_ORANGE, 50, 30 );
+				pointLight4.position.set( 3, -25, 2 );
+				scene.add( pointLight4 );
+
+			}
+
+			function setupPostProcessing() {
+
+				const width = window.innerWidth;
+				const height = window.innerHeight;
+				const resolution = new THREE.Vector2( width, height );
+				const pixelRatio = rendererBg.getPixelRatio();
+
+				// Create multisampled render targets for antialiasing
+				const renderTargetBg = new THREE.WebGLRenderTarget( width * pixelRatio, height * pixelRatio, {
+					samples: 4,
+					type: THREE.HalfFloatType
+				} );
+
+				const renderTargetFg = new THREE.WebGLRenderTarget( width * pixelRatio, height * pixelRatio, {
+					samples: 4,
+					type: THREE.HalfFloatType
+				} );
+
+				// Background composer with MSAA
+				const renderPassBg = new RenderPass( scene, camera );
+				const bloomPassBg = new UnrealBloomPass( resolution, 0.6, 0.4, 0.3 );
+				const outputPassBg = new OutputPass();
+
+				composerBg = new EffectComposer( rendererBg, renderTargetBg );
+				composerBg.addPass( renderPassBg );
+				composerBg.addPass( bloomPassBg );
+				composerBg.addPass( outputPassBg );
+
+				// Foreground composer with MSAA
+				const renderPassFg = new RenderPass( scene, camera );
+				const bloomPassFg = new UnrealBloomPass( resolution, 0.8, 0.5, 0.2 );
+				const outputPassFg = new OutputPass();
+
+				composerFg = new EffectComposer( rendererFg, renderTargetFg );
+				composerFg.addPass( renderPassFg );
+				composerFg.addPass( bloomPassFg );
+				composerFg.addPass( outputPassFg );
+
+			}
+
+			function createFloatingGeometry() {
+
+				// Hero torus knot - positioned in foreground
+				const torusKnotGeometry = new THREE.TorusKnotGeometry( 0.8, 0.25, 128, 32 );
+				const torusKnotMaterial = new THREE.MeshPhysicalMaterial( {
+					color: NEON_CYAN,
+					metalness: 0.9,
+					roughness: 0.1,
+					emissive: NEON_CYAN,
+					emissiveIntensity: 0.3,
+					transparent: true,
+					opacity: 0.9
+				} );
+				torusKnot = new THREE.Mesh( torusKnotGeometry, torusKnotMaterial );
+				torusKnot.position.set( 4, -4.5, 1.5 );
+				scene.add( torusKnot );
+				floatingObjects.push( { mesh: torusKnot, rotSpeed: { x: 0.0005, y: 0.001, z: 0.0003 }, bobSpeed: 0.15, bobAmount: 0.05 } );
+
+				// Icosahedron - background
+				const icosahedronGeometry = new THREE.IcosahedronGeometry( 1.2, 0 );
+				const icosahedronMaterial = new THREE.MeshPhysicalMaterial( {
+					color: NEON_MAGENTA,
+					metalness: 0.7,
+					roughness: 0.2,
+					emissive: NEON_MAGENTA,
+					emissiveIntensity: 0.2,
+					transparent: true,
+					opacity: 0.85
+				} );
+				icosahedron = new THREE.Mesh( icosahedronGeometry, icosahedronMaterial );
+				icosahedron.position.set( -3.5, -12, -2 );
+				scene.add( icosahedron );
+				floatingObjects.push( { mesh: icosahedron, rotSpeed: { x: 0.003, y: 0.006, z: 0.002 }, bobSpeed: 0.6, bobAmount: 0.4 } );
+
+				// Octahedron - foreground
+				const octahedronGeometry = new THREE.OctahedronGeometry( 0.7, 0 );
+				const octahedronMaterial = new THREE.MeshPhysicalMaterial( {
+					color: NEON_YELLOW,
+					metalness: 0.8,
+					roughness: 0.15,
+					emissive: NEON_YELLOW,
+					emissiveIntensity: 0.4,
+					transparent: true,
+					opacity: 0.9
+				} );
+				octahedron = new THREE.Mesh( octahedronGeometry, octahedronMaterial );
+				octahedron.position.set( 3.5, -22, 2 );
+				scene.add( octahedron );
+				floatingObjects.push( { mesh: octahedron, rotSpeed: { x: 0.0008, y: 0.0005, z: 0.0006 }, bobSpeed: 0.1, bobAmount: 0.03 } );
+
+				// Dodecahedron - foreground static
+				const dodecahedronGeometry = new THREE.DodecahedronGeometry( 0.5, 0 );
+				const dodecahedronMaterial = new THREE.MeshPhysicalMaterial( {
+					color: NEON_MAGENTA,
+					metalness: 0.95,
+					roughness: 0.05,
+					emissive: NEON_MAGENTA,
+					emissiveIntensity: 0.5,
+					transparent: true,
+					opacity: 0.85
+				} );
+				const dodecahedron = new THREE.Mesh( dodecahedronGeometry, dodecahedronMaterial );
+				dodecahedron.position.set( -3, -8, 1.8 );
+				dodecahedron.rotation.set( 0.3, 0.5, 0.2 );
+				scene.add( dodecahedron );
+				floatingObjects.push( { mesh: dodecahedron, rotSpeed: { x: 0, y: 0.0003, z: 0 }, bobSpeed: 0, bobAmount: 0 } );
+
+				// Glass crystal - straddling the plane
+				const crystalGeometry = new THREE.IcosahedronGeometry( 0.6, 0 );
+				const glassMaterial = new THREE.MeshPhysicalMaterial( {
+					color: 0xffffff,
+					metalness: 0.0,
+					roughness: 0.0,
+					transmission: 0.9,
+					thickness: 0.5,
+					ior: 2.0,
+					transparent: true
+				} );
+				const crystal = new THREE.Mesh( crystalGeometry, glassMaterial );
+				crystal.position.set( 3, -35, 0.3 );
+				scene.add( crystal );
+				floatingObjects.push( { mesh: crystal, rotSpeed: { x: 0.008, y: 0.012, z: 0.005 }, bobSpeed: 0.3, bobAmount: 0.1 } );
+
+				// Rounded boxes scattered around
+				const roundedBoxGeometry = new RoundedBoxGeometry( 0.6, 0.6, 0.6, 4, 0.1 );
+
+				for ( let i = 0; i < 20; i++ ) {
+
+					const hue = ( i / 20 ) * 0.3 + 0.5;
+					const color = new THREE.Color().setHSL( hue, 1, 0.7 );
+
+					const boxMaterial = new THREE.MeshStandardMaterial( {
+						map: cubeTexture,
+						color: color,
+						metalness: 0.3,
+						roughness: 0.4
+					} );
+
+					const box = new THREE.Mesh( roundedBoxGeometry, boxMaterial );
+
+					const angle = ( i / 20 ) * Math.PI * 2;
+					const radius = 3.5 + Math.random() * 2.5;
+					const yPos = -4 - i * 3.2 - Math.random() * 2;
+
+					const isForeground = i % 2 === 0;
+					const zPos = isForeground ? ( 1 + Math.random() * 1.5 ) : ( -3 + Math.random() * 2 );
+
+					box.position.set(
+						Math.cos( angle ) * radius,
+						yPos,
+						zPos
+					);
+
+					box.rotation.set(
+						Math.random() * Math.PI,
+						Math.random() * Math.PI,
+						Math.random() * Math.PI
+					);
+
+					scene.add( box );
+
+					const speedMultiplier = isForeground ? 0.15 : 1.0;
+					floatingObjects.push( {
+						mesh: box,
+						rotSpeed: {
+							x: ( 0.002 + Math.random() * 0.004 ) * speedMultiplier,
+							y: ( 0.003 + Math.random() * 0.005 ) * speedMultiplier,
+							z: ( 0.001 + Math.random() * 0.003 ) * speedMultiplier
+						},
+						bobSpeed: ( 0.4 + Math.random() * 0.6 ) * speedMultiplier,
+						bobAmount: ( 0.1 + Math.random() * 0.15 ) * speedMultiplier,
+						initialY: yPos
+					} );
+
+				}
+
+				// Wireframe sphere decoration - background
+				const wireframeSphereGeometry = new THREE.IcosahedronGeometry( 2.5, 1 );
+				const wireframeSphereMaterial = new THREE.MeshBasicMaterial( {
+					color: NEON_CYAN,
+					wireframe: true,
+					transparent: true,
+					opacity: 0.15
+				} );
+				const wireframeSphere = new THREE.Mesh( wireframeSphereGeometry, wireframeSphereMaterial );
+				wireframeSphere.position.set( 0, -45, -3 );
+				scene.add( wireframeSphere );
+				floatingObjects.push( { mesh: wireframeSphere, rotSpeed: { x: 0.001, y: 0.002, z: 0.001 }, bobSpeed: 0.3, bobAmount: 0.5 } );
+
+				// Large frame rings at z=0 threshold - straddling foreground/background
+				const frameRingGeometry = new THREE.TorusGeometry( 2.5, 0.04, 16, 64 );
+				const frameRingMaterial = new THREE.MeshBasicMaterial( {
+					color: NEON_CYAN,
+					transparent: true,
+					opacity: 0.5
+				} );
+
+				// Ring 1 - near hero
+				const frameRing = new THREE.Mesh( frameRingGeometry, frameRingMaterial );
+				frameRing.position.set( 3.5, -3, 0 );
+				frameRing.rotation.x = Math.PI * 0.4;
+				frameRing.rotation.y = 0.2;
+				scene.add( frameRing );
+				floatingObjects.push( { mesh: frameRing, rotSpeed: { x: 0, y: 0.0005, z: 0 }, bobSpeed: 0, bobAmount: 0 } );
+
+				// Ring 2 - magenta
+				const frameRing2 = new THREE.Mesh( frameRingGeometry, frameRingMaterial.clone() );
+				frameRing2.material.color.setHex( NEON_MAGENTA );
+				frameRing2.material.opacity = 0.45;
+				frameRing2.position.set( -3, -18, 0 );
+				frameRing2.rotation.x = Math.PI * 0.3;
+				frameRing2.rotation.z = -0.3;
+				scene.add( frameRing2 );
+				floatingObjects.push( { mesh: frameRing2, rotSpeed: { x: 0, y: -0.0005, z: 0 }, bobSpeed: 0, bobAmount: 0 } );
+
+				// Ring 3 - yellow
+				const frameRing3 = new THREE.Mesh( frameRingGeometry, frameRingMaterial.clone() );
+				frameRing3.material.color.setHex( NEON_YELLOW );
+				frameRing3.material.opacity = 0.4;
+				frameRing3.position.set( 4, -38, 0 );
+				frameRing3.rotation.x = Math.PI * 0.5;
+				frameRing3.rotation.y = 0.4;
+				frameRing3.scale.setScalar( 0.8 );
+				scene.add( frameRing3 );
+				floatingObjects.push( { mesh: frameRing3, rotSpeed: { x: 0, y: 0.0003, z: 0 }, bobSpeed: 0, bobAmount: 0 } );
+
+				// Floating bar elements in foreground
+				const barGeometry = new THREE.BoxGeometry( 0.02, 2, 0.02 );
+				const barMaterial = new THREE.MeshBasicMaterial( {
+					color: NEON_YELLOW,
+					transparent: true,
+					opacity: 0.7
+				} );
+
+				for ( let i = 0; i < 5; i++ ) {
+
+					const bar = new THREE.Mesh( barGeometry, barMaterial.clone() );
+					bar.position.set(
+						( Math.random() - 0.5 ) * 8,
+						-5 - i * 10 - Math.random() * 5,
+						1.5 + Math.random() * 1
+					);
+					bar.rotation.z = Math.random() * Math.PI;
+					bar.material.opacity = 0.3 + Math.random() * 0.4;
+					scene.add( bar );
+					floatingObjects.push( { mesh: bar, rotSpeed: { x: 0, y: 0, z: 0 }, bobSpeed: 0, bobAmount: 0 } );
+
+				}
+
+			}
+
+			function createParticles() {
+
+				const particleCount = 300;
+				const positions = new Float32Array( particleCount * 3 );
+				const colors = new Float32Array( particleCount * 3 );
+				const sizes = new Float32Array( particleCount );
+
+				const colorOptions = [
+					new THREE.Color( NEON_CYAN ),
+					new THREE.Color( NEON_MAGENTA ),
+					new THREE.Color( NEON_YELLOW ),
+					new THREE.Color( 0xffffff )
+				];
+
+				for ( let i = 0; i < particleCount; i++ ) {
+
+					positions[ i * 3 ] = ( Math.random() - 0.5 ) * 20;
+					positions[ i * 3 + 1 ] = -Math.random() * 60;
+					positions[ i * 3 + 2 ] = ( Math.random() * 11 ) - 8;
+
+					const color = colorOptions[ Math.floor( Math.random() * colorOptions.length ) ];
+					colors[ i * 3 ] = color.r;
+					colors[ i * 3 + 1 ] = color.g;
+					colors[ i * 3 + 2 ] = color.b;
+
+					const isForeground = positions[ i * 3 + 2 ] > 0;
+					sizes[ i ] = isForeground ? ( 0.04 + Math.random() * 0.08 ) : ( 0.02 + Math.random() * 0.05 );
+
+					particles.push( {
+						index: i,
+						speed: 0.005 + Math.random() * 0.01,
+						amplitude: 0.5 + Math.random() * 1,
+						phase: Math.random() * Math.PI * 2
+					} );
+
+				}
+
+				const particleGeometry = new THREE.BufferGeometry();
+				particleGeometry.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
+				particleGeometry.setAttribute( 'color', new THREE.BufferAttribute( colors, 3 ) );
+				particleGeometry.setAttribute( 'size', new THREE.BufferAttribute( sizes, 1 ) );
+
+				const particleMaterial = new THREE.PointsMaterial( {
+					size: 0.1,
+					vertexColors: true,
+					transparent: true,
+					opacity: 0.9,
+					sizeAttenuation: true,
+					blending: THREE.AdditiveBlending
+				} );
+
+				const particleSystem = new THREE.Points( particleGeometry, particleMaterial );
+				particleSystem.userData.geometry = particleGeometry;
+				scene.add( particleSystem );
+
+			}
+
+			function createBackgroundGrids() {
+
+				// Angled grid planes in background
+				const gridMaterial = new THREE.MeshBasicMaterial( {
+					color: NEON_CYAN,
+					wireframe: true,
+					transparent: true,
+					opacity: 0.08
+				} );
+
+				for ( let i = 0; i < 5; i++ ) {
+
+					const gridGeometry = new THREE.PlaneGeometry( 30, 30, 20, 20 );
+					const grid = new THREE.Mesh( gridGeometry, gridMaterial.clone() );
+
+					grid.position.set(
+						( Math.random() - 0.5 ) * 10,
+						-10 - i * 12,
+						-4 - Math.random() * 4
+					);
+
+					grid.rotation.set(
+						Math.PI * 0.1 + Math.random() * 0.2,
+						Math.random() * 0.3 - 0.15,
+						Math.random() * 0.2 - 0.1
+					);
+
+					grid.material.opacity = 0.05 + Math.random() * 0.08;
+					scene.add( grid );
+
+				}
+
+				// Ring geometries at z=0 threshold
+				const ringGeometry = new THREE.TorusGeometry( 3, 0.02, 8, 64 );
+				const ringMaterial = new THREE.MeshBasicMaterial( {
+					color: NEON_MAGENTA,
+					transparent: true,
+					opacity: 0.4
+				} );
+
+				for ( let i = 0; i < 5; i++ ) {
+
+					const ring = new THREE.Mesh( ringGeometry, ringMaterial.clone() );
+					ring.position.set(
+						( Math.random() - 0.5 ) * 10,
+						-8 - i * 12,
+						( Math.random() - 0.5 ) * 0.5
+					);
+					ring.rotation.x = Math.PI / 2 + Math.random() * 0.4;
+					ring.rotation.y = Math.random() * Math.PI;
+					ring.scale.setScalar( 0.6 + Math.random() * 0.6 );
+					ring.material.opacity = 0.3 + Math.random() * 0.2;
+
+					if ( i % 2 === 0 ) {
+
+						ring.material.color.setHex( NEON_CYAN );
+
+					}
+
+					scene.add( ring );
+					floatingObjects.push( { mesh: ring, rotSpeed: { x: 0, y: 0.001, z: 0.0005 }, bobSpeed: 0.15, bobAmount: 0 } );
+
+				}
+
+			}
+
+			function createElementFrames() {
+
+				const cards = document.querySelectorAll( '.feature-card' );
+				const cornerSize = 0.12;
+				const cornerDepth = 0.6;
+				const cornerGeometry = new THREE.BoxGeometry( cornerSize, cornerSize, cornerDepth );
+
+				cards.forEach( ( card, index ) => {
+
+					const rect = card.getBoundingClientRect();
+					const centerX = ( rect.left + window.scrollX + rect.width * 0.5 ) / pixelsPerMeter;
+					const centerY = ( rect.top + window.scrollY + rect.height * 0.5 ) / -pixelsPerMeter;
+					const width = rect.width / pixelsPerMeter;
+					const height = rect.height / pixelsPerMeter;
+
+					const colors = [ NEON_CYAN, NEON_MAGENTA, NEON_YELLOW, NEON_ORANGE ];
+					const frameColor = colors[ index % colors.length ];
+
+					const cornerMaterial = new THREE.MeshPhysicalMaterial( {
+						color: frameColor,
+						emissive: frameColor,
+						emissiveIntensity: 0.6,
+						metalness: 0.9,
+						roughness: 0.1,
+						transparent: true,
+						opacity: 0.8
+					} );
+
+					const frameGroup = new THREE.Group();
+					const cornerMeshes = [];
+
+					// Create 4 corners: top-left, top-right, bottom-left, bottom-right
+					for ( let i = 0; i < 4; i++ ) {
+
+						const corner = new THREE.Mesh( cornerGeometry, cornerMaterial );
+						frameGroup.add( corner );
+						cornerMeshes.push( corner );
+
+					}
+
+					// Position corners based on current dimensions
+					positionCorners( cornerMeshes, width, height, cornerSize );
+
+					frameGroup.position.set( centerX, centerY, 0 );
+					scene.add( frameGroup );
+
+					elementFrames.push( {
+						group: frameGroup,
+						card: card,
+						corners: cornerMeshes,
+						cornerSize: cornerSize
+					} );
+
+				} );
+
+			}
+
+			function positionCorners( corners, width, height, cornerSize ) {
+
+				const halfW = width / 2 + cornerSize / 2;
+				const halfH = height / 2 + cornerSize / 2;
+
+				// top-left, top-right, bottom-left, bottom-right
+				corners[ 0 ].position.set( -halfW, halfH, 0 );
+				corners[ 1 ].position.set( halfW, halfH, 0 );
+				corners[ 2 ].position.set( -halfW, -halfH, 0 );
+				corners[ 3 ].position.set( halfW, -halfH, 0 );
+
+			}
+
+			function updateElementFrames() {
+
+				elementFrames.forEach( ( frame ) => {
+
+					const rect = frame.card.getBoundingClientRect();
+					const centerX = ( rect.left + window.scrollX + rect.width * 0.5 ) / pixelsPerMeter;
+					const centerY = ( rect.top + window.scrollY + rect.height * 0.5 ) / -pixelsPerMeter;
+					const width = rect.width / pixelsPerMeter;
+					const height = rect.height / pixelsPerMeter;
+
+					// Update group position
+					frame.group.position.set( centerX, centerY, 0 );
+
+					// Update corner positions based on new dimensions
+					positionCorners( frame.corners, width, height, frame.cornerSize );
+
+				} );
+
+			}
+
+			function setupScrollAnimations() {
+
+				const sections = document.querySelectorAll( '.section' );
+
+				const observer = new IntersectionObserver( ( entries ) => {
+
+					entries.forEach( entry => {
+
+						if ( entry.isIntersecting ) {
+
+							entry.target.classList.add( 'visible' );
+
+						}
+
+					} );
+
+				}, { threshold: 0.1, rootMargin: '-50px' } );
+
+				sections.forEach( section => observer.observe( section ) );
+
+			}
+
+			function recomputePixelsPerMeter() {
+
+				const oldPosition = camera.position.clone();
+				camera.position.set( 0.0, 0.0, cameraDepth );
+				camera.updateMatrixWorld();
+				camera.updateProjectionMatrix();
+
+				const testPoint = new THREE.Vector3( 0.0, 0, 0.0 );
+				testPoint.project( camera );
+				testPoint.y = 1.0 / window.innerHeight;
+				testPoint.unproject( camera );
+
+				camera.position.copy( oldPosition );
+				camera.updateMatrixWorld();
+				camera.updateProjectionMatrix();
+
+				pixelsPerMeter = 1.0 / ( testPoint.y * 2.0 );
+				return pixelsPerMeter;
+
+			}
+
+			function forcePixelsPerMeter() {
+
+				for ( let i = 0; i < 10; i++ ) {
+
+					const curPixelsPerMeter = recomputePixelsPerMeter();
+					camera.fov *= curPixelsPerMeter / forcedPixelsPerMeter;
+					camera.updateProjectionMatrix();
+
+				}
+
+			}
+
+			function checkMobile() {
+
+				isMobile = /^((?!chrome|android).)*safari/i.test( navigator.userAgent );
+
+			}
+
+			function setScroll() {
+
+				const scrollX = window.scrollX;
+				const scrollY = window.scrollY;
+
+				camera.position.set(
+					( scrollX + window.innerWidth * 0.5 ) / pixelsPerMeter,
+					-( scrollY + window.innerHeight * 0.5 ) / pixelsPerMeter,
+					cameraDepth
+				);
+
+				if ( isMobile ) {
+
+					containerBg.style.position = 'absolute';
+					containerFg.style.position = 'absolute';
+					containerBg.style.width = '100%';
+					containerFg.style.width = '100%';
+					containerBg.style.height = '100%';
+					containerFg.style.height = '100%';
+					containerBg.style.transform = `translate(${scrollX}px, ${scrollY}px)`;
+					containerFg.style.transform = `translate(${scrollX}px, ${scrollY}px)`;
+
+				} else {
+
+					containerBg.style.position = 'fixed';
+					containerFg.style.position = 'fixed';
+					containerBg.style.width = '100vw';
+					containerFg.style.width = '100vw';
+					containerBg.style.height = '100vh';
+					containerFg.style.height = '100vh';
+					containerBg.style.transform = '';
+					containerFg.style.transform = '';
+
+				}
+
+			}
+
+			function render() {
+
+				// Background pass: objects beyond cameraDepth
+				camera.near = cameraDepth;
+				camera.far = 1000;
+				camera.updateProjectionMatrix();
+				composerBg.render();
+
+				// Foreground pass: objects closer than cameraDepth
+				camera.near = 0.1;
+				camera.far = cameraDepth + 0.01;
+				camera.updateProjectionMatrix();
+				composerFg.render();
+
+			}
+
+			function onWindowResize() {
+
+				const width = window.innerWidth;
+				const height = window.innerHeight;
+
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+
+				rendererBg.setSize( width, height );
+				rendererFg.setSize( width, height );
+				composerBg.setSize( width, height );
+				composerFg.setSize( width, height );
+
+				forcePixelsPerMeter();
+				updateElementFrames();
+				setScroll();
+
+			}
+
+			function onScroll() {
+
+				setScroll();
+
+			}
+
+			function animate() {
+
+				time += 0.016;
+
+				// Animate floating objects
+				floatingObjects.forEach( ( obj, index ) => {
+
+					obj.mesh.rotation.x += obj.rotSpeed.x;
+					obj.mesh.rotation.y += obj.rotSpeed.y;
+					obj.mesh.rotation.z += obj.rotSpeed.z;
+
+					if ( obj.bobAmount > 0 ) {
+
+						const baseY = obj.initialY !== undefined ? obj.initialY : obj.mesh.position.y;
+						obj.mesh.position.y = baseY + Math.sin( time * obj.bobSpeed + index ) * obj.bobAmount;
+
+					}
+
+				} );
+
+				// Animate particles
+				const positions = scene.children.find( child => child.type === 'Points' )?.geometry?.attributes?.position;
+				if ( positions ) {
+
+					particles.forEach( p => {
+
+						positions.array[ p.index * 3 ] += Math.sin( time * p.speed + p.phase ) * 0.002;
+						positions.array[ p.index * 3 + 2 ] += Math.cos( time * p.speed + p.phase ) * 0.001;
+
+					} );
+					positions.needsUpdate = true;
+
+				}
+
+				setScroll();
+				render();
+
+			}
+
+		</script>
+	</body>
+</html>
