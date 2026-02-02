@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js vr - CAVE exploration</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			body {
+				background-color: #000;
+			}
+			#info {
+				color: #fff;
+			}
+		</style>
+	</head>
+	<body>
+
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> vr - CAVE exploration<br/>
+			A/X: Resolution | B/Y: Vignette +/- | Grip: Pixelated | Stick Click: Panorama | Stick Y: IPD
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+
+			import * as CameraUtils from 'three/addons/utils/CameraUtils.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { VRButton } from 'three/addons/webxr/VRButton.js';
+			import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+			import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
+			import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+
+			let camera, scene, renderer, controls;
+			let caveGroup, contentGroup;
+			let configPanel, controlsPanel;
+
+			// CAVE configuration
+			const CAVE_SIZE = 3; // meters
+			const CAVE_HALF = CAVE_SIZE / 2;
+
+			// Resolution presets (width x height per screen)
+			const RESOLUTION_PRESETS = [
+				{ name: '512x512', width: 512, height: 512 },
+				{ name: '1024x1024', width: 1024, height: 1024 },
+				{ name: '2048x2048', width: 2048, height: 2048 },
+				{ name: '4096x4096', width: 4096, height: 4096 }
+			];
+
+			// CAVE screens: front, left, right, floor, ceiling (no back - that's where user enters)
+			const SCREEN_CONFIGS = [
+				{ name: 'front', position: [ 0, 0, - CAVE_HALF ], rotation: [ 0, 0, 0 ] },
+				{ name: 'left', position: [ - CAVE_HALF, 0, 0 ], rotation: [ 0, Math.PI / 2, 0 ] },
+				{ name: 'right', position: [ CAVE_HALF, 0, 0 ], rotation: [ 0, - Math.PI / 2, 0 ] },
+				{ name: 'floor', position: [ 0, - CAVE_HALF, 0 ], rotation: [ - Math.PI / 2, 0, 0 ] },
+				{ name: 'ceiling', position: [ 0, CAVE_HALF, 0 ], rotation: [ Math.PI / 2, 0, 0 ] }
+			];
+
+			// Per-eye cameras and render targets for each screen
+			const screenData = {
+				left: [],  // left eye: array of { camera, renderTarget, corners }
+				right: []  // right eye: array of { camera, renderTarget, corners }
+			};
+
+			// Screen meshes (visible projection surfaces)
+			// We use pairs: one for left eye (layer 1), one for right eye (layer 2)
+			const screenMeshesLeft = [];
+			const screenMeshesRight = [];
+
+			// Panorama options
+			const PANORAMA_OPTIONS = [
+				{ name: 'None (Starfield)', file: null, type: 'none' },
+				{ name: 'Kandao Panorama', file: './textures/kandao3.jpg', depthFile: './textures/kandao3_depthmap.jpg', type: 'jpg-depth' },
+				{ name: 'Venice Sunset', file: './textures/equirectangular/venice_sunset_1k.hdr', type: 'hdr' },
+				{ name: 'Moonless Golf', file: './textures/equirectangular/moonless_golf_1k.hdr', type: 'hdr' },
+				{ name: 'Pedestrian Overpass', file: './textures/equirectangular/pedestrian_overpass_1k.hdr', type: 'hdr' },
+				{ name: 'Quarry', file: './textures/equirectangular/quarry_01_1k.hdr', type: 'hdr' }
+			];
+
+			// Parameters
+			const params = {
+				resolution: 1, // index into RESOLUTION_PRESETS
+				ipd: 0, // current IPD in mm
+				maxIpd: 64, // max IPD (updated from XR session)
+				vignette: 5, // Projector vignette strength (0 = off, higher = stronger)
+				panorama: 0, // index into PANORAMA_OPTIONS
+				pixelated: true // Use nearest neighbor filtering for pixelated look
+			};
+
+			// Projector simulation light
+			let projectorLight;
+
+			// Panorama sphere, starfield, and grid
+			let panoramaSphere, starfield, gridHelper;
+			const textureLoader = new THREE.TextureLoader();
+			const rgbeLoader = new RGBELoader();
+
+			// Controller state
+			let controller1, controller2, controllerGrip1, controllerGrip2;
+			let controller1InputSource = null, controller2InputSource = null;
+			let lastButtonState = { a: [ false, false ], b: [ false, false ], stick: [ false, false ], grip: [ false, false ] };
+
+			// Controller-attached test panel
+			let controllerPanel;
+
+			// GUI
+			let gui, guiMesh, interactiveGroup;
+
+			// Temporary vectors for corner calculations
+			const bottomLeftCorner = new THREE.Vector3();
+			const bottomRightCorner = new THREE.Vector3();
+			const topLeftCorner = new THREE.Vector3();
+
+			init();
+
+			function init() {
+
+				// Scene
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x000000 );
+
+				// Main camera (used in non-XR mode)
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.01, 100 );
+				camera.position.set( 0, CAVE_HALF, 2 ); // Position at CAVE center height
+				scene.add( camera );
+
+				// Renderer
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				renderer.xr.enabled = true;
+				renderer.localClippingEnabled = true;
+				renderer.autoClear = false;
+				document.body.appendChild( renderer.domElement );
+
+				// VR Button
+				document.body.appendChild( VRButton.createButton( renderer ) );
+
+				// Orbit controls for non-XR mode
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.target.set( 0, CAVE_HALF, 0 ); // Target CAVE center
+				controls.update();
+
+				// Create CAVE structure
+				createCAVE();
+
+				// Create virtual content to display
+				createContent();
+
+				// Setup XR controllers
+				setupControllers();
+
+				// Setup GUI
+				setupGUI();
+
+				// Listen for XR session events
+				renderer.xr.addEventListener( 'sessionstart', onSessionStart );
+				renderer.xr.addEventListener( 'sessionend', onSessionEnd );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+
+			function createCAVE() {
+
+				caveGroup = new THREE.Group();
+				// Move CAVE up so its floor is at y=0 (VR floor level)
+				// This positions the user inside the CAVE when standing
+				caveGroup.position.y = CAVE_HALF;
+				scene.add( caveGroup );
+
+				// Create projector simulation light (centered in CAVE)
+				projectorLight = new THREE.PointLight( 0xffffff, 0, 10, 1 );
+				projectorLight.position.set( 0, 0, 0 );
+				caveGroup.add( projectorLight );
+
+				// Create render targets and cameras for each screen, for each eye
+				const resolution = RESOLUTION_PRESETS[ params.resolution ];
+
+				for ( let screenIndex = 0; screenIndex < SCREEN_CONFIGS.length; screenIndex ++ ) {
+
+					const config = SCREEN_CONFIGS[ screenIndex ];
+
+					// Create LEFT eye screen mesh (layer 1)
+					const screenGeomLeft = new THREE.PlaneGeometry( CAVE_SIZE, CAVE_SIZE );
+					const screenBasicMatLeft = new THREE.MeshBasicMaterial( {
+						color: 0xffffff,
+						side: THREE.FrontSide
+					} );
+					const screenPhysicalMatLeft = new THREE.MeshPhysicalMaterial( {
+						color: 0x000000,
+						emissive: 0xffffff,
+						emissiveIntensity: 1,
+						roughness: 0.8,
+						metalness: 0,
+						side: THREE.FrontSide
+					} );
+					const screenMeshLeft = new THREE.Mesh( screenGeomLeft, screenBasicMatLeft );
+					screenMeshLeft.position.fromArray( config.position );
+					screenMeshLeft.rotation.set( ...config.rotation );
+					screenMeshLeft.name = config.name + '_left';
+					screenMeshLeft.layers.set( 1 ); // Left eye layer
+					screenMeshLeft.userData.basicMaterial = screenBasicMatLeft;
+					screenMeshLeft.userData.physicalMaterial = screenPhysicalMatLeft;
+					screenMeshesLeft.push( screenMeshLeft );
+					caveGroup.add( screenMeshLeft );
+
+					// Create RIGHT eye screen mesh (layer 2)
+					const screenGeomRight = new THREE.PlaneGeometry( CAVE_SIZE, CAVE_SIZE );
+					const screenBasicMatRight = new THREE.MeshBasicMaterial( {
+						color: 0xffffff,
+						side: THREE.FrontSide
+					} );
+					const screenPhysicalMatRight = new THREE.MeshPhysicalMaterial( {
+						color: 0x000000,
+						emissive: 0xffffff,
+						emissiveIntensity: 1,
+						roughness: 0.8,
+						metalness: 0,
+						side: THREE.FrontSide
+					} );
+					const screenMeshRight = new THREE.Mesh( screenGeomRight, screenBasicMatRight );
+					screenMeshRight.position.fromArray( config.position );
+					screenMeshRight.rotation.set( ...config.rotation );
+					screenMeshRight.name = config.name + '_right';
+					screenMeshRight.layers.set( 2 ); // Right eye layer
+					screenMeshRight.userData.basicMaterial = screenBasicMatRight;
+					screenMeshRight.userData.physicalMaterial = screenPhysicalMatRight;
+					screenMeshesRight.push( screenMeshRight );
+					caveGroup.add( screenMeshRight );
+
+					// Create per-eye data
+					for ( const eye of [ 'left', 'right' ] ) {
+
+						const magFilter = params.pixelated ? THREE.NearestFilter : THREE.LinearFilter;
+						const minFilter = params.pixelated ? THREE.NearestFilter : THREE.LinearFilter;
+
+						const renderTarget = new THREE.WebGLRenderTarget( resolution.width, resolution.height, {
+							minFilter: THREE.LinearFilter,
+							magFilter: magFilter,
+							format: THREE.RGBAFormat,
+							colorSpace: THREE.SRGBColorSpace
+						} );
+
+						const portalCamera = new THREE.PerspectiveCamera( 45, 1, 0.01, 100 );
+						portalCamera.layers.enable( 3 ); // Enable layer 3 to see virtual content
+						scene.add( portalCamera );
+
+						// Pre-calculate screen corners in local space
+						const corners = {
+							bottomLeft: new THREE.Vector3( - CAVE_HALF, - CAVE_HALF, 0 ),
+							bottomRight: new THREE.Vector3( CAVE_HALF, - CAVE_HALF, 0 ),
+							topLeft: new THREE.Vector3( - CAVE_HALF, CAVE_HALF, 0 )
+						};
+
+						const screenMesh = eye === 'left' ? screenMeshLeft : screenMeshRight;
+
+						screenData[ eye ].push( {
+							camera: portalCamera,
+							renderTarget: renderTarget,
+							corners: corners,
+							screenMesh: screenMesh
+						} );
+
+					}
+
+				}
+
+				updateScreenMaterials();
+
+			}
+
+			function updateScreenMaterials() {
+
+				// Update material textures from render targets
+				for ( let i = 0; i < screenMeshesLeft.length; i ++ ) {
+
+					const leftMesh = screenMeshesLeft[ i ];
+					const rightMesh = screenMeshesRight[ i ];
+					const leftTexture = screenData.left[ i ].renderTarget.texture;
+					const rightTexture = screenData.right[ i ].renderTarget.texture;
+
+					if ( params.vignette > 0 ) {
+
+						// Use physical material with emissive map
+						leftMesh.material = leftMesh.userData.physicalMaterial;
+						leftMesh.material.emissiveMap = leftTexture;
+						leftMesh.material.needsUpdate = true;
+
+						rightMesh.material = rightMesh.userData.physicalMaterial;
+						rightMesh.material.emissiveMap = rightTexture;
+						rightMesh.material.needsUpdate = true;
+
+					} else {
+
+						// Use basic material with color map
+						leftMesh.material = leftMesh.userData.basicMaterial;
+						leftMesh.material.map = leftTexture;
+						leftMesh.material.needsUpdate = true;
+
+						rightMesh.material = rightMesh.userData.basicMaterial;
+						rightMesh.material.map = rightTexture;
+						rightMesh.material.needsUpdate = true;
+
+					}
+
+				}
+
+				// Update projector light
+				projectorLight.intensity = params.vignette;
+
+			}
+
+			function updatePanorama() {
+
+				const option = PANORAMA_OPTIONS[ params.panorama ];
+
+				if ( option.type === 'none' ) {
+
+					// Show starfield and grid, hide panorama
+					starfield.visible = true;
+					gridHelper.visible = true;
+					panoramaSphere.visible = false;
+
+					// Clear displacement
+					panoramaSphere.material.displacementMap = null;
+					panoramaSphere.material.needsUpdate = true;
+
+				} else {
+
+					// Hide starfield and grid, show panorama
+					starfield.visible = false;
+					gridHelper.visible = false;
+					panoramaSphere.visible = true;
+
+					// Load the texture
+					if ( option.type === 'hdr' ) {
+
+						// Clear displacement for HDR panoramas
+						panoramaSphere.material.displacementMap = null;
+						panoramaSphere.material.displacementScale = 0;
+
+						rgbeLoader.load( option.file, ( texture ) => {
+
+							texture.mapping = THREE.EquirectangularReflectionMapping;
+							panoramaSphere.material.map = texture;
+							panoramaSphere.material.needsUpdate = true;
+
+						} );
+
+					} else if ( option.type === 'jpg-depth' ) {
+
+						// Load color texture
+						textureLoader.load( option.file, ( texture ) => {
+
+							texture.colorSpace = THREE.SRGBColorSpace;
+							texture.minFilter = THREE.NearestFilter;
+							texture.generateMipmaps = false;
+							panoramaSphere.material.map = texture;
+							panoramaSphere.material.needsUpdate = true;
+
+						} );
+
+						// Load depth map for displacement
+						textureLoader.load( option.depthFile, ( depthTexture ) => {
+
+							depthTexture.minFilter = THREE.NearestFilter;
+							depthTexture.generateMipmaps = false;
+							panoramaSphere.material.displacementMap = depthTexture;
+							panoramaSphere.material.displacementScale = - 4.0;
+							panoramaSphere.material.needsUpdate = true;
+
+						} );
+
+					} else {
+
+						// Regular JPG without depth
+						panoramaSphere.material.displacementMap = null;
+						panoramaSphere.material.displacementScale = 0;
+
+						textureLoader.load( option.file, ( texture ) => {
+
+							texture.colorSpace = THREE.SRGBColorSpace;
+							texture.mapping = THREE.EquirectangularReflectionMapping;
+							panoramaSphere.material.map = texture;
+							panoramaSphere.material.needsUpdate = true;
+
+						} );
+
+					}
+
+				}
+
+				if ( gui ) {
+
+					gui.controllers.forEach( c => c.updateDisplay() );
+
+				}
+
+			}
+
+			function updateResolution() {
+
+				const resolution = RESOLUTION_PRESETS[ params.resolution ];
+
+				for ( const eye of [ 'left', 'right' ] ) {
+
+					for ( const data of screenData[ eye ] ) {
+
+						data.renderTarget.setSize( resolution.width, resolution.height );
+
+					}
+
+				}
+
+				if ( gui ) {
+
+					gui.controllers.forEach( c => c.updateDisplay() );
+
+				}
+
+			}
+
+			function updateTextureFiltering() {
+
+				const resolution = RESOLUTION_PRESETS[ params.resolution ];
+				const magFilter = params.pixelated ? THREE.NearestFilter : THREE.LinearFilter;
+				const minFilter = params.pixelated ? THREE.NearestFilter : THREE.LinearFilter;
+
+				for ( const eye of [ 'left', 'right' ] ) {
+
+					for ( let i = 0; i < screenData[ eye ].length; i ++ ) {
+
+						const data = screenData[ eye ][ i ];
+
+						// Dispose old render target
+						data.renderTarget.dispose();
+
+						// Create new render target with correct filter settings
+						const newRenderTarget = new THREE.WebGLRenderTarget( resolution.width, resolution.height, {
+							minFilter: minFilter,
+							magFilter: magFilter,
+							format: THREE.RGBAFormat,
+							colorSpace: THREE.SRGBColorSpace
+						} );
+
+						// Update the reference
+						data.renderTarget = newRenderTarget;
+
+					}
+
+				}
+
+				// Update screen materials to use the new textures
+				updateScreenMaterials();
+
+				if ( gui ) {
+
+					gui.controllers.forEach( c => c.updateDisplay() );
+
+				}
+
+			}
+
+			function setNonXRMode() {
+
+				// In non-XR mode, show screens on layer 0 only
+				for ( let i = 0; i < screenMeshesLeft.length; i ++ ) {
+
+					screenMeshesLeft[ i ].layers.set( 0 );
+					screenMeshesRight[ i ].visible = false;
+
+				}
+
+			}
+
+			function setXRMode() {
+
+				// In XR mode, use layer 1 for left eye and layer 2 for right eye
+				for ( let i = 0; i < screenMeshesLeft.length; i ++ ) {
+
+					screenMeshesLeft[ i ].layers.set( 1 );
+					screenMeshesRight[ i ].layers.set( 2 );
+					screenMeshesRight[ i ].visible = true;
+
+				}
+
+			}
+
+			function createUIPanel( title, getLines ) {
+
+				const canvas = document.createElement( 'canvas' );
+				const ctx = canvas.getContext( '2d' );
+				canvas.width = 512;
+				canvas.height = 400;
+
+				function updateCanvas() {
+
+					// Clear
+					ctx.clearRect( 0, 0, canvas.width, canvas.height );
+
+					// Background with rounded corners effect
+					ctx.fillStyle = 'rgba(0, 20, 40, 0.85)';
+					ctx.fillRect( 0, 0, canvas.width, canvas.height );
+
+					// Border
+					ctx.strokeStyle = 'rgba(0, 200, 255, 0.8)';
+					ctx.lineWidth = 4;
+					ctx.strokeRect( 2, 2, canvas.width - 4, canvas.height - 4 );
+
+					// Inner glow line
+					ctx.strokeStyle = 'rgba(0, 150, 200, 0.4)';
+					ctx.lineWidth = 2;
+					ctx.strokeRect( 10, 10, canvas.width - 20, canvas.height - 20 );
+
+					// Title
+					ctx.fillStyle = '#00ffff';
+					ctx.font = 'bold 36px Arial';
+					ctx.textAlign = 'center';
+					ctx.fillText( title, canvas.width / 2, 50 );
+
+					// Divider line
+					ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)';
+					ctx.lineWidth = 2;
+					ctx.beginPath();
+					ctx.moveTo( 40, 70 );
+					ctx.lineTo( canvas.width - 40, 70 );
+					ctx.stroke();
+
+					// Content lines - call getLines() to get current values
+					const lines = typeof getLines === 'function' ? getLines() : getLines;
+					ctx.font = '24px Arial';
+					ctx.textAlign = 'left';
+					lines.forEach( ( line, index ) => {
+
+						// Highlight lines starting with ">"
+						if ( line.startsWith( '>' ) ) {
+
+							ctx.fillStyle = '#ffff00';
+							ctx.fillText( line.substring( 1 ), 40, 110 + index * 38 );
+
+						} else {
+
+							ctx.fillStyle = '#ffffff';
+							ctx.fillText( line, 40, 110 + index * 38 );
+
+						}
+
+					} );
+
+					texture.needsUpdate = true;
+
+				}
+
+				// Create texture and material
+				const texture = new THREE.CanvasTexture( canvas );
+				texture.colorSpace = THREE.SRGBColorSpace;
+
+				const panelGeom = new THREE.PlaneGeometry( 1.2, 1.0 );
+				const panelMat = new THREE.MeshBasicMaterial( {
+					map: texture,
+					transparent: true,
+					side: THREE.DoubleSide
+				} );
+
+				const panel = new THREE.Mesh( panelGeom, panelMat );
+				panel.userData.updateCanvas = updateCanvas;
+
+				// Initial render
+				updateCanvas();
+
+				return panel;
+
+			}
+
+			function createContent() {
+
+				// Create virtual content that will be rendered to the CAVE screens
+				// This content is only visible to CAVE cameras (layer 3), not the main view
+				contentGroup = new THREE.Group();
+				contentGroup.layers.set( 3 );
+				// Move content up to match CAVE position (floor at y=0)
+				contentGroup.position.y = CAVE_HALF;
+				scene.add( contentGroup );
+
+				// Ambient light
+				const ambientLight = new THREE.AmbientLight( 0x404040, 1 );
+				contentGroup.add( ambientLight );
+
+				// Point light
+				const pointLight = new THREE.PointLight( 0xffffff, 100, 50 );
+				pointLight.position.set( 0, 5, 0 );
+				contentGroup.add( pointLight );
+
+				// Create a starfield
+				const starGeometry = new THREE.BufferGeometry();
+				const starCount = 5000;
+				const positions = new Float32Array( starCount * 3 );
+				const colors = new Float32Array( starCount * 3 );
+
+				for ( let i = 0; i < starCount; i ++ ) {
+
+					const radius = 20 + Math.random() * 30;
+					const theta = Math.random() * Math.PI * 2;
+					const phi = Math.acos( 2 * Math.random() - 1 );
+
+					positions[ i * 3 ] = radius * Math.sin( phi ) * Math.cos( theta );
+					positions[ i * 3 + 1 ] = radius * Math.sin( phi ) * Math.sin( theta );
+					positions[ i * 3 + 2 ] = radius * Math.cos( phi );
+
+					const brightness = 0.5 + Math.random() * 0.5;
+					colors[ i * 3 ] = brightness;
+					colors[ i * 3 + 1 ] = brightness;
+					colors[ i * 3 + 2 ] = brightness;
+
+				}
+
+				starGeometry.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
+				starGeometry.setAttribute( 'color', new THREE.BufferAttribute( colors, 3 ) );
+
+				const starMaterial = new THREE.PointsMaterial( {
+					size: 0.1,
+					vertexColors: true,
+					transparent: true,
+					opacity: 0.8
+				} );
+
+				starfield = new THREE.Points( starGeometry, starMaterial );
+				contentGroup.add( starfield );
+
+				// Create panorama sphere (initially hidden)
+				// High subdivision for displacement mapping
+				const panoGeometry = new THREE.SphereGeometry( 6, 256, 256 );
+				const panoMaterial = new THREE.MeshStandardMaterial( {
+					side: THREE.BackSide,
+					color: 0xffffff,
+					displacementScale: - 4.0
+				} );
+				panoramaSphere = new THREE.Mesh( panoGeometry, panoMaterial );
+				panoramaSphere.visible = false;
+				contentGroup.add( panoramaSphere );
+
+				// Add ambient light for the panorama sphere (MeshStandardMaterial needs light)
+				const panoAmbient = new THREE.AmbientLight( 0xffffff, 3 );
+				contentGroup.add( panoAmbient );
+
+				// Add some floating geometric shapes
+				const shapes = [];
+
+				// Torus knot
+				const torusKnotGeom = new THREE.TorusKnotGeometry( 0.5, 0.15, 100, 16 );
+				const torusKnotMat = new THREE.MeshStandardMaterial( {
+					color: 0x00ffff,
+					metalness: 0.8,
+					roughness: 0.2,
+					emissive: 0x004444
+				} );
+				const torusKnot = new THREE.Mesh( torusKnotGeom, torusKnotMat );
+				torusKnot.position.set( 0, 0, - 3 );
+				torusKnot.userData.rotationSpeed = { x: 0.01, y: 0.02, z: 0 };
+				shapes.push( torusKnot );
+				contentGroup.add( torusKnot );
+
+				// Icosahedrons orbiting
+				for ( let i = 0; i < 8; i ++ ) {
+
+					const icoGeom = new THREE.IcosahedronGeometry( 0.2, 0 );
+					const icoMat = new THREE.MeshStandardMaterial( {
+						color: new THREE.Color().setHSL( i / 8, 1, 0.5 ),
+						metalness: 0.5,
+						roughness: 0.3,
+						emissive: new THREE.Color().setHSL( i / 8, 1, 0.2 )
+					} );
+					const ico = new THREE.Mesh( icoGeom, icoMat );
+					ico.userData.orbitRadius = 2;
+					ico.userData.orbitSpeed = 0.5 + Math.random() * 0.5;
+					ico.userData.orbitOffset = ( i / 8 ) * Math.PI * 2;
+					ico.userData.orbitTilt = Math.random() * 0.5;
+					ico.userData.rotationSpeed = { x: 0.02, y: 0.03, z: 0.01 };
+					shapes.push( ico );
+					contentGroup.add( ico );
+
+				}
+
+				// Store shapes for animation
+				contentGroup.userData.shapes = shapes;
+
+				// Large octahedron as central object
+				const octaGeom = new THREE.OctahedronGeometry( 0.8, 0 );
+				const octaMat = new THREE.MeshStandardMaterial( {
+					color: 0xff00ff,
+					metalness: 0.9,
+					roughness: 0.1,
+					emissive: 0x440044,
+					wireframe: false
+				} );
+				const octahedron = new THREE.Mesh( octaGeom, octaMat );
+				octahedron.position.set( 0, 0, - 5 );
+				octahedron.userData.rotationSpeed = { x: - 0.005, y: 0.01, z: 0.005 };
+				shapes.push( octahedron );
+				contentGroup.add( octahedron );
+
+				// Grid helper for reference
+				gridHelper = new THREE.GridHelper( 20, 20, 0x444444, 0x222222 );
+				gridHelper.position.y = - 2;
+				contentGroup.add( gridHelper );
+
+				// Configuration panel - INSIDE the CAVE volume, towards front-right corner
+				configPanel = createUIPanel( 'Configuration', () => [
+					'>Resolution: ' + RESOLUTION_PRESETS[ params.resolution ].name,
+					'>IPD: ' + params.ipd.toFixed( 1 ) + 'mm / ' + params.maxIpd.toFixed( 1 ) + 'mm',
+					'>Vignette: ' + params.vignette.toFixed( 1 ),
+					'>Pixelated: ' + ( params.pixelated ? 'ON' : 'OFF' ),
+					'>Background: ' + PANORAMA_OPTIONS[ params.panorama ].name,
+					'>Mode: ' + ( renderer.xr.isPresenting ? 'VR' : 'Desktop' )
+				] );
+				configPanel.position.set( 1.1, 0.2, - 1.1 ); // Near front-right corner
+				configPanel.rotation.y = - Math.PI / 4;
+				configPanel.userData.floatOffset = 0;
+				configPanel.userData.floatSpeed = 1.5;
+				configPanel.userData.baseY = 0.2;
+				shapes.push( configPanel );
+				contentGroup.add( configPanel );
+
+				// Add a subtle point light near the config panel
+				const panelLight1 = new THREE.PointLight( 0x00ffff, 2, 2 );
+				panelLight1.position.set( 1.0, 0.2, - 0.9 );
+				contentGroup.add( panelLight1 );
+
+				// Controls panel - towards front-left corner
+				controlsPanel = createUIPanel( 'Controls', () => [
+					'>VR Controllers:',
+					'  A/X: Resolution',
+					'  B/Y: Vignette Cycle',
+					'  Grip: Pixelated',
+					'  Stick Click: Panorama',
+					'  Stick Y: IPD',
+					'>Desktop: Mouse + GUI'
+				] );
+				controlsPanel.position.set( - 1.1, 0.2, - 1.1 ); // Near front-left corner
+				controlsPanel.rotation.y = Math.PI / 4;
+				controlsPanel.userData.floatOffset = Math.PI;
+				controlsPanel.userData.floatSpeed = 1.2;
+				controlsPanel.userData.baseY = 0.2;
+				shapes.push( controlsPanel );
+				contentGroup.add( controlsPanel );
+
+				// Add a subtle point light near the controls panel
+				const panelLight2 = new THREE.PointLight( 0x00ffff, 2, 2 );
+				panelLight2.position.set( - 1.0, 0.2, - 0.9 );
+				contentGroup.add( panelLight2 );
+
+				// Set all content to layer 3 (only visible to CAVE cameras)
+				contentGroup.traverse( ( object ) => {
+
+					object.layers.set( 3 );
+
+				} );
+
+			}
+
+			function setupControllers() {
+
+				const controllerModelFactory = new XRControllerModelFactory();
+
+				// Controller 1
+				controller1 = renderer.xr.getController( 0 );
+				controller1.addEventListener( 'connected', ( event ) => {
+
+					controller1InputSource = event.data;
+					controller1.add( buildControllerRay() );
+
+				} );
+				controller1.addEventListener( 'disconnected', () => {
+
+					controller1InputSource = null;
+					controller1.remove( controller1.children[ 0 ] );
+
+				} );
+				controller1.layers.set( 3 ); // Only visible through CAVE screens
+				scene.add( controller1 );
+
+				controllerGrip1 = renderer.xr.getControllerGrip( 0 );
+				controllerGrip1.add( controllerModelFactory.createControllerModel( controllerGrip1 ) );
+				controllerGrip1.layers.set( 3 ); // Only visible through CAVE screens
+				scene.add( controllerGrip1 );
+
+				// Controller 2
+				controller2 = renderer.xr.getController( 1 );
+				controller2.addEventListener( 'connected', ( event ) => {
+
+					controller2InputSource = event.data;
+					controller2.add( buildControllerRay() );
+
+				} );
+				controller2.addEventListener( 'disconnected', () => {
+
+					controller2InputSource = null;
+					controller2.remove( controller2.children[ 0 ] );
+
+				} );
+				controller2.layers.set( 3 ); // Only visible through CAVE screens
+				scene.add( controller2 );
+
+				controllerGrip2 = renderer.xr.getControllerGrip( 1 );
+				controllerGrip2.add( controllerModelFactory.createControllerModel( controllerGrip2 ) );
+				controllerGrip2.layers.set( 3 ); // Only visible through CAVE screens
+				scene.add( controllerGrip2 );
+
+				// Create and attach test panel to second controller
+				controllerPanel = createControllerPanel();
+				controllerGrip2.add( controllerPanel );
+
+			}
+
+			function buildControllerRay() {
+
+				const geometry = new THREE.BufferGeometry();
+				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( [ 0, 0, 0, 0, 0, - 1 ], 3 ) );
+				geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( [ 0.5, 0.5, 0.5, 0, 0, 0 ], 3 ) );
+
+				const material = new THREE.LineBasicMaterial( {
+					vertexColors: true,
+					blending: THREE.AdditiveBlending
+				} );
+
+				const line = new THREE.Line( geometry, material );
+				line.layers.set( 3 ); // Only visible through CAVE screens
+				return line;
+
+			}
+
+			function createControllerPanel() {
+
+				// Create a small test panel to attach to controller
+				const canvas = document.createElement( 'canvas' );
+				const ctx = canvas.getContext( '2d' );
+				canvas.width = 256;
+				canvas.height = 256;
+
+				// Draw a colorful test pattern
+				const gradient = ctx.createLinearGradient( 0, 0, canvas.width, canvas.height );
+				gradient.addColorStop( 0, '#ff00ff' );
+				gradient.addColorStop( 0.5, '#00ffff' );
+				gradient.addColorStop( 1, '#ffff00' );
+				ctx.fillStyle = gradient;
+				ctx.fillRect( 0, 0, canvas.width, canvas.height );
+
+				// Border
+				ctx.strokeStyle = '#ffffff';
+				ctx.lineWidth = 8;
+				ctx.strokeRect( 4, 4, canvas.width - 8, canvas.height - 8 );
+
+				// Text
+				ctx.fillStyle = '#000000';
+				ctx.font = 'bold 28px Arial';
+				ctx.textAlign = 'center';
+				ctx.fillText( 'Test Panel', canvas.width / 2, 50 );
+
+				ctx.font = '20px Arial';
+				ctx.fillText( 'Move me around', canvas.width / 2, 130 );
+				ctx.fillText( 'the CAVE!', canvas.width / 2, 160 );
+
+				// Crosshair in center
+				ctx.strokeStyle = '#000000';
+				ctx.lineWidth = 2;
+				ctx.beginPath();
+				ctx.moveTo( canvas.width / 2 - 20, canvas.height / 2 + 40 );
+				ctx.lineTo( canvas.width / 2 + 20, canvas.height / 2 + 40 );
+				ctx.moveTo( canvas.width / 2, canvas.height / 2 + 20 );
+				ctx.lineTo( canvas.width / 2, canvas.height / 2 + 60 );
+				ctx.stroke();
+
+				const texture = new THREE.CanvasTexture( canvas );
+				texture.colorSpace = THREE.SRGBColorSpace;
+
+				const panelGeom = new THREE.PlaneGeometry( 0.15, 0.15 );
+				const panelMat = new THREE.MeshBasicMaterial( {
+					map: texture,
+					side: THREE.DoubleSide,
+					transparent: true
+				} );
+
+				const panel = new THREE.Mesh( panelGeom, panelMat );
+				panel.layers.set( 3 ); // Only visible through CAVE screens
+
+				// Add a small glow light
+				const panelLight = new THREE.PointLight( 0x00ffff, 1, 0.5 );
+				panelLight.position.set( 0, 0, 0.05 );
+				panelLight.layers.set( 3 );
+				panel.add( panelLight );
+
+				// Create a group to hold everything
+				const group = new THREE.Group();
+				group.add( panel );
+
+				// Set group to layer 3 so it's only visible through CAVE screens
+				group.layers.set( 3 );
+
+				// Position it slightly in front and above the controller grip
+				group.position.set( 0, 0.08, - 0.1 );
+				group.rotation.x = - Math.PI / 6;
+
+				return group;
+
+			}
+
+			function updateControllerLayers() {
+
+				// Controller models load asynchronously, so we need to
+				// traverse and set layers on all children each frame
+				const controllers = [ controller1, controller2, controllerGrip1, controllerGrip2 ];
+
+				for ( const controller of controllers ) {
+
+					if ( controller ) {
+
+						controller.traverse( ( child ) => {
+
+							child.layers.set( 3 );
+
+						} );
+
+					}
+
+				}
+
+			}
+
+			function setupGUI() {
+
+				gui = new GUI( { width: 280 } );
+
+				gui.add( params, 'resolution', {
+					'512x512': 0,
+					'1024x1024': 1,
+					'2048x2048': 2,
+					'4096x4096': 3
+				} ).name( 'Resolution' ).onChange( updateResolution );
+
+				gui.add( params, 'ipd', 0, params.maxIpd ).name( 'IPD (mm)' ).step( 0.1 );
+				gui.add( params, 'vignette', 0, 15, 0.5 ).name( 'Vignette' ).onChange( updateScreenMaterials );
+				gui.add( params, 'pixelated' ).name( 'Pixelated' ).onChange( updateTextureFiltering );
+
+				// Build panorama dropdown options
+				const panoOptions = {};
+				PANORAMA_OPTIONS.forEach( ( opt, idx ) => {
+
+					panoOptions[ opt.name ] = idx;
+
+				} );
+				gui.add( params, 'panorama', panoOptions ).name( 'Background' ).onChange( updatePanorama );
+
+				// Interactive group for VR GUI (don't listen to pointer events yet - will enable in XR)
+				interactiveGroup = new InteractiveGroup();
+				scene.add( interactiveGroup );
+
+				guiMesh = new HTMLMesh( gui.domElement );
+				guiMesh.position.set( - 0.5, 1.3, - 0.8 ); // Inside CAVE at comfortable VR height
+				guiMesh.rotation.y = Math.PI / 8;
+				guiMesh.scale.setScalar( 1.5 );
+				guiMesh.visible = false;
+				// Set to layer 3 so it's only visible through CAVE screens
+				guiMesh.layers.set( 3 );
+				interactiveGroup.add( guiMesh );
+
+			}
+
+			function onSessionStart() {
+
+				guiMesh.visible = true;
+				gui.domElement.style.visibility = 'hidden';
+				setXRMode();
+
+				// Try to get the IPD from the XR session
+				updateXRIPD();
+
+				// Enable interactive group for controllers
+				interactiveGroup.listenToXRControllerEvents( controller1 );
+				interactiveGroup.listenToXRControllerEvents( controller2 );
+
+			}
+
+			function onSessionEnd() {
+
+				guiMesh.visible = false;
+				gui.domElement.style.visibility = '';
+				params.ipd = 0;
+				setNonXRMode();
+
+				if ( gui ) {
+
+					gui.controllers.forEach( c => c.updateDisplay() );
+
+				}
+
+			}
+
+			function updateXRIPD() {
+
+				// Get IPD from the XR camera array
+				const xrCamera = renderer.xr.getCamera();
+
+				if ( xrCamera.cameras && xrCamera.cameras.length >= 2 ) {
+
+					const leftCam = xrCamera.cameras[ 0 ];
+					const rightCam = xrCamera.cameras[ 1 ];
+
+					const leftPos = new THREE.Vector3();
+					const rightPos = new THREE.Vector3();
+
+					leftCam.matrixWorld.decompose( leftPos, new THREE.Quaternion(), new THREE.Vector3() );
+					rightCam.matrixWorld.decompose( rightPos, new THREE.Quaternion(), new THREE.Vector3() );
+
+					const ipd = leftPos.distanceTo( rightPos ) * 1000; // Convert to mm
+					params.maxIpd = Math.max( ipd, 64 );
+
+					// Update GUI slider max value
+					if ( gui ) {
+
+						const ipdController = gui.controllers.find( c => c.property === 'ipd' );
+
+						if ( ipdController ) {
+
+							ipdController.max( params.maxIpd );
+							ipdController.updateDisplay();
+
+						}
+
+					}
+
+				}
+
+			}
+
+			function handleControllerInput() {
+
+				const inputSources = [ controller1InputSource, controller2InputSource ];
+
+				for ( let i = 0; i < inputSources.length; i ++ ) {
+
+					const inputSource = inputSources[ i ];
+
+					if ( ! inputSource || ! inputSource.gamepad ) continue;
+
+					const gamepad = inputSource.gamepad;
+
+					// A/X button (typically button 4) - cycle resolution
+					if ( gamepad.buttons.length > 4 ) {
+
+						const buttonPressed = gamepad.buttons[ 4 ].pressed;
+
+						if ( buttonPressed && ! lastButtonState.a[ i ] ) {
+
+							params.resolution = ( params.resolution + 1 ) % RESOLUTION_PRESETS.length;
+							updateResolution();
+
+						}
+
+						lastButtonState.a[ i ] = buttonPressed;
+
+					}
+
+					// B/Y button (typically button 5) - cycle vignette strength
+					if ( gamepad.buttons.length > 5 ) {
+
+						const buttonPressed = gamepad.buttons[ 5 ].pressed;
+
+						if ( buttonPressed && ! lastButtonState.b[ i ] ) {
+
+							// Cycle through vignette presets: 0, 2.5, 5, 7.5, 10, 15
+							const presets = [ 0, 2.5, 5, 7.5, 10, 15 ];
+							const currentIndex = presets.findIndex( v => v >= params.vignette );
+							const nextIndex = ( currentIndex + 1 ) % presets.length;
+							params.vignette = presets[ nextIndex ];
+							updateScreenMaterials();
+
+							if ( gui ) {
+
+								gui.controllers.forEach( c => c.updateDisplay() );
+
+							}
+
+						}
+
+						lastButtonState.b[ i ] = buttonPressed;
+
+					}
+
+					// Grip/Squeeze button (typically button 1) - toggle pixelated
+					if ( gamepad.buttons.length > 1 ) {
+
+						const buttonPressed = gamepad.buttons[ 1 ].pressed;
+
+						if ( buttonPressed && ! lastButtonState.grip[ i ] ) {
+
+							params.pixelated = ! params.pixelated;
+							updateTextureFiltering();
+
+						}
+
+						lastButtonState.grip[ i ] = buttonPressed;
+
+					}
+
+					// Thumbstick Y axis (typically axes[3]) - adjust IPD
+					if ( gamepad.axes.length > 3 ) {
+
+						const thumbstickY = gamepad.axes[ 3 ];
+
+						if ( Math.abs( thumbstickY ) > 0.1 ) {
+
+							params.ipd = THREE.MathUtils.clamp(
+								params.ipd - thumbstickY * 50.0,
+								0,
+								params.maxIpd
+							);
+
+							if ( gui ) {
+
+								gui.controllers.forEach( c => c.updateDisplay() );
+
+							}
+
+						}
+
+					}
+
+					// Thumbstick click (typically button 3) - cycle panoramas
+					if ( gamepad.buttons.length > 3 ) {
+
+						const buttonPressed = gamepad.buttons[ 3 ].pressed;
+
+						if ( buttonPressed && ! lastButtonState.stick[ i ] ) {
+
+							params.panorama = ( params.panorama + 1 ) % PANORAMA_OPTIONS.length;
+							updatePanorama();
+
+						}
+
+						lastButtonState.stick[ i ] = buttonPressed;
+
+					}
+
+				}
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function renderCAVEScreens( eyeCamera, eyeData, eyeOffset, allScreenMeshes ) {
+
+				// For each CAVE screen, render from the eye's perspective
+				for ( let i = 0; i < eyeData.length; i ++ ) {
+
+					const data = eyeData[ i ];
+					const screenMesh = data.screenMesh;
+
+					// Calculate eye position with IPD offset
+					const eyePosition = new THREE.Vector3();
+					eyeCamera.getWorldPosition( eyePosition );
+
+					// Apply IPD offset in the camera's local X direction
+					if ( eyeOffset !== 0 ) {
+
+						const right = new THREE.Vector3( 1, 0, 0 );
+						right.applyQuaternion( eyeCamera.quaternion );
+						eyePosition.addScaledVector( right, eyeOffset );
+
+					}
+
+					data.camera.position.copy( eyePosition );
+
+					// Transform screen corners from local to world space
+					screenMesh.localToWorld( bottomLeftCorner.copy( data.corners.bottomLeft ) );
+					screenMesh.localToWorld( bottomRightCorner.copy( data.corners.bottomRight ) );
+					screenMesh.localToWorld( topLeftCorner.copy( data.corners.topLeft ) );
+
+					// Use CameraUtils.frameCorners to set up off-axis projection
+					CameraUtils.frameCorners(
+						data.camera,
+						bottomLeftCorner,
+						bottomRightCorner,
+						topLeftCorner,
+						true // estimateViewFrustum for proper culling
+					);
+
+					// Hide all CAVE screens during render
+					for ( const meshArray of allScreenMeshes ) {
+
+						for ( const mesh of meshArray ) {
+
+							mesh.visible = false;
+
+						}
+
+					}
+
+					// Render to this screen's render target
+					data.renderTarget.texture.colorSpace = renderer.outputColorSpace;
+					renderer.setRenderTarget( data.renderTarget );
+					renderer.clear();
+					renderer.render( scene, data.camera );
+
+					// Restore screen visibility
+					for ( const meshArray of allScreenMeshes ) {
+
+						for ( const mesh of meshArray ) {
+
+							mesh.visible = true;
+
+						}
+
+					}
+
+				}
+
+			}
+
+			function animateContent( time ) {
+
+				const shapes = contentGroup.userData.shapes;
+
+				if ( ! shapes ) return;
+
+				for ( const shape of shapes ) {
+
+					// Rotation
+					if ( shape.userData.rotationSpeed ) {
+
+						shape.rotation.x += shape.userData.rotationSpeed.x;
+						shape.rotation.y += shape.userData.rotationSpeed.y;
+						shape.rotation.z += shape.userData.rotationSpeed.z;
+
+					}
+
+					// Orbit
+					if ( shape.userData.orbitRadius !== undefined ) {
+
+						const t = time * 0.001 * shape.userData.orbitSpeed + shape.userData.orbitOffset;
+						const tilt = shape.userData.orbitTilt;
+
+						shape.position.x = Math.cos( t ) * shape.userData.orbitRadius;
+						shape.position.y = Math.sin( t * 0.5 ) * tilt;
+						shape.position.z = Math.sin( t ) * shape.userData.orbitRadius - 3;
+
+					}
+
+					// Floating UI panels
+					if ( shape.userData.floatSpeed !== undefined ) {
+
+						const t = time * 0.001 * shape.userData.floatSpeed + shape.userData.floatOffset;
+						const baseY = shape.userData.baseY !== undefined ? shape.userData.baseY : 0.5;
+						shape.position.y = baseY + Math.sin( t ) * 0.08;
+
+					}
+
+					// Update dynamic panel content
+					if ( shape.userData.updateCanvas ) {
+
+						shape.userData.updateCanvas();
+
+					}
+
+				}
+
+			}
+
+			function animate() {
+
+				const time = performance.now();
+
+				// Animate virtual content
+				animateContent( time );
+
+				// Handle XR controller input
+				if ( renderer.xr.isPresenting ) {
+
+					handleControllerInput();
+					updateControllerLayers();
+
+				}
+
+				// Save renderer state
+				const currentRenderTarget = renderer.getRenderTarget();
+				const currentXrEnabled = renderer.xr.enabled;
+
+				// Temporarily disable XR for portal rendering
+				renderer.xr.enabled = false;
+
+				const allScreenMeshes = [ screenMeshesLeft, screenMeshesRight ];
+
+				if ( renderer.xr.isPresenting ) {
+
+					// XR mode: render for each eye
+					const xrCamera = renderer.xr.getCamera();
+					updateXRIPD();
+
+					// Calculate IPD offset in meters (params.ipd is in mm)
+					const ipdOffset = ( (64.0 - params.ipd) / 1000 ) / 2;
+
+					// Render left eye screens
+					if ( xrCamera.cameras && xrCamera.cameras.length >= 1 ) {
+
+						renderCAVEScreens( xrCamera.cameras[ 0 ], screenData.left,  ipdOffset, allScreenMeshes );
+
+					}
+
+					// Render right eye screens
+					if ( xrCamera.cameras && xrCamera.cameras.length >= 2 ) {
+
+						renderCAVEScreens( xrCamera.cameras[ 1 ], screenData.right, -ipdOffset, allScreenMeshes );
+
+					} else {
+
+						// Single camera (mono) mode - use same data for both
+						renderCAVEScreens( xrCamera, screenData.right, 0, allScreenMeshes );
+
+					}
+
+					updateScreenMaterials();
+
+				} else {
+
+					// Non-XR mode: render from main camera perspective with 0 IPD
+					renderCAVEScreens( camera, screenData.left, 0, allScreenMeshes );
+					updateScreenMaterials();
+
+				}
+
+				// Restore renderer state
+				renderer.xr.enabled = currentXrEnabled;
+				renderer.setRenderTarget( currentRenderTarget );
+
+				// Clear and render main scene
+				renderer.clear();
+				renderer.render( scene, renderer.xr.isPresenting ? renderer.xr.getCamera() : camera );
+
+				// Update GUI mesh texture in XR
+				if ( renderer.xr.isPresenting && guiMesh && guiMesh.material.map ) {
+
+					guiMesh.material.map.update();
+
+				}
+
+			}
+
+			// Initialize in non-XR mode
+			setNonXRMode();
+
+		</script>
+	</body>
+</html>
