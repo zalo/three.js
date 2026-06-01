@@ -218,7 +218,7 @@
 					output: 0
 				};
 
-				const types = { Combined: 0, Direct: 3, AO: 1, GI: 2, 'Voxels: radiance': 4, 'Voxels: occupancy': 5, 'Voxels: raymarch': 6, 'World position': 7 };
+				const types = { Combined: 0, Direct: 3, AO: 1, GI: 2, 'Voxels: radiance': 4, 'Voxels: occupancy': 5, 'Voxels: raymarch': 6, 'World position': 7, 'Depth': 8, 'World pos (raw)': 9 };
 
 				const gui = renderer.inspector.createParameters( 'HDDAGI settings' );
 				gui.add( params, 'output', types ).onChange( updatePostprocessing );

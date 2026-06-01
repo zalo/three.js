@@ -166,6 +166,8 @@ class HDDAGINode extends TempNode {
 		 * - `3`: the radiance volume ray-marched from the camera, i.e. the voxelized scene structure.
 		 * - `4`: the reconstructed world position, normalized into the volume (sanity-checks the depth
 		 *   reconstruction - should be a smooth gradient across the scene).
+		 * - `5`: the raw sampled depth (mid-gray for geometry, white at the far plane).
+		 * - `6`: the raw reconstructed world position, scaled so the world origin is mid-gray.
 		 *
 		 * @type {UniformNode<uint>}
 		 * @default 0
@@ -693,6 +695,18 @@ class HDDAGINode extends TempNode {
 			If( this.debug.equal( uint( 4 ) ), () => { // reconstructed world position, normalized into the volume
 
 				result.assign( vec4( surfaceUVW, 1.0 ) );
+
+			} );
+
+			If( this.debug.equal( uint( 5 ) ), () => { // raw sampled depth (mid-gray for geometry, white at far plane)
+
+				result.assign( vec4( vec3( depth ), 1.0 ) );
+
+			} );
+
+			If( this.debug.equal( uint( 6 ) ), () => { // raw reconstructed world position, scaled (0.5 = origin)
+
+				result.assign( vec4( worldPos.mul( 0.04 ).add( 0.5 ), 1.0 ) );
 
 			} );
 
