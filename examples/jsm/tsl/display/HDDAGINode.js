@@ -99,6 +99,23 @@ class HDDAGINode extends TempNode {
 		this.gridSize = gridSize;
 
 		/**
+		 * Supersampling factor for the orthographic voxelization renders. Each axis view is rendered
+		 * at `gridSize * superSample` so several surface samples fall in each voxel, filling gaps.
+		 *
+		 * @type {number}
+		 * @readonly
+		 */
+		this.superSample = 2;
+
+		/**
+		 * The resolution of the orthographic voxelization renders.
+		 *
+		 * @private
+		 * @type {number}
+		 */
+		this._superRes = gridSize * this.superSample;
+
+		/**
 		 * The `updateBeforeType` is set to `NodeUpdateType.FRAME` since the node renders
 		 * its effect once per frame in `updateBefore()`.
 		 *
@@ -297,10 +314,10 @@ class HDDAGINode extends TempNode {
 		 * @private
 		 * @type {RenderTarget}
 		 */
-		this._orthoColorRT = new RenderTarget( gridSize, gridSize, { depthBuffer: true } );
+		this._orthoColorRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: true } );
 		this._orthoColorRT.texture.type = HalfFloatType;
 		this._orthoColorRT.texture.name = 'HDDAGI.orthoColor';
-		this._orthoColorRT.depthTexture = new DepthTexture( gridSize, gridSize );
+		this._orthoColorRT.depthTexture = new DepthTexture( this._superRes, this._superRes );
 
 		/**
 		 * The orthographic camera reused for each voxelization direction.
@@ -332,7 +349,7 @@ class HDDAGINode extends TempNode {
 		 * @private
 		 * @type {RenderTarget}
 		 */
-		this._beautyRT = new RenderTarget( gridSize, gridSize, { depthBuffer: false } );
+		this._beautyRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: false } );
 		this._beautyRT.texture.type = HalfFloatType;
 		this._beautyRT.texture.name = 'HDDAGI.beauty';
 
@@ -340,7 +357,7 @@ class HDDAGINode extends TempNode {
 		 * @private
 		 * @type {RenderTarget}
 		 */
-		this._positionRT = new RenderTarget( gridSize, gridSize, { depthBuffer: false } );
+		this._positionRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: false } );
 		this._positionRT.texture.type = HalfFloatType;
 		this._positionRT.texture.name = 'HDDAGI.position';
 
@@ -469,9 +486,12 @@ class HDDAGINode extends TempNode {
 		this._temporalJitter.value = this.useTemporalFiltering === true ? ( frame.frameId % 16 ) * 0.0625 : 0;
 
 		// --- voxelize all geometry ----------------------------------------------------------------
-		// Clear the volume, then render the scene from each of the six axis-aligned orthographic
-		// directions and scatter the resulting lit surfaces into the voxels. Because this is driven by
-		// the volume rather than the camera, surfaces the camera cannot see still contribute to GI.
+		// Render the scene from each of the six axis-aligned orthographic directions and scatter the
+		// resulting lit surfaces into the voxels. Because this is driven by the volume (not the camera),
+		// surfaces the camera cannot see still contribute to GI.
+		//
+		// Each direction captures the front-most layer at the supersampled resolution, so several
+		// surface samples land in each voxel.
 
 		renderer.compute( this._clearNode );
 
@@ -480,22 +500,18 @@ class HDDAGINode extends TempNode {
 		const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
 		renderer.shadowMap.autoUpdate = false; // reuse the shadow map already produced by the main pass
 
-		for ( let i = 0; i < _voxelDirs.length; i ++ ) {
+		// renders the scene from the current orthographic camera with the given near plane, then blits
+		// and scatters the result into the volume
+		const renderSlice = ( near ) => {
 
-			const dir = _voxelDirs[ i ];
-			_camPos.copy( center ).addScaledVector( dir, - dist );
-			this._orthoCamera.position.copy( _camPos );
-			this._orthoCamera.up.copy( _voxelUps[ i ] );
-			this._orthoCamera.lookAt( center );
-			this._orthoCamera.updateMatrixWorld();
-			this._orthoMatrixWorld.value.copy( this._orthoCamera.matrixWorld );
+			this._orthoCamera.near = near;
+			this._orthoCamera.far = dist * 1.5;
+			this._orthoCamera.updateProjectionMatrix();
 			this._orthoProjectionMatrixInverse.value.copy( this._orthoCamera.projectionMatrixInverse );
 
-			// render the lit scene from this direction (colour + depth)
 			renderer.setRenderTarget( this._orthoColorRT );
 			renderer.render( this.scene, this._orthoCamera );
 
-			// copy colour and reconstruct world position into compute-readable targets
 			_quadMesh.material = this._blitBeautyMaterial;
 			_quadMesh.name = 'HDDAGI.blitBeauty';
 			renderer.setRenderTarget( this._beautyRT );
@@ -506,8 +522,21 @@ class HDDAGINode extends TempNode {
 			renderer.setRenderTarget( this._positionRT );
 			_quadMesh.render( renderer );
 
-			// scatter this direction's surfaces into the volume
 			renderer.compute( this._scatterNode );
+
+		};
+
+		for ( let i = 0; i < _voxelDirs.length; i ++ ) {
+
+			const dir = _voxelDirs[ i ];
+			_camPos.copy( center ).addScaledVector( dir, - dist );
+			this._orthoCamera.position.copy( _camPos );
+			this._orthoCamera.up.copy( _voxelUps[ i ] );
+			this._orthoCamera.lookAt( center );
+			this._orthoCamera.updateMatrixWorld();
+			this._orthoMatrixWorld.value.copy( this._orthoCamera.matrixWorld );
+
+			renderSlice( dist * 0.5 );
 
 		}
 
@@ -579,14 +608,16 @@ class HDDAGINode extends TempNode {
 		} )().compute( GRID * GRID * GRID );
 
 		// Scatter pass: one thread per orthographic-G-buffer texel writes that surface's lit colour
-		// into the voxel it falls within. Runs at the volume resolution (GRID x GRID).
+		// into the voxel it falls within. Runs at the supersampled render resolution, so several
+		// samples land in each voxel and fill gaps the voxel grid would otherwise miss.
+		const SUPER = this._superRes;
 		this._buildScatter = () => Fn( () => {
 
 			const beautyTexture = texture( this._beautyRT.texture );
 			const positionTexture = texture( this._positionRT.texture );
 
 			const id = instanceIndex;
-			const px = ivec2( int( id.mod( uint( GRID ) ) ), int( id.div( uint( GRID ) ) ) ).toVar();
+			const px = ivec2( int( id.mod( uint( SUPER ) ) ), int( id.div( uint( SUPER ) ) ) ).toVar();
 
 			const surface = positionTexture.load( px ).toVar();
 
@@ -603,7 +634,7 @@ class HDDAGINode extends TempNode {
 
 			} );
 
-		} )().compute( GRID * GRID );
+		} )().compute( SUPER * SUPER );
 
 		this._clearNode = this._buildClear();
 		this._scatterNode = this._buildScatter();
