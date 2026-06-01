@@ -164,6 +164,8 @@ class HDDAGINode extends TempNode {
 		 * - `1`: the radiance volume sampled at each surface point.
 		 * - `2`: voxel occupancy at each surface point (white where a voxel is filled).
 		 * - `3`: the radiance volume ray-marched from the camera, i.e. the voxelized scene structure.
+		 * - `4`: the reconstructed world position, normalized into the volume (sanity-checks the depth
+		 *   reconstruction - should be a smooth gradient across the scene).
 		 *
 		 * @type {UniformNode<uint>}
 		 * @default 0
@@ -214,20 +216,14 @@ class HDDAGINode extends TempNode {
 		this._volumeCenter = new Vector3( 0, 7.5, 0 );
 
 		/**
-		 * Combined projection * view matrix, used to project voxels into the camera.
+		 * The camera's world matrix, used to transform view-space positions/normals to world space.
+		 * Copied explicitly from the camera each frame in {@link HDDAGINode#updateBefore} so the
+		 * reconstruction does not depend on uniform auto-tracking timing.
 		 *
 		 * @private
 		 * @type {UniformNode<mat4>}
 		 */
-		this._projViewMatrix = uniform( new Matrix4() );
-
-		/**
-		 * The camera's world matrix, used to transform view-space normals to world space.
-		 *
-		 * @private
-		 * @type {UniformNode<mat4>}
-		 */
-		this._cameraMatrixWorld = uniform( camera.matrixWorld );
+		this._cameraMatrixWorld = uniform( new Matrix4() );
 
 		/**
 		 * The camera's inverse projection matrix, used to reconstruct view-space positions from depth.
@@ -235,7 +231,7 @@ class HDDAGINode extends TempNode {
 		 * @private
 		 * @type {UniformNode<mat4>}
 		 */
-		this._projectionMatrixInverse = uniform( camera.projectionMatrixInverse );
+		this._projectionMatrixInverse = uniform( new Matrix4() );
 
 		/**
 		 * Temporal jitter applied to the per-pixel noise.
@@ -414,10 +410,13 @@ class HDDAGINode extends TempNode {
 
 		}
 
-		// update camera derived matrices
+		// update camera derived matrices (copied explicitly so world-space reconstruction is correct
+		// regardless of uniform auto-tracking timing)
 
 		const camera = this._camera;
-		this._projViewMatrix.value.multiplyMatrices( camera.projectionMatrix, camera.matrixWorldInverse );
+		camera.updateMatrixWorld();
+		this._cameraMatrixWorld.value.copy( camera.matrixWorld );
+		this._projectionMatrixInverse.value.copy( camera.projectionMatrixInverse );
 
 		// temporal jitter
 
@@ -688,6 +687,12 @@ class HDDAGINode extends TempNode {
 				} );
 
 				result.assign( vec4( voxColor, 1.0 ) );
+
+			} );
+
+			If( this.debug.equal( uint( 4 ) ), () => { // reconstructed world position, normalized into the volume
+
+				result.assign( vec4( surfaceUVW, 1.0 ) );
 
 			} );
 
