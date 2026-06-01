@@ -223,7 +223,7 @@
 				const gui = renderer.inspector.createParameters( 'HDDAGI settings' );
 				gui.add( params, 'output', types ).onChange( updatePostprocessing );
 				gui.add( giPass.rayCount, 'value', 1, 32, 1 ).name( 'ray count' );
-				gui.add( giPass.stepCount, 'value', 1, 64, 1 ).name( 'step count' );
+				gui.add( giPass.stepCount, 'value', 1, 128, 1 ).name( 'step count' );
 				gui.add( giPass.giIntensity, 'value', 0, 50 ).name( 'GI intensity' );
 				gui.add( giPass.aoIntensity, 'value', 0, 4 ).name( 'AO intensity' );
 				gui.add( giPass.maxDistance, 'value', 1, 60 ).name( 'max distance' );

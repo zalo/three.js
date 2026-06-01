@@ -50,9 +50,9 @@ class HDDAGINode extends TempNode {
 	 * @param {TextureNode} depthNode - A texture node that represents the scene's depth. World-space surface positions are reconstructed from it.
 	 * @param {Node} normalNode - A node that yields the scene's view-space normals when sampled.
 	 * @param {PerspectiveCamera} camera - The camera the scene is rendered with.
-	 * @param {number} [gridSize=32] - The resolution of the cubic radiance volume along each axis.
+	 * @param {number} [gridSize=128] - The resolution of the cubic radiance volume along each axis.
 	 */
-	constructor( beautyNode, depthNode, normalNode, camera, gridSize = 32 ) {
+	constructor( beautyNode, depthNode, normalNode, camera, gridSize = 128 ) {
 
 		super( 'vec4' );
 
@@ -106,9 +106,9 @@ class HDDAGINode extends TempNode {
 		 * Number of steps taken when marching the radiance volume along a single ray.
 		 *
 		 * @type {UniformNode<uint>}
-		 * @default 32
+		 * @default 64
 		 */
-		this.stepCount = uniform( 32, 'uint' );
+		this.stepCount = uniform( 64, 'uint' );
 
 		/**
 		 * Intensity of the gathered indirect diffuse light.
@@ -146,9 +146,9 @@ class HDDAGINode extends TempNode {
 		 * Step size along a ray, expressed as a multiple of a voxel's world size.
 		 *
 		 * @type {UniformNode<float>}
-		 * @default 1
+		 * @default 2
 		 */
-		this.rayStep = uniform( 1, 'float' );
+		this.rayStep = uniform( 2, 'float' );
 
 		/**
 		 * Opacity threshold above which a marched voxel is considered a hit.
@@ -664,10 +664,11 @@ class HDDAGINode extends TempNode {
 				const tStart = max( max( max( tMin.x, tMin.y ), tMin.z ), 0.0 ).toVar();
 				const tEnd = min( min( min( tMax.x, tMax.y ), tMax.z ), worldPos.sub( ro ).length() );
 
-				const stepSize = voxelWorldSize.mul( this.rayStep );
+				// fine step (1/10 of the gather step) so individual voxels are clearly resolved
+				const stepSize = voxelWorldSize.mul( this.rayStep ).mul( 0.1 );
 				const voxColor = vec3( 0 ).toVar();
 
-				Loop( { start: uint( 0 ), end: uint( 256 ), type: 'uint', condition: '<' }, () => {
+				Loop( { start: uint( 0 ), end: uint( 2048 ), type: 'uint', condition: '<' }, () => {
 
 					If( tStart.greaterThan( tEnd ), () => {
 
@@ -750,7 +751,7 @@ export default HDDAGINode;
  * @param {TextureNode} depthNode - A texture node that represents the scene's depth.
  * @param {Node} normalNode - A node that yields the scene's view-space normals when sampled.
  * @param {PerspectiveCamera} camera - The camera the scene is rendered with.
- * @param {number} [gridSize=32] - The resolution of the cubic radiance volume along each axis.
+ * @param {number} [gridSize=128] - The resolution of the cubic radiance volume along each axis.
  * @returns {HDDAGINode}
  */
 export const hddagi = ( beautyNode, depthNode, normalNode, camera, gridSize ) => new HDDAGINode( convertToTexture( beautyNode ), depthNode, normalNode, camera, gridSize );
