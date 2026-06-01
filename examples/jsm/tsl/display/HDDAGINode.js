@@ -1,5 +1,5 @@
 import { RenderTarget, Vector2, Vector3, Matrix4, TempNode, QuadMesh, NodeMaterial, RendererUtils, Storage3DTexture, HalfFloatType } from 'three/webgpu';
-import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, min, max, clamp, fract, sin, cos, sqrt, abs, rand, PI, passTexture, convertToTexture, NodeUpdateType } from 'three/tsl';
+import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, min, max, clamp, floor, fract, sin, cos, sqrt, abs, rand, PI, passTexture, convertToTexture, NodeUpdateType } from 'three/tsl';
 
 const _quadMesh = /*@__PURE__*/ new QuadMesh();
 const _size = /*@__PURE__*/ new Vector2();
@@ -676,7 +676,12 @@ class HDDAGINode extends TempNode {
 
 					} );
 
-					const s = radianceTexture.sample( ro.add( rd.mul( tStart ) ).sub( this._volumeMin ).div( this._volumeSize ) );
+					const p = ro.add( rd.mul( tStart ) ).sub( this._volumeMin ).div( this._volumeSize );
+
+					// nearest-neighbour: snap to the voxel centre so each voxel reads as a solid colour
+					// instead of trilinearly blending toward empty neighbours (which caused dark striations)
+					const nearest = floor( p.mul( gridF ) ).add( 0.5 ).div( gridF );
+					const s = radianceTexture.sample( nearest );
 
 					If( s.a.greaterThan( this.opacityThreshold ), () => {
 
