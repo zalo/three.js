@@ -218,13 +218,13 @@
 					output: 0
 				};
 
-				const types = { Combined: 0, Direct: 3, AO: 1, GI: 2 };
+				const types = { Combined: 0, Direct: 3, AO: 1, GI: 2, 'Voxels: radiance': 4, 'Voxels: occupancy': 5, 'Voxels: raymarch': 6 };
 
 				const gui = renderer.inspector.createParameters( 'HDDAGI settings' );
 				gui.add( params, 'output', types ).onChange( updatePostprocessing );
 				gui.add( giPass.rayCount, 'value', 1, 32, 1 ).name( 'ray count' );
 				gui.add( giPass.stepCount, 'value', 1, 64, 1 ).name( 'step count' );
-				gui.add( giPass.giIntensity, 'value', 0, 20 ).name( 'GI intensity' );
+				gui.add( giPass.giIntensity, 'value', 0, 50 ).name( 'GI intensity' );
 				gui.add( giPass.aoIntensity, 'value', 0, 4 ).name( 'AO intensity' );
 				gui.add( giPass.maxDistance, 'value', 1, 60 ).name( 'max distance' );
 				gui.add( giPass.normalBias, 'value', 0, 4 ).name( 'normal bias' );
@@ -232,13 +232,18 @@
 				gui.add( giPass.opacityThreshold, 'value', 0.01, 1 ).name( 'opacity threshold' );
 				gui.add( giPass, 'useTemporalFiltering' ).name( 'temporal filtering' ).onChange( updatePostprocessing );
 
-				function updatePostprocessing( value ) {
+				function updatePostprocessing() {
+
+					const value = params.output;
+
+					// debug views (4,5,6) are written into the GI buffer by the node
+					giPass.debug.value = value >= 4 ? value - 3 : 0;
 
 					if ( value === 1 ) {
 
 						renderPipeline.outputNode = vec4( vec3( ao ), 1 );
 
-					} else if ( value === 2 ) {
+					} else if ( value === 2 || value >= 4 ) {
 
 						renderPipeline.outputNode = vec4( gi, 1 );
 

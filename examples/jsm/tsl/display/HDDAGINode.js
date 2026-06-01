@@ -1,5 +1,5 @@
 import { RenderTarget, Vector2, Vector3, Matrix4, TempNode, QuadMesh, NodeMaterial, RendererUtils, Storage3DTexture, HalfFloatType } from 'three/webgpu';
-import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, max, clamp, fract, sin, cos, sqrt, abs, rand, PI, passTexture, convertToTexture, NodeUpdateType } from 'three/tsl';
+import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, min, max, clamp, fract, sin, cos, sqrt, abs, rand, PI, passTexture, convertToTexture, NodeUpdateType } from 'three/tsl';
 
 const _quadMesh = /*@__PURE__*/ new QuadMesh();
 const _size = /*@__PURE__*/ new Vector2();
@@ -116,7 +116,7 @@ class HDDAGINode extends TempNode {
 		 * @type {UniformNode<float>}
 		 * @default 4
 		 */
-		this.giIntensity = uniform( 4, 'float' );
+		this.giIntensity = uniform( 8, 'float' );
 
 		/**
 		 * Intensity of the ambient occlusion derived from ray hits.
@@ -159,8 +159,11 @@ class HDDAGINode extends TempNode {
 		this.opacityThreshold = uniform( 0.05, 'float' );
 
 		/**
-		 * Debug visualization mode. `0` renders the gathered GI, `1` renders the radiance volume
-		 * sampled at each surface point (useful to inspect the voxelization result).
+		 * Debug visualization mode (written to the effect's `rgb` output):
+		 * - `0`: the gathered GI (default).
+		 * - `1`: the radiance volume sampled at each surface point.
+		 * - `2`: voxel occupancy at each surface point (white where a voxel is filled).
+		 * - `3`: the radiance volume ray-marched from the camera, i.e. the voxelized scene structure.
 		 *
 		 * @type {UniformNode<uint>}
 		 * @default 0
@@ -628,10 +631,67 @@ class HDDAGINode extends TempNode {
 			const gi = giAccum.mul( invRayCount ).mul( this.giIntensity );
 			const ao = occlusion.mul( invRayCount ).mul( this.aoIntensity ).oneMinus().clamp();
 
-			// debug: visualize the radiance volume sampled at the surface point
-			const debugSample = radianceTexture.sample( worldPos.sub( this._volumeMin ).div( this._volumeSize ) );
+			const result = vec4( gi, ao ).toVar();
 
-			return this.debug.equal( uint( 1 ) ).select( vec4( debugSample.rgb, 1.0 ), vec4( gi, ao ) );
+			// --- debug visualizations (guarded so they only run when selected) --------------------
+
+			const surfaceUVW = worldPos.sub( this._volumeMin ).div( this._volumeSize );
+
+			If( this.debug.equal( uint( 1 ) ), () => { // radiance volume at the surface
+
+				result.assign( vec4( radianceTexture.sample( surfaceUVW ).rgb, 1.0 ) );
+
+			} );
+
+			If( this.debug.equal( uint( 2 ) ), () => { // voxel occupancy at the surface
+
+				result.assign( vec4( vec3( radianceTexture.sample( surfaceUVW ).a ), 1.0 ) );
+
+			} );
+
+			If( this.debug.equal( uint( 3 ) ), () => { // ray-march the volume from the camera
+
+				const ro = this._cameraMatrixWorld.mul( vec4( 0, 0, 0, 1 ) ).xyz;
+				const rd = worldPos.sub( ro ).normalize();
+				const invRd = vec3( 1.0 ).div( rd );
+
+				// intersect the volume's bounding box
+				const tA = this._volumeMin.sub( ro ).mul( invRd );
+				const tB = this._volumeMin.add( this._volumeSize ).sub( ro ).mul( invRd );
+				const tMin = min( tA, tB );
+				const tMax = max( tA, tB );
+				const tStart = max( max( max( tMin.x, tMin.y ), tMin.z ), 0.0 ).toVar();
+				const tEnd = min( min( min( tMax.x, tMax.y ), tMax.z ), worldPos.sub( ro ).length() );
+
+				const stepSize = voxelWorldSize.mul( this.rayStep );
+				const voxColor = vec3( 0 ).toVar();
+
+				Loop( { start: uint( 0 ), end: uint( 256 ), type: 'uint', condition: '<' }, () => {
+
+					If( tStart.greaterThan( tEnd ), () => {
+
+						Break();
+
+					} );
+
+					const s = radianceTexture.sample( ro.add( rd.mul( tStart ) ).sub( this._volumeMin ).div( this._volumeSize ) );
+
+					If( s.a.greaterThan( this.opacityThreshold ), () => {
+
+						voxColor.assign( s.rgb );
+						Break();
+
+					} );
+
+					tStart.addAssign( stepSize );
+
+				} );
+
+				result.assign( vec4( voxColor, 1.0 ) );
+
+			} );
+
+			return result;
 
 		} );
 
