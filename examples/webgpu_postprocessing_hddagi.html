@@ -108,7 +108,7 @@
 
 				// gi
 
-				const giPass = hddagi( scenePassColor, scenePassDepth, sceneNormal, camera );
+				const giPass = hddagi( scenePassDepth, sceneNormal, camera, scene );
 				giPass.setVolume( new THREE.Vector3( 0, 7.5, 0 ), 24 );
 
 				// composite

@@ -1,8 +1,21 @@
-import { RenderTarget, Vector2, Vector3, Matrix4, TempNode, QuadMesh, NodeMaterial, RendererUtils, Storage3DTexture, HalfFloatType } from 'three/webgpu';
-import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, min, max, clamp, floor, fract, sin, cos, sqrt, abs, rand, PI, passTexture, convertToTexture, NodeUpdateType } from 'three/tsl';
+import { RenderTarget, Vector2, Vector3, Matrix4, TempNode, QuadMesh, NodeMaterial, RendererUtils, Storage3DTexture, HalfFloatType, OrthographicCamera, DepthTexture } from 'three/webgpu';
+import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, min, max, clamp, floor, fract, sin, cos, sqrt, abs, rand, PI, passTexture, NodeUpdateType } from 'three/tsl';
 
 const _quadMesh = /*@__PURE__*/ new QuadMesh();
 const _size = /*@__PURE__*/ new Vector2();
+
+// the six axis-aligned directions the scene is voxelized from, with a matching up vector
+const _voxelDirs = /*@__PURE__*/ [
+	new Vector3( 1, 0, 0 ), new Vector3( - 1, 0, 0 ),
+	new Vector3( 0, 1, 0 ), new Vector3( 0, - 1, 0 ),
+	new Vector3( 0, 0, 1 ), new Vector3( 0, 0, - 1 )
+];
+const _voxelUps = /*@__PURE__*/ [
+	new Vector3( 0, 1, 0 ), new Vector3( 0, 1, 0 ),
+	new Vector3( 0, 0, 1 ), new Vector3( 0, 0, 1 ),
+	new Vector3( 0, 1, 0 ), new Vector3( 0, 1, 0 )
+];
+const _camPos = /*@__PURE__*/ new Vector3();
 
 let _rendererState;
 
@@ -46,22 +59,15 @@ class HDDAGINode extends TempNode {
 	/**
 	 * Constructs a new HDDAGI node.
 	 *
-	 * @param {TextureNode} beautyNode - A texture node that represents the direct-lit scene (beauty) pass.
 	 * @param {TextureNode} depthNode - A texture node that represents the scene's depth. World-space surface positions are reconstructed from it.
 	 * @param {Node} normalNode - A node that yields the scene's view-space normals when sampled.
 	 * @param {PerspectiveCamera} camera - The camera the scene is rendered with.
+	 * @param {Scene} scene - The scene. It is re-rendered from several orthographic views to voxelize all geometry (not just what the camera sees).
 	 * @param {number} [gridSize=128] - The resolution of the cubic radiance volume along each axis.
 	 */
-	constructor( beautyNode, depthNode, normalNode, camera, gridSize = 128 ) {
+	constructor( depthNode, normalNode, camera, scene, gridSize = 128 ) {
 
 		super( 'vec4' );
-
-		/**
-		 * A texture node that represents the direct-lit scene (beauty) pass.
-		 *
-		 * @type {TextureNode}
-		 */
-		this.beautyNode = beautyNode;
 
 		/**
 		 * A texture node that represents the scene's depth.
@@ -69,6 +75,13 @@ class HDDAGINode extends TempNode {
 		 * @type {TextureNode}
 		 */
 		this.depthNode = depthNode;
+
+		/**
+		 * The scene, re-rendered from orthographic views to voxelize all geometry.
+		 *
+		 * @type {Scene}
+		 */
+		this.scene = scene;
 
 		/**
 		 * A node that yields the scene's view-space normals when sampled.
@@ -278,15 +291,48 @@ class HDDAGINode extends TempNode {
 		this._scatterNode = null;
 
 		/**
-		 * Node-owned copies of the beauty and world-position inputs. The voxelization compute pass
-		 * reads from these textures rather than the input pass textures directly: a single-attachment
-		 * render target that the node renders itself is reliably bindable from a compute shader,
-		 * whereas an upstream pass's MRT attachment is not.
+		 * The scene rendered from an orthographic viewpoint (lit colour + depth), used to voxelize all
+		 * geometry independently of the main camera. Rendered at the volume resolution.
 		 *
 		 * @private
 		 * @type {RenderTarget}
 		 */
-		this._beautyRT = new RenderTarget( 1, 1, { depthBuffer: false } );
+		this._orthoColorRT = new RenderTarget( gridSize, gridSize, { depthBuffer: true } );
+		this._orthoColorRT.texture.type = HalfFloatType;
+		this._orthoColorRT.texture.name = 'HDDAGI.orthoColor';
+		this._orthoColorRT.depthTexture = new DepthTexture( gridSize, gridSize );
+
+		/**
+		 * The orthographic camera reused for each voxelization direction.
+		 *
+		 * @private
+		 * @type {OrthographicCamera}
+		 */
+		this._orthoCamera = new OrthographicCamera();
+
+		/**
+		 * Per-direction orthographic camera matrices (set in {@link HDDAGINode#updateBefore}).
+		 *
+		 * @private
+		 * @type {UniformNode<mat4>}
+		 */
+		this._orthoMatrixWorld = uniform( new Matrix4() );
+
+		/**
+		 * @private
+		 * @type {UniformNode<mat4>}
+		 */
+		this._orthoProjectionMatrixInverse = uniform( new Matrix4() );
+
+		/**
+		 * Node-owned, compute-readable copies of the orthographic G-buffer (lit colour + world
+		 * position). Sized to the volume resolution; the voxelization compute pass reads from these
+		 * single-attachment targets (a compute shader cannot reliably read a depth or MRT attachment).
+		 *
+		 * @private
+		 * @type {RenderTarget}
+		 */
+		this._beautyRT = new RenderTarget( gridSize, gridSize, { depthBuffer: false } );
 		this._beautyRT.texture.type = HalfFloatType;
 		this._beautyRT.texture.name = 'HDDAGI.beauty';
 
@@ -294,12 +340,12 @@ class HDDAGINode extends TempNode {
 		 * @private
 		 * @type {RenderTarget}
 		 */
-		this._positionRT = new RenderTarget( 1, 1, { depthBuffer: false } );
+		this._positionRT = new RenderTarget( gridSize, gridSize, { depthBuffer: false } );
 		this._positionRT.texture.type = HalfFloatType;
 		this._positionRT.texture.name = 'HDDAGI.position';
 
 		/**
-		 * Materials that copy the inputs into the node-owned render targets.
+		 * Materials that copy the orthographic render into the node-owned render targets.
 		 *
 		 * @private
 		 * @type {NodeMaterial}
@@ -367,6 +413,16 @@ class HDDAGINode extends TempNode {
 		this._volumeSize.value = size;
 		this._volumeMin.value.set( center.x - size / 2, center.y - size / 2, center.z - size / 2 );
 
+		// orthographic frustum covering the cube; the camera is placed `size` away along each axis
+		const half = size / 2;
+		this._orthoCamera.left = - half;
+		this._orthoCamera.right = half;
+		this._orthoCamera.top = half;
+		this._orthoCamera.bottom = - half;
+		this._orthoCamera.near = size * 0.5;
+		this._orthoCamera.far = size * 1.5;
+		this._orthoCamera.updateProjectionMatrix();
+
 		return this;
 
 	}
@@ -381,8 +437,6 @@ class HDDAGINode extends TempNode {
 
 		this._resolution.value.set( width, height );
 		this._renderTarget.setSize( width, height );
-		this._beautyRT.setSize( width, height );
-		this._positionRT.setSize( width, height );
 
 	}
 
@@ -400,20 +454,10 @@ class HDDAGINode extends TempNode {
 		//
 
 		const size = renderer.getDrawingBufferSize( _size );
-		const resized = size.width !== this._resolution.value.x || size.height !== this._resolution.value.y;
 		this.setSize( size.width, size.height );
 
-		// (Re)build the scatter compute node when the render targets are (re)sized. The dispatch size
-		// depends on the resolution and the compute pipeline caches its texture bindings, so it must
-		// be recreated with fresh texture nodes that point at the new GPU resources.
-		if ( resized || this._scatterNode === null ) {
-
-			this._scatterNode = this._buildScatter( size.width, size.height );
-
-		}
-
-		// update camera derived matrices (copied explicitly so world-space reconstruction is correct
-		// regardless of uniform auto-tracking timing)
+		// update main-camera matrices for the gather pass (copied explicitly so world-space
+		// reconstruction is correct regardless of uniform auto-tracking timing)
 
 		const camera = this._camera;
 		camera.updateMatrixWorld();
@@ -424,22 +468,50 @@ class HDDAGINode extends TempNode {
 
 		this._temporalJitter.value = this.useTemporalFiltering === true ? ( frame.frameId % 16 ) * 0.0625 : 0;
 
-		// copy the inputs into the node-owned render targets (this also forces the input passes to render)
-
-		_quadMesh.material = this._blitBeautyMaterial;
-		_quadMesh.name = 'HDDAGI.blitBeauty';
-		renderer.setRenderTarget( this._beautyRT );
-		_quadMesh.render( renderer );
-
-		_quadMesh.material = this._blitPositionMaterial;
-		_quadMesh.name = 'HDDAGI.blitPosition';
-		renderer.setRenderTarget( this._positionRT );
-		_quadMesh.render( renderer );
-
-		// voxelize the scene into the radiance volume (clear, then scatter the lit G-buffer into voxels)
+		// --- voxelize all geometry ----------------------------------------------------------------
+		// Clear the volume, then render the scene from each of the six axis-aligned orthographic
+		// directions and scatter the resulting lit surfaces into the voxels. Because this is driven by
+		// the volume rather than the camera, surfaces the camera cannot see still contribute to GI.
 
 		renderer.compute( this._clearNode );
-		renderer.compute( this._scatterNode );
+
+		const center = this._volumeCenter;
+		const dist = this._volumeSize.value;
+		const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
+		renderer.shadowMap.autoUpdate = false; // reuse the shadow map already produced by the main pass
+
+		for ( let i = 0; i < _voxelDirs.length; i ++ ) {
+
+			const dir = _voxelDirs[ i ];
+			_camPos.copy( center ).addScaledVector( dir, - dist );
+			this._orthoCamera.position.copy( _camPos );
+			this._orthoCamera.up.copy( _voxelUps[ i ] );
+			this._orthoCamera.lookAt( center );
+			this._orthoCamera.updateMatrixWorld();
+			this._orthoMatrixWorld.value.copy( this._orthoCamera.matrixWorld );
+			this._orthoProjectionMatrixInverse.value.copy( this._orthoCamera.projectionMatrixInverse );
+
+			// render the lit scene from this direction (colour + depth)
+			renderer.setRenderTarget( this._orthoColorRT );
+			renderer.render( this.scene, this._orthoCamera );
+
+			// copy colour and reconstruct world position into compute-readable targets
+			_quadMesh.material = this._blitBeautyMaterial;
+			_quadMesh.name = 'HDDAGI.blitBeauty';
+			renderer.setRenderTarget( this._beautyRT );
+			_quadMesh.render( renderer );
+
+			_quadMesh.material = this._blitPositionMaterial;
+			_quadMesh.name = 'HDDAGI.blitPosition';
+			renderer.setRenderTarget( this._positionRT );
+			_quadMesh.render( renderer );
+
+			// scatter this direction's surfaces into the volume
+			renderer.compute( this._scatterNode );
+
+		}
+
+		renderer.shadowMap.autoUpdate = shadowAutoUpdate;
 
 		// gather
 
@@ -470,31 +542,29 @@ class HDDAGINode extends TempNode {
 
 		const voxelWorldSize = this._volumeSize.div( gridF ).toVar( 'voxelWorldSize' );
 
-		// --- blit passes: copy inputs into node-owned, compute-readable render targets -------------
+		// --- blit passes: copy the orthographic render into compute-readable targets ---------------
 
-		this._blitBeautyMaterial.fragmentNode = vec4( this.beautyNode.rgb, 1.0 );
+		const orthoColor = texture( this._orthoColorRT.texture );
+		const orthoDepth = texture( this._orthoColorRT.depthTexture );
+
+		this._blitBeautyMaterial.fragmentNode = vec4( orthoColor.rgb, 1.0 );
 		this._blitBeautyMaterial.needsUpdate = true;
 
-		// reconstruct world-space surface positions from depth (avoids a dedicated position MRT
-		// attachment, which would exceed the device's color-attachment byte budget). `w` flags a
-		// valid surface (background depth of 1 is excluded).
+		// reconstruct world-space surface positions from the orthographic depth (avoids a dedicated
+		// position MRT attachment). `w` flags a valid surface (background depth of 1 is excluded).
 		this._blitPositionMaterial.fragmentNode = Fn( () => {
 
 			const uvNode = uv();
-			const depth = this.depthNode.sample( uvNode ).r;
-			const viewPos = getViewPosition( uvNode, depth, this._projectionMatrixInverse );
-			const worldPos = this._cameraMatrixWorld.mul( vec4( viewPos, 1.0 ) ).xyz;
+			const depth = orthoDepth.sample( uvNode ).r;
+			const viewPos = getViewPosition( uvNode, depth, this._orthoProjectionMatrixInverse );
+			const worldPos = this._orthoMatrixWorld.mul( vec4( viewPos, 1.0 ) ).xyz;
 
 			return vec4( worldPos, depth.lessThan( 1.0 ).select( 1.0, 0.0 ) );
 
 		} )();
 		this._blitPositionMaterial.needsUpdate = true;
 
-		// --- voxelization compute pass ------------------------------------------------------------
-		//
-		// Rebuilt whenever the render targets are (re)sized. `setSize()` disposes the underlying GPU
-		// textures, so the compute pipeline (which caches its bindings) must be recreated with fresh
-		// texture nodes that point at the new GPU resources.
+		// --- voxelization compute passes ----------------------------------------------------------
 
 		// Clear pass: zero every voxel (the scatter pass only writes occupied voxels).
 		this._buildClear = () => Fn( () => {
@@ -508,15 +578,15 @@ class HDDAGINode extends TempNode {
 
 		} )().compute( GRID * GRID * GRID );
 
-		// Scatter pass: one thread per G-buffer pixel writes that surface's lit color into the voxel
-		// it falls within. `width` is baked into the dispatch so the node is rebuilt on resize.
-		this._buildScatter = ( width, height ) => Fn( () => {
+		// Scatter pass: one thread per orthographic-G-buffer texel writes that surface's lit colour
+		// into the voxel it falls within. Runs at the volume resolution (GRID x GRID).
+		this._buildScatter = () => Fn( () => {
 
 			const beautyTexture = texture( this._beautyRT.texture );
 			const positionTexture = texture( this._positionRT.texture );
 
 			const id = instanceIndex;
-			const px = ivec2( int( id.mod( uint( width ) ) ), int( id.div( uint( width ) ) ) ).toVar();
+			const px = ivec2( int( id.mod( uint( GRID ) ) ), int( id.div( uint( GRID ) ) ) ).toVar();
 
 			const surface = positionTexture.load( px ).toVar();
 
@@ -533,12 +603,10 @@ class HDDAGINode extends TempNode {
 
 			} );
 
-		} )().compute( width * height );
+		} )().compute( GRID * GRID );
 
 		this._clearNode = this._buildClear();
-
-		// the scatter dispatch depends on the resolution, so it is built lazily in updateBefore()
-		this._scatterNode = null;
+		this._scatterNode = this._buildScatter();
 
 		// --- gather pass --------------------------------------------------------------------------
 
@@ -734,6 +802,7 @@ class HDDAGINode extends TempNode {
 	dispose() {
 
 		this._renderTarget.dispose();
+		this._orthoColorRT.dispose();
 		this._beautyRT.dispose();
 		this._positionRT.dispose();
 		this._radianceVolume.dispose();
@@ -752,11 +821,11 @@ export default HDDAGINode;
  *
  * @tsl
  * @function
- * @param {Node} beautyNode - A node that represents the direct-lit scene (beauty) pass.
  * @param {TextureNode} depthNode - A texture node that represents the scene's depth.
  * @param {Node} normalNode - A node that yields the scene's view-space normals when sampled.
  * @param {PerspectiveCamera} camera - The camera the scene is rendered with.
+ * @param {Scene} scene - The scene, re-rendered from orthographic views to voxelize all geometry.
  * @param {number} [gridSize=128] - The resolution of the cubic radiance volume along each axis.
  * @returns {HDDAGINode}
  */
-export const hddagi = ( beautyNode, depthNode, normalNode, camera, gridSize ) => new HDDAGINode( convertToTexture( beautyNode ), depthNode, normalNode, camera, gridSize );
+export const hddagi = ( depthNode, normalNode, camera, scene, gridSize ) => new HDDAGINode( depthNode, normalNode, camera, scene, gridSize );
