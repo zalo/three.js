@@ -1,8 +1,16 @@
-import { RenderTarget, Vector2, Vector3, Matrix4, TempNode, QuadMesh, NodeMaterial, RendererUtils, Storage3DTexture, HalfFloatType, OrthographicCamera, DepthTexture } from 'three/webgpu';
-import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, min, max, clamp, floor, fract, sin, cos, sqrt, abs, rand, PI, passTexture, NodeUpdateType } from 'three/tsl';
+import { RenderTarget, Vector2, Vector3, Matrix4, TempNode, QuadMesh, NodeMaterial, RendererUtils, Storage3DTexture, HalfFloatType, OrthographicCamera } from 'three/webgpu';
+import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, dot, min, max, clamp, floor, fract, sin, cos, sqrt, abs, rand, PI, positionWorld, passTexture, NodeUpdateType } from 'three/tsl';
 
 const _quadMesh = /*@__PURE__*/ new QuadMesh();
 const _size = /*@__PURE__*/ new Vector2();
+
+// per-fragment uniform-random value in [0,1) from a world-space position; used as a stochastic
+// fragment depth so the depth test retains a random surface layer per pixel
+const _hashDepth = /*@__PURE__*/ Fn( ( [ p ] ) => {
+
+	return fract( sin( dot( p, vec3( 12.9898, 78.233, 37.719 ) ) ).mul( 43758.5453 ) );
+
+} );
 
 // the six axis-aligned directions the scene is voxelized from, with a matching up vector
 const _voxelDirs = /*@__PURE__*/ [
@@ -34,12 +42,13 @@ let _rendererState;
  * probes with temporal filtering) which are tracked as follow-up work.
  *
  * Pipeline (per frame, in {@link HDDAGINode#updateBefore}):
- * 1. Blit: the lit beauty and the world-space surface positions (reconstructed from depth) are
- *    copied into node-owned render targets. Compute shaders cannot reliably sample the depth buffer
- *    or an upstream pass's MRT attachments, so this fragment pass produces compute-readable copies.
- * 2. Voxelization: a clear compute pass zeroes the volume, then a scatter compute pass writes each
- *    visible surface's lit color into the voxel it falls within.
- * 3. Gather: a screen-space pass ray-marches the radiance volume across a cosine-weighted
+ * 1. Voxelization: the volume is cleared, then the scene is rendered from the six axis-aligned
+ *    orthographic directions (at a supersampled resolution) and scattered into the voxels. Each
+ *    surface is drawn with a uniform-random fragment depth (per-pixel stochastic depth), so the
+ *    depth test keeps a random layer per pixel and occluded surfaces / concavities are captured in a
+ *    single frame. A position pass (an override material) and a colour pass (cloned materials sharing
+ *    the same random depth) give the world position and lit colour of the same stochastic layer.
+ * 2. Gather: a screen-space pass ray-marches the radiance volume across a cosine-weighted
  *    hemisphere around each surface to accumulate indirect diffuse light + ambient occlusion.
  *
  * References:
@@ -308,18 +317,6 @@ class HDDAGINode extends TempNode {
 		this._scatterNode = null;
 
 		/**
-		 * The scene rendered from an orthographic viewpoint (lit colour + depth), used to voxelize all
-		 * geometry independently of the main camera. Rendered at the volume resolution.
-		 *
-		 * @private
-		 * @type {RenderTarget}
-		 */
-		this._orthoColorRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: true } );
-		this._orthoColorRT.texture.type = HalfFloatType;
-		this._orthoColorRT.texture.name = 'HDDAGI.orthoColor';
-		this._orthoColorRT.depthTexture = new DepthTexture( this._superRes, this._superRes );
-
-		/**
 		 * The orthographic camera reused for each voxelization direction.
 		 *
 		 * @private
@@ -328,54 +325,61 @@ class HDDAGINode extends TempNode {
 		this._orthoCamera = new OrthographicCamera();
 
 		/**
-		 * Per-direction orthographic camera matrices (set in {@link HDDAGINode#updateBefore}).
-		 *
-		 * @private
-		 * @type {UniformNode<mat4>}
-		 */
-		this._orthoMatrixWorld = uniform( new Matrix4() );
-
-		/**
-		 * @private
-		 * @type {UniformNode<mat4>}
-		 */
-		this._orthoProjectionMatrixInverse = uniform( new Matrix4() );
-
-		/**
-		 * Node-owned, compute-readable copies of the orthographic G-buffer (lit colour + world
-		 * position). Sized to the volume resolution; the voxelization compute pass reads from these
-		 * single-attachment targets (a compute shader cannot reliably read a depth or MRT attachment).
+		 * Node-owned render targets for the two voxelization passes, at the supersampled resolution.
+		 * `_positionRT` receives world-space surface positions (`w` = validity) from the override
+		 * material; `_beautyRT` receives the lit colour of the same stochastic layer. Both keep a depth
+		 * buffer because the scene is rendered into them with a stochastic (random) fragment depth.
 		 *
 		 * @private
 		 * @type {RenderTarget}
 		 */
-		this._beautyRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: false } );
-		this._beautyRT.texture.type = HalfFloatType;
-		this._beautyRT.texture.name = 'HDDAGI.beauty';
-
-		/**
-		 * @private
-		 * @type {RenderTarget}
-		 */
-		this._positionRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: false } );
+		this._positionRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: true } );
 		this._positionRT.texture.type = HalfFloatType;
 		this._positionRT.texture.name = 'HDDAGI.position';
 
 		/**
-		 * Materials that copy the orthographic render into the node-owned render targets.
+		 * @private
+		 * @type {RenderTarget}
+		 */
+		this._beautyRT = new RenderTarget( this._superRes, this._superRes, { depthBuffer: true } );
+		this._beautyRT.texture.type = HalfFloatType;
+		this._beautyRT.texture.name = 'HDDAGI.beauty';
+
+		/**
+		 * Override material for the position pass: writes the surface's world position, with a
+		 * stochastic (uniform-random) fragment depth so the depth test keeps a random layer per pixel.
 		 *
 		 * @private
 		 * @type {NodeMaterial}
 		 */
-		this._blitBeautyMaterial = new NodeMaterial();
-		this._blitBeautyMaterial.name = 'HDDAGI.blitBeauty';
+		this._stochasticPositionMaterial = new NodeMaterial();
+		this._stochasticPositionMaterial.name = 'HDDAGI.stochasticPosition';
+		this._stochasticPositionMaterial.fragmentNode = vec4( positionWorld, 1.0 );
+		this._stochasticPositionMaterial.depthNode = _hashDepth( positionWorld );
+
+		/**
+		 * Lazily-built clones of the scene's materials (same shading, stochastic fragment depth) and
+		 * the list of meshes to swap during the colour pass. Cloning leaves the originals - and the
+		 * main render - untouched.
+		 *
+		 * @private
+		 * @type {?Map<Material, Material>}
+		 */
+		this._materialClones = null;
 
 		/**
 		 * @private
-		 * @type {NodeMaterial}
+		 * @type {Array<Mesh>}
 		 */
-		this._blitPositionMaterial = new NodeMaterial();
-		this._blitPositionMaterial.name = 'HDDAGI.blitPosition';
+		this._meshes = [];
+
+		/**
+		 * Scratch storage for the meshes' original materials while the colour pass is rendered.
+		 *
+		 * @private
+		 * @type {Array<Material>}
+		 */
+		this._savedMaterials = [];
 
 		/**
 		 * The render target the gathered GI is rendered into.
@@ -485,46 +489,24 @@ class HDDAGINode extends TempNode {
 
 		this._temporalJitter.value = this.useTemporalFiltering === true ? ( frame.frameId % 16 ) * 0.0625 : 0;
 
-		// --- voxelize all geometry ----------------------------------------------------------------
-		// Render the scene from each of the six axis-aligned orthographic directions and scatter the
-		// resulting lit surfaces into the voxels. Because this is driven by the volume (not the camera),
-		// surfaces the camera cannot see still contribute to GI.
-		//
-		// Each direction captures the front-most layer at the supersampled resolution, so several
-		// surface samples land in each voxel.
+		// --- voxelize all geometry (per-pixel stochastic depth) -----------------------------------
+		// Render the scene from each of the six axis-aligned orthographic directions. Each surface is
+		// rendered with a uniform-random fragment depth, so the depth test keeps a *random* layer per
+		// pixel; at the supersampled resolution the neighbouring pixels keep different layers, so all
+		// surfaces - including occluded faces and concavities - are captured in a single frame. Two
+		// passes per direction keep the position and the lit colour of the *same* random layer (both use
+		// the same hash), with no temporal accumulation.
+
+		this._ensureClones();
 
 		renderer.compute( this._clearNode );
 
 		const center = this._volumeCenter;
 		const dist = this._volumeSize.value;
 		const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
+		const background = this.scene.background;
 		renderer.shadowMap.autoUpdate = false; // reuse the shadow map already produced by the main pass
-
-		// renders the scene from the current orthographic camera with the given near plane, then blits
-		// and scatters the result into the volume
-		const renderSlice = ( near ) => {
-
-			this._orthoCamera.near = near;
-			this._orthoCamera.far = dist * 1.5;
-			this._orthoCamera.updateProjectionMatrix();
-			this._orthoProjectionMatrixInverse.value.copy( this._orthoCamera.projectionMatrixInverse );
-
-			renderer.setRenderTarget( this._orthoColorRT );
-			renderer.render( this.scene, this._orthoCamera );
-
-			_quadMesh.material = this._blitBeautyMaterial;
-			_quadMesh.name = 'HDDAGI.blitBeauty';
-			renderer.setRenderTarget( this._beautyRT );
-			_quadMesh.render( renderer );
-
-			_quadMesh.material = this._blitPositionMaterial;
-			_quadMesh.name = 'HDDAGI.blitPosition';
-			renderer.setRenderTarget( this._positionRT );
-			_quadMesh.render( renderer );
-
-			renderer.compute( this._scatterNode );
-
-		};
+		this.scene.background = null; // so background pixels stay invalid (w = 0) in the position pass
 
 		for ( let i = 0; i < _voxelDirs.length; i ++ ) {
 
@@ -533,14 +515,30 @@ class HDDAGINode extends TempNode {
 			this._orthoCamera.position.copy( _camPos );
 			this._orthoCamera.up.copy( _voxelUps[ i ] );
 			this._orthoCamera.lookAt( center );
+			this._orthoCamera.near = dist * 0.4;
+			this._orthoCamera.far = dist * 1.6;
+			this._orthoCamera.updateProjectionMatrix();
 			this._orthoCamera.updateMatrixWorld();
-			this._orthoMatrixWorld.value.copy( this._orthoCamera.matrixWorld );
 
-			renderSlice( dist * 0.5 );
+			// position pass: world position of a stochastically-selected layer
+			this.scene.overrideMaterial = this._stochasticPositionMaterial;
+			renderer.setRenderTarget( this._positionRT );
+			renderer.render( this.scene, this._orthoCamera );
+			this.scene.overrideMaterial = null;
+
+			// colour pass: lit colour of the same layer (cloned materials share the same stochastic depth)
+			this._swapMaterials( true );
+			renderer.setRenderTarget( this._beautyRT );
+			renderer.render( this.scene, this._orthoCamera );
+			this._swapMaterials( false );
+
+			// scatter both buffers (aligned by the shared hash) into the volume
+			renderer.compute( this._scatterNode );
 
 		}
 
 		renderer.shadowMap.autoUpdate = shadowAutoUpdate;
+		this.scene.background = background;
 
 		// gather
 
@@ -553,6 +551,72 @@ class HDDAGINode extends TempNode {
 		// restore
 
 		RendererUtils.restoreRendererState( renderer, _rendererState );
+
+	}
+
+	/**
+	 * Lazily builds the stochastic-depth material clones and the mesh list. Cloning leaves the
+	 * scene's original materials (and the main render) untouched.
+	 *
+	 * @private
+	 */
+	_ensureClones() {
+
+		if ( this._materialClones !== null ) return;
+
+		this._materialClones = new Map();
+		this._meshes.length = 0;
+
+		this.scene.traverse( ( object ) => {
+
+			if ( object.isMesh !== true || object.material === undefined ) return;
+
+			this._meshes.push( object );
+
+			const materials = Array.isArray( object.material ) ? object.material : [ object.material ];
+
+			for ( const material of materials ) {
+
+				if ( material && this._materialClones.has( material ) === false ) {
+
+					const clone = material.clone();
+					clone.depthNode = _hashDepth( positionWorld );
+					this._materialClones.set( material, clone );
+
+				}
+
+			}
+
+		} );
+
+	}
+
+	/**
+	 * Swaps the scene meshes between their original materials and the stochastic-depth clones.
+	 *
+	 * @private
+	 * @param {boolean} toClones - `true` to switch to the clones, `false` to restore the originals.
+	 */
+	_swapMaterials( toClones ) {
+
+		for ( let i = 0; i < this._meshes.length; i ++ ) {
+
+			const mesh = this._meshes[ i ];
+
+			if ( toClones === true ) {
+
+				this._savedMaterials[ i ] = mesh.material;
+				mesh.material = Array.isArray( mesh.material )
+					? mesh.material.map( ( m ) => this._materialClones.get( m ) || m )
+					: ( this._materialClones.get( mesh.material ) || mesh.material );
+
+			} else {
+
+				mesh.material = this._savedMaterials[ i ];
+
+			}
+
+		}
 
 	}
 
@@ -570,28 +634,6 @@ class HDDAGINode extends TempNode {
 		// world size of a single voxel
 
 		const voxelWorldSize = this._volumeSize.div( gridF ).toVar( 'voxelWorldSize' );
-
-		// --- blit passes: copy the orthographic render into compute-readable targets ---------------
-
-		const orthoColor = texture( this._orthoColorRT.texture );
-		const orthoDepth = texture( this._orthoColorRT.depthTexture );
-
-		this._blitBeautyMaterial.fragmentNode = vec4( orthoColor.rgb, 1.0 );
-		this._blitBeautyMaterial.needsUpdate = true;
-
-		// reconstruct world-space surface positions from the orthographic depth (avoids a dedicated
-		// position MRT attachment). `w` flags a valid surface (background depth of 1 is excluded).
-		this._blitPositionMaterial.fragmentNode = Fn( () => {
-
-			const uvNode = uv();
-			const depth = orthoDepth.sample( uvNode ).r;
-			const viewPos = getViewPosition( uvNode, depth, this._orthoProjectionMatrixInverse );
-			const worldPos = this._orthoMatrixWorld.mul( vec4( viewPos, 1.0 ) ).xyz;
-
-			return vec4( worldPos, depth.lessThan( 1.0 ).select( 1.0, 0.0 ) );
-
-		} )();
-		this._blitPositionMaterial.needsUpdate = true;
 
 		// --- voxelization compute passes ----------------------------------------------------------
 
@@ -833,13 +875,17 @@ class HDDAGINode extends TempNode {
 	dispose() {
 
 		this._renderTarget.dispose();
-		this._orthoColorRT.dispose();
 		this._beautyRT.dispose();
 		this._positionRT.dispose();
 		this._radianceVolume.dispose();
 		this._material.dispose();
-		this._blitBeautyMaterial.dispose();
-		this._blitPositionMaterial.dispose();
+		this._stochasticPositionMaterial.dispose();
+
+		if ( this._materialClones !== null ) {
+
+			for ( const clone of this._materialClones.values() ) clone.dispose();
+
+		}
 
 	}
 
