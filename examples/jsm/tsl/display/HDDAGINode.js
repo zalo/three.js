@@ -1,5 +1,5 @@
 import { RenderTarget, Vector2, Vector3, Matrix4, TempNode, QuadMesh, NodeMaterial, RendererUtils, Storage3DTexture, HalfFloatType } from 'three/webgpu';
-import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, normalize, cross, max, clamp, fract, sin, cos, sqrt, abs, rand, PI, passTexture, convertToTexture, NodeUpdateType } from 'three/tsl';
+import { Fn, If, Loop, Break, uniform, uv, vec2, vec3, vec4, float, int, uint, ivec2, ivec3, instanceIndex, textureStore, texture, texture3D, getViewPosition, normalize, cross, max, clamp, fract, sin, cos, sqrt, abs, rand, PI, passTexture, convertToTexture, NodeUpdateType } from 'three/tsl';
 
 const _quadMesh = /*@__PURE__*/ new QuadMesh();
 const _size = /*@__PURE__*/ new Vector2();
@@ -20,15 +20,13 @@ let _rendererState;
  * HDDAGI features (cascaded clipmaps, jump-flood signed distance fields, octahedral irradiance
  * probes with temporal filtering) which are tracked as follow-up work.
  *
- * The node consumes a world-space position buffer (`positionNode`, typically produced via the
- * `positionWorld` TSL node in an MRT pass, with `w` flagging valid surfaces). Reading positions
- * from a color attachment keeps the voxelization compute pass independent from the depth buffer,
- * which is not reliably sampleable from compute shaders.
- *
  * Pipeline (per frame, in {@link HDDAGINode#updateBefore}):
- * 1. Voxelization: a compute pass walks every voxel, projects its center into the camera and, if
- *    the corresponding surface point falls inside the voxel, stores the lit scene color as radiance.
- * 2. Gather: a screen-space pass ray-marches the radiance volume across a cosine-weighted
+ * 1. Blit: the lit beauty and the world-space surface positions (reconstructed from depth) are
+ *    copied into node-owned render targets. Compute shaders cannot reliably sample the depth buffer
+ *    or an upstream pass's MRT attachments, so this fragment pass produces compute-readable copies.
+ * 2. Voxelization: a clear compute pass zeroes the volume, then a scatter compute pass writes each
+ *    visible surface's lit color into the voxel it falls within.
+ * 3. Gather: a screen-space pass ray-marches the radiance volume across a cosine-weighted
  *    hemisphere around each surface to accumulate indirect diffuse light + ambient occlusion.
  *
  * References:
@@ -49,12 +47,12 @@ class HDDAGINode extends TempNode {
 	 * Constructs a new HDDAGI node.
 	 *
 	 * @param {TextureNode} beautyNode - A texture node that represents the direct-lit scene (beauty) pass.
-	 * @param {TextureNode} positionNode - A texture node with world-space surface positions in `xyz` and a validity flag in `w` (`0` for background).
+	 * @param {TextureNode} depthNode - A texture node that represents the scene's depth. World-space surface positions are reconstructed from it.
 	 * @param {Node} normalNode - A node that yields the scene's view-space normals when sampled.
 	 * @param {PerspectiveCamera} camera - The camera the scene is rendered with.
-	 * @param {number} [gridSize=64] - The resolution of the cubic radiance volume along each axis.
+	 * @param {number} [gridSize=32] - The resolution of the cubic radiance volume along each axis.
 	 */
-	constructor( beautyNode, positionNode, normalNode, camera, gridSize = 32 ) {
+	constructor( beautyNode, depthNode, normalNode, camera, gridSize = 32 ) {
 
 		super( 'vec4' );
 
@@ -66,11 +64,11 @@ class HDDAGINode extends TempNode {
 		this.beautyNode = beautyNode;
 
 		/**
-		 * A texture node with world-space surface positions in `xyz` and a validity flag in `w`.
+		 * A texture node that represents the scene's depth.
 		 *
 		 * @type {TextureNode}
 		 */
-		this.positionNode = positionNode;
+		this.depthNode = depthNode;
 
 		/**
 		 * A node that yields the scene's view-space normals when sampled.
@@ -227,6 +225,14 @@ class HDDAGINode extends TempNode {
 		 * @type {UniformNode<mat4>}
 		 */
 		this._cameraMatrixWorld = uniform( camera.matrixWorld );
+
+		/**
+		 * The camera's inverse projection matrix, used to reconstruct view-space positions from depth.
+		 *
+		 * @private
+		 * @type {UniformNode<mat4>}
+		 */
+		this._projectionMatrixInverse = uniform( camera.projectionMatrixInverse );
 
 		/**
 		 * Temporal jitter applied to the per-pixel noise.
@@ -465,7 +471,19 @@ class HDDAGINode extends TempNode {
 		this._blitBeautyMaterial.fragmentNode = vec4( this.beautyNode.rgb, 1.0 );
 		this._blitBeautyMaterial.needsUpdate = true;
 
-		this._blitPositionMaterial.fragmentNode = vec4( this.positionNode.xyz, this.positionNode.w );
+		// reconstruct world-space surface positions from depth (avoids a dedicated position MRT
+		// attachment, which would exceed the device's color-attachment byte budget). `w` flags a
+		// valid surface (background depth of 1 is excluded).
+		this._blitPositionMaterial.fragmentNode = Fn( () => {
+
+			const uvNode = uv();
+			const depth = this.depthNode.sample( uvNode ).r;
+			const viewPos = getViewPosition( uvNode, depth, this._projectionMatrixInverse );
+			const worldPos = this._cameraMatrixWorld.mul( vec4( viewPos, 1.0 ) ).xyz;
+
+			return vec4( worldPos, depth.lessThan( 1.0 ).select( 1.0, 0.0 ) );
+
+		} )();
 		this._blitPositionMaterial.needsUpdate = true;
 
 		// --- voxelization compute pass ------------------------------------------------------------
@@ -526,10 +544,11 @@ class HDDAGINode extends TempNode {
 
 			const uvNode = uv();
 
-			const surface = this.positionNode.sample( uvNode ).toVar();
-			surface.w.lessThan( 0.5 ).discard(); // background
+			const depth = this.depthNode.sample( uvNode ).r.toVar();
+			depth.greaterThanEqual( 1.0 ).discard(); // background
 
-			const worldPos = surface.xyz.toVar();
+			const viewPos = getViewPosition( uvNode, depth, this._projectionMatrixInverse );
+			const worldPos = this._cameraMatrixWorld.mul( vec4( viewPos, 1.0 ) ).xyz.toVar();
 
 			const viewNormal = this.normalNode.sample( uvNode ).xyz;
 			const worldNormal = normalize( this._cameraMatrixWorld.mul( vec4( viewNormal, 0.0 ) ).xyz ).toVar();
@@ -649,10 +668,10 @@ export default HDDAGINode;
  * @tsl
  * @function
  * @param {Node} beautyNode - A node that represents the direct-lit scene (beauty) pass.
- * @param {TextureNode} positionNode - A texture node with world-space surface positions in `xyz` and a validity flag in `w`.
+ * @param {TextureNode} depthNode - A texture node that represents the scene's depth.
  * @param {Node} normalNode - A node that yields the scene's view-space normals when sampled.
  * @param {PerspectiveCamera} camera - The camera the scene is rendered with.
- * @param {number} [gridSize=64] - The resolution of the cubic radiance volume along each axis.
+ * @param {number} [gridSize=32] - The resolution of the cubic radiance volume along each axis.
  * @returns {HDDAGINode}
  */
-export const hddagi = ( beautyNode, positionNode, normalNode, camera, gridSize ) => new HDDAGINode( convertToTexture( beautyNode ), positionNode, normalNode, camera, gridSize );
+export const hddagi = ( beautyNode, depthNode, normalNode, camera, gridSize ) => new HDDAGINode( convertToTexture( beautyNode ), depthNode, normalNode, camera, gridSize );

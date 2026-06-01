@@ -32,7 +32,7 @@
 		<script type="module">
 
 			import * as THREE from 'three/webgpu';
-			import { pass, mrt, output, normalView, diffuseColor, positionWorld, velocity, add, vec3, vec4, directionToColor, colorToDirection, sample } from 'three/tsl';
+			import { pass, mrt, output, normalView, diffuseColor, velocity, add, vec3, vec4, directionToColor, colorToDirection, sample } from 'three/tsl';
 			import { hddagi } from 'three/addons/tsl/display/HDDAGINode.js';
 			import { traa } from 'three/addons/tsl/display/TRAANode.js';
 
@@ -78,13 +78,11 @@
 					output: output,
 					diffuseColor: diffuseColor,
 					normal: directionToColor( normalView ),
-					position: vec4( positionWorld, 1 ),
 					velocity: velocity
 				} ) );
 
 				const scenePassColor = scenePass.getTextureNode( 'output' );
 				const scenePassDiffuse = scenePass.getTextureNode( 'diffuseColor' ).toInspector( 'Diffuse Color' );
-				const scenePassPosition = scenePass.getTextureNode( 'position' );
 				const scenePassDepth = scenePass.getTextureNode( 'depth' ).toInspector( 'Depth', () => {
 
 					return scenePass.getLinearDepthNode();
@@ -102,11 +100,6 @@
 				const normalTexture = scenePass.getTexture( 'normal' );
 				normalTexture.type = THREE.UnsignedByteType;
 
-				// world-space positions need floating point precision for the voxelization pass
-
-				const positionTexture = scenePass.getTexture( 'position' );
-				positionTexture.type = THREE.HalfFloatType;
-
 				const sceneNormal = sample( ( uv ) => {
 
 					return colorToDirection( scenePassNormal.sample( uv ) );
@@ -115,7 +108,7 @@
 
 				// gi
 
-				const giPass = hddagi( scenePassColor, scenePassPosition, sceneNormal, camera );
+				const giPass = hddagi( scenePassColor, scenePassDepth, sceneNormal, camera );
 				giPass.setVolume( new THREE.Vector3( 0, 7.5, 0 ), 24 );
 
 				// composite
