@@ -271,6 +271,7 @@
 				gui.add( params, 'Walls & Ceiling' ).onChange( ( value ) => {
 
 					wallMeshes.forEach( ( m ) => m.visible = value ); // hidden → not rasterized → stops occluding/emitting
+					lightPanel.visible = value; // hide the ceiling light along with the ceiling
 					lightmap.reset();
 
 				} );
