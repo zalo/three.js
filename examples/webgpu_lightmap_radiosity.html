@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgpu - progressive radiosity lightmap</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="example.css">
+	</head>
+	<body>
+
+		<div id="container"></div>
+
+		<div id="info">
+			<a href="https://threejs.org/" target="_blank" rel="noopener" class="logo-link"></a>
+
+			<div class="title-wrapper">
+				<a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a><span>Progressive Radiosity</span>
+			</div>
+
+			<small>
+				Bounce-only global illumination baked into a lightmap with the ArrayCamera, by
+				<a href="https://github.com/zalo" target="_blank" rel="noopener">zalo</a>.<br/>
+				An implementation of <a href="http://xevius.org/papers/approxradpaper2010.pdf" target="_blank" rel="noopener">Approximate Radiosity using Stochastic Depth Buffering</a>.
+			</small>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+
+			import { color, mix, positionLocal } from 'three/tsl';
+			import { Inspector } from 'three/addons/inspector/Inspector.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { ProgressiveLightMap } from 'three/addons/misc/ProgressiveLightMapGPU.js';
+
+			const lightMapRes = 2048;
+
+			let camera, scene, renderer, controls, lightmap, sky, lightPanel;
+
+			const lightmapObjects = [];
+
+			const params = {
+				'Enable': true,
+				'Blur Edges': true,
+				'5×5 Gather': false,
+				'Max History': 0,
+				'Light Intensity': 12,
+				'Ceiling Light': true,
+				'Sky Sphere': false,
+				'Reset': () => lightmap.reset(),
+				'Debug Lightmap': false,
+				'Debug Illumination': false,
+				'Direct Only': false,
+				'Self Bias': 1.5,
+				'Single Direction': - 1
+			};
+
+			const directions = 16;
+
+			init();
+
+			function init() {
+
+				// renderer
+
+				renderer = new THREE.WebGPURenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				renderer.toneMappingExposure = 1.2;
+				renderer.inspector = new Inspector();
+				document.body.appendChild( renderer.domElement );
+
+				// camera
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 1000 );
+				camera.position.set( 0, 8, 30 );
+
+				// scene
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x000000 );
+
+				// progressive radiosity lightmap: 16 global directions rasterized per frame
+				lightmap = new ProgressiveLightMap( renderer, lightMapRes, {
+					radiosity: true,
+					directions: directions,
+					tileResolution: 512,
+					gatherRadius: 1,
+					maxHistory: params[ 'Max History' ]
+				} );
+
+				// Cornell box (no scene lights — the only source is the emissive panel)
+
+				// Each lightmapped object needs its OWN geometry: the lightmapper bakes a
+				// unique uv1 atlas region (and radiosity attributes) onto each geometry.
+				const wallGeometry = () => new THREE.PlaneGeometry( 1, 1 );
+
+				// Physically-plausible diffuse albedos (ρ < 1): in a closed box, ρ = 1
+				// (pure white) never dissipates energy and the radiosity grows unbounded.
+				const RED = 0xc82424, GREEN = 0x24c824, WHITE = 0xd2d2d2;
+
+				// Left wall - red
+				const leftWall = new THREE.Mesh( wallGeometry(), new THREE.MeshStandardNodeMaterial( { color: RED } ) );
+				leftWall.scale.set( 20, 15, 1 );
+				leftWall.rotation.y = Math.PI * 0.5;
+				leftWall.position.set( - 10, 7.5, 0 );
+				addObject( leftWall );
+
+				// Right wall - green
+				const rightWall = new THREE.Mesh( wallGeometry(), new THREE.MeshStandardNodeMaterial( { color: GREEN } ) );
+				rightWall.scale.set( 20, 15, 1 );
+				rightWall.rotation.y = Math.PI * - 0.5;
+				rightWall.position.set( 10, 7.5, 0 );
+				addObject( rightWall );
+
+				// Floor / back wall / ceiling - white
+				const floor = new THREE.Mesh( wallGeometry(), new THREE.MeshStandardNodeMaterial( { color: WHITE } ) );
+				floor.scale.set( 20, 20, 1 );
+				floor.rotation.x = Math.PI * - 0.5;
+				addObject( floor );
+
+				const backWall = new THREE.Mesh( wallGeometry(), new THREE.MeshStandardNodeMaterial( { color: WHITE } ) );
+				backWall.scale.set( 20, 15, 1 );
+				backWall.position.set( 0, 7.5, - 10 );
+				addObject( backWall );
+
+				const ceiling = new THREE.Mesh( wallGeometry(), new THREE.MeshStandardNodeMaterial( { color: WHITE } ) );
+				ceiling.scale.set( 20, 20, 1 );
+				ceiling.rotation.x = Math.PI * 0.5;
+				ceiling.position.set( 0, 15, 0 );
+				addObject( ceiling );
+
+				// Boxes - white. BoxGeometry's six faces all share the same [0,1] UVs,
+				// so they would collide into one atlas island; give each face its own
+				// cell of a 3×2 grid to make the lightmap UVs non-overlapping.
+				const boxGeometry = ( w, h, d ) => unwrapBoxUVs( new THREE.BoxGeometry( w, h, d ) );
+
+				const tallBox = new THREE.Mesh( boxGeometry( 5, 7, 5 ), new THREE.MeshStandardNodeMaterial( { color: WHITE } ) );
+				tallBox.rotation.y = Math.PI * 0.25;
+				tallBox.position.set( - 3, 3.5, - 2 );
+				addObject( tallBox );
+
+				const shortBox = new THREE.Mesh( boxGeometry( 4, 4, 4 ), new THREE.MeshStandardNodeMaterial( { color: WHITE } ) );
+				shortBox.rotation.y = Math.PI * - 0.1;
+				shortBox.position.set( 4, 2, 4 );
+				addObject( shortBox );
+
+				// Emissive ceiling panel - the only light in the scene
+				lightPanel = new THREE.Mesh(
+					new THREE.PlaneGeometry( 1, 1 ),
+					new THREE.MeshStandardNodeMaterial( { color: 0x000000, emissive: 0xffffff, emissiveIntensity: params[ 'Light Intensity' ] } )
+				);
+				lightPanel.scale.set( 8, 8, 1 );
+				lightPanel.rotation.x = Math.PI * 0.5;
+				lightPanel.position.set( 0, 14.9, 0 );
+				addObject( lightPanel );
+
+				lightmap.addObjectsToLightMap( lightmapObjects );
+
+				// Panorama sky sphere (optional broad-spectrum illumination). It surrounds
+				// the whole scene; the lightmapper captures it as a far, all-directions
+				// source (within the array camera's far plane) without widening the ortho
+				// frusta. Disabled by default — toggled from the GUI.
+				const skyHeight = positionLocal.normalize().y.mul( 0.5 ).add( 0.5 );
+				const skyColor = mix( color( 0x223344 ), color( 0x88bbff ), skyHeight );
+
+				const skyMaterial = new THREE.MeshBasicNodeMaterial();
+				skyMaterial.colorNode = skyColor;
+				skyMaterial.side = THREE.BackSide;
+
+				sky = new THREE.Mesh( new THREE.SphereGeometry( 200, 32, 16 ), skyMaterial );
+				sky.position.set( 0, 7.5, 0 );
+				sky.visible = false;
+				scene.add( sky );
+
+				lightmap.addEnvironment( sky, skyColor.mul( 2 ) );
+				lightmap.setEnvironmentEnabled( false );
+
+				// controls
+
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.enableDamping = true;
+				controls.dampingFactor = 0.05;
+				controls.target.set( 0, 7.5, 0 );
+				controls.minDistance = 5;
+				controls.maxDistance = 60;
+
+				createGUI();
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+
+			function addObject( mesh ) {
+
+				scene.add( mesh );
+				lightmapObjects.push( mesh );
+
+			}
+
+			// Repacks a (1-segment) BoxGeometry's UVs so each of the six faces occupies
+			// its own cell of a 3×2 grid, giving the lightmapper non-overlapping UVs.
+			function unwrapBoxUVs( geometry ) {
+
+				const uv = geometry.getAttribute( 'uv' );
+				const cols = 3, rows = 2;
+
+				for ( let face = 0; face < 6; face ++ ) {
+
+					const col = face % cols;
+					const row = Math.floor( face / cols );
+
+					for ( let v = 0; v < 4; v ++ ) {
+
+						const i = face * 4 + v;
+						uv.setXY( i, ( uv.getX( i ) + col ) / cols, ( uv.getY( i ) + row ) / rows );
+
+					}
+
+				}
+
+				uv.needsUpdate = true;
+				return geometry;
+
+			}
+
+			function createGUI() {
+
+				const gui = renderer.inspector.createParameters( 'Radiosity Settings' );
+				gui.add( params, 'Enable' );
+				gui.add( params, 'Blur Edges' );
+				gui.add( params, '5×5 Gather' ).onChange( ( value ) => lightmap.setGatherRadius( value ? 2 : 1 ) );
+				gui.add( params, 'Max History', 0, 2000, 1 ).onChange( ( value ) => {
+
+					lightmap._maxHistory = value;
+					lightmap.reset();
+
+				} );
+				gui.add( params, 'Ceiling Light' ).onChange( ( value ) => {
+
+					lightPanel.visible = value; // hidden → not rasterized into the illumination map → stops emitting
+					lightmap.reset();
+
+				} );
+				gui.add( params, 'Sky Sphere' ).onChange( ( value ) => {
+
+					sky.visible = value;
+					lightmap.setEnvironmentEnabled( value );
+
+				} );
+				gui.add( params, 'Reset' );
+				gui.add( params, 'Debug Lightmap' ).onChange( ( value ) => lightmap.showDebugLightmap( value, new THREE.Vector3( - 16, 7.5, 8 ), 12 ) );
+				gui.add( params, 'Debug Illumination' ).onChange( ( value ) => lightmap.showDebugIlluminationMap( value, new THREE.Vector3( 16, 7.5, 8 ), 12 ) );
+				gui.add( params, 'Self Bias', 0, 4, 0.1 ).name( 'Self Bias (texels)' ).onChange( ( value ) => lightmap.setSelfBias( value ) );
+				gui.add( params, 'Direct Only' ).name( 'Direct Lighting Only' ).onChange( ( value ) => lightmap.setDebugDirectLighting( value ) );
+				gui.add( params, 'Single Direction', - 1, directions - 1, 1 ).name( 'Single Direction (debug)' ).onChange( ( value ) => lightmap.setDebugDirection( value ) );
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				controls.update();
+
+				if ( params[ 'Enable' ] ) {
+
+					lightmap.updateBounce( camera, params[ 'Blur Edges' ] );
+
+				}
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+	</body>
+</html>

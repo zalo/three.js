@@ -342,6 +342,7 @@
 		"webgpu_instancing_morph",
 		"webgpu_layers",
 		"webgpu_lensflares",
+		"webgpu_lightmap_radiosity",
 		"webgpu_lightprobe",
 		"webgpu_lightprobe_cubecamera",
 		"webgpu_lights_custom",
