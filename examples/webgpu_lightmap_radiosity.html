@@ -53,15 +53,15 @@
 			const params = {
 				'Enable': true,
 				'Blur Edges': true,
-				'5×5 Gather': false,
+				'5×5 Gather': true,
 				'Max History': 0,
-				'Light Intensity': 12,
-				'Sky Sphere': false,
+				'Light Intensity': 0.5,
+				'Sky Sphere': true,
 				'Reset': () => lightmap.reset(),
 				'Debug Lightmap': false,
 				'Debug Illumination': false,
 				'Direct Only': false,
-				'Self Bias': 1.5,
+				'Self Bias': 2,
 				'Single Direction': - 1
 			};
 
@@ -97,7 +97,7 @@
 					radiosity: true,
 					directions: directions,
 					tileResolution: 512,
-					gatherRadius: 1,
+					gatherRadius: params[ '5×5 Gather' ] ? 2 : 1,
 					maxHistory: params[ 'Max History' ]
 				} );
 
@@ -186,11 +186,12 @@
 
 				sky = new THREE.Mesh( new THREE.SphereGeometry( 200, 48, 24 ), skyMaterial );
 				sky.position.set( 0, 7.5, 0 );
-				sky.visible = false;
+				sky.visible = params[ 'Sky Sphere' ];
 				scene.add( sky );
 
 				lightmap.addEnvironment( sky, skyColor.mul( 3 ) );
-				lightmap.setEnvironmentEnabled( false );
+				lightmap.setEnvironmentEnabled( params[ 'Sky Sphere' ] );
+				lightmap.setSelfBias( params[ 'Self Bias' ] );
 
 				// controls
 
