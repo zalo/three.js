@@ -334,11 +334,101 @@ class ProgressiveLightMap {
 
 		// Store renderer state we are about to override
 		const currentRenderTarget = renderer.getRenderTarget();
-		const currentPixelRatio = renderer.getPixelRatio();
-		const currentClearAlpha = renderer.getClearAlpha();
-		renderer.getClearColor( this._clearColor );
 
-		// Advance the progressive estimator
+		this._advanceEstimator();
+		const env = this._stealObjects();
+
+		const readRT = this._buffer1Active ? this._radiosityMap1 : this._radiosityMap2;
+		const writeRT = this._buffer1Active ? this._radiosityMap2 : this._radiosityMap1;
+
+		this._illuminationPass( readRT );
+		this._gatherPass( camera, readRT, writeRT, env, blurEdges );
+
+		this._restoreObjects( env );
+
+		renderer.setRenderTarget( currentRenderTarget );
+
+	}
+
+	/**
+	 * Like {@link ProgressiveLightMap#updateBounce}, but measures the GPU time of
+	 * the two heavy passes separately and resolves with the per-pass timings (in
+	 * milliseconds). Each pass is followed by `queue.onSubmittedWorkDone()` so the
+	 * timing reflects GPU execution, not just CPU command submission. This forces
+	 * a CPU↔GPU sync per pass (slow), so use it for diagnostics only — not every
+	 * frame. Works on any WebGPU backend (no `TimestampQuery` feature required, so
+	 * it's reliable on mobile, where that feature is often unavailable).
+	 *
+	 * To avoid interleaving with the render loop, pause it (`setAnimationLoop( null )`)
+	 * around the call, and discard the first result (pipeline warm-up).
+	 *
+	 * @async
+	 * @param {Camera} camera - The camera the scene is rendered with.
+	 * @param {boolean} [blurEdges=true] - Whether to fix UV Edges via blurring.
+	 * @return {Promise<?{illumination: number, gather: number, total: number}>} The per-pass GPU times (ms), or `null` if unavailable.
+	 */
+	async profileBounce( camera, blurEdges = true ) {
+
+		if ( this.radiosity !== true || this._blurringPlane === null ) return null;
+
+		const renderer = this.renderer;
+
+		// Reliable cross-backend GPU fence: the WebGPU queue's onSubmittedWorkDone.
+		// Falls back to null on non-WebGPU backends (e.g. a WebGL fallback), where
+		// there is no such fence — the caller then reports "unavailable".
+		const device = ( renderer.backend && renderer.backend.device ) || null;
+		const queue = device ? device.queue : null;
+		if ( ! queue || typeof queue.onSubmittedWorkDone !== 'function' ) return null;
+
+		// Race the fence against a watchdog so a wedged/lost device can never hang
+		// the profiler forever (which would leave the render loop paused).
+		const sync = () => Promise.race( [
+			queue.onSubmittedWorkDone(),
+			new Promise( ( resolve, reject ) => setTimeout( () => reject( new Error( 'GPU sync timed out' ) ), 10000 ) )
+		] );
+
+		const currentRenderTarget = renderer.getRenderTarget();
+
+		this._advanceEstimator();
+		const env = this._stealObjects();
+
+		// try/finally so the scene is ALWAYS restored — even if a sync rejects —
+		// otherwise the stolen objects/materials would be left swapped in.
+		try {
+
+			const readRT = this._buffer1Active ? this._radiosityMap1 : this._radiosityMap2;
+			const writeRT = this._buffer1Active ? this._radiosityMap2 : this._radiosityMap1;
+
+			await sync(); // drain prior work so we time only our passes
+
+			const t0 = performance.now();
+			this._illuminationPass( readRT );
+			await sync();
+			const t1 = performance.now();
+
+			this._gatherPass( camera, readRT, writeRT, env, blurEdges );
+			await sync();
+			const t2 = performance.now();
+
+			return { illumination: t1 - t0, gather: t2 - t1, total: t2 - t0 };
+
+		} finally {
+
+			this._restoreObjects( env );
+			renderer.setRenderTarget( currentRenderTarget );
+
+		}
+
+	}
+
+	/**
+	 * Advances the progressive estimator's sample count and refreshes the global
+	 * directions / ArrayCamera tiles for the current frame.
+	 *
+	 * @private
+	 */
+	_advanceEstimator() {
+
 		this._frameCount ++;
 		this._frameSeed.value = this._frameCount;
 		const n = this._maxHistory > 0 ? Math.min( this._frameCount, this._maxHistory ) : this._frameCount;
@@ -346,6 +436,17 @@ class ProgressiveLightMap {
 
 		// Refresh the global directions and their ArrayCamera tiles
 		this._updateDirections();
+
+	}
+
+	/**
+	 * Steals the lightmapped objects (and, if enabled, the environment) into the
+	 * private radiosity scene for the illumination/gather passes.
+	 *
+	 * @private
+	 * @return {?Object3D} The stolen environment object, or `null`.
+	 */
+	_stealObjects() {
 
 		// Steal the lightmapped objects into our private scene
 		for ( const container of this._lightMapContainers ) {
@@ -370,12 +471,55 @@ class ProgressiveLightMap {
 
 		}
 
-		const readRT = this._buffer1Active ? this._radiosityMap1 : this._radiosityMap2;
-		const writeRT = this._buffer1Active ? this._radiosityMap2 : this._radiosityMap1;
+		return env;
 
-		// 1) ILLUMINATION PASS — rasterize N global directions into tiles of one map.
-		//    Each surface stores its current outgoing radiance (rgb) and its signed
-		//    distance along the tile's direction (a), with a random fragment depth.
+	}
+
+	/**
+	 * Restores the lightmapped objects' display material / original parent and the
+	 * environment after a bounce.
+	 *
+	 * @private
+	 * @param {?Object3D} env - The environment object returned by {@link ProgressiveLightMap#_stealObjects}.
+	 */
+	_restoreObjects( env ) {
+
+		for ( const container of this._lightMapContainers ) {
+
+			container.object.frustumCulled = container.object.oldFrustumCulled;
+			container.object.material = this._displayMaterial;
+			container.object.oldScene.attach( container.object );
+
+		}
+
+		if ( env !== null ) {
+
+			env.visible = true;
+			env.frustumCulled = env.oldFrustumCulled;
+			env.material = env.oldMaterial;
+			env.oldScene.attach( env );
+
+		}
+
+		this._blurringPlane.visible = false;
+
+	}
+
+	/**
+	 * ILLUMINATION PASS — rasterize N global directions into tiles of one map.
+	 * Each surface stores its current outgoing radiance (rgb) and its signed
+	 * distance along the tile's direction (a), with a random fragment depth.
+	 *
+	 * @private
+	 * @param {RenderTarget} readRT - The radiosity map sampled as the radiance source.
+	 */
+	_illuminationPass( readRT ) {
+
+		const renderer = this.renderer;
+		const currentPixelRatio = renderer.getPixelRatio();
+		const currentClearAlpha = renderer.getClearAlpha();
+		renderer.getClearColor( this._clearColor );
+
 		this._lightMapSource.value = readRT.texture;
 		this._blurringPlane.visible = false;
 
@@ -393,9 +537,24 @@ class ProgressiveLightMap {
 		renderer.setPixelRatio( currentPixelRatio );
 		renderer.setClearColor( this._clearColor, currentClearAlpha );
 
-		// 2) GATHER PASS — for every lightmap texel, gather the nearest in-hemisphere
-		//    surface along each direction, weight by cos and albedo, add emission,
-		//    and fold into the radiosity map with the progressive mean.
+	}
+
+	/**
+	 * GATHER PASS — for every lightmap texel, gather the nearest in-hemisphere
+	 * surface along each direction, weight by cos and albedo, add emission, and
+	 * fold into the radiosity map with the progressive mean.
+	 *
+	 * @private
+	 * @param {Camera} camera - The camera the scene is rendered with.
+	 * @param {RenderTarget} readRT - The previous radiosity map (estimator history + seam-dilation source).
+	 * @param {RenderTarget} writeRT - The radiosity map to write the new sample into.
+	 * @param {?Object3D} env - The stolen environment object, or `null`.
+	 * @param {boolean} blurEdges - Whether to fix UV Edges via blurring.
+	 */
+	_gatherPass( camera, readRT, writeRT, env, blurEdges ) {
+
+		const renderer = this.renderer;
+
 		this._prevRadiosity.value = readRT.texture;
 		this._previousShadowMap.value = readRT.texture; // seam-dilation source for the blurring plane
 		this._blurringPlane.visible = blurEdges;
@@ -416,28 +575,6 @@ class ProgressiveLightMap {
 
 		// Expose the freshly written radiosity to the display material
 		this._lightMapSource.value = writeRT.texture;
-
-		// Restore the objects' display material and original scene
-		for ( const container of this._lightMapContainers ) {
-
-			container.object.frustumCulled = container.object.oldFrustumCulled;
-			container.object.material = this._displayMaterial;
-			container.object.oldScene.attach( container.object );
-
-		}
-
-		if ( env !== null ) {
-
-			env.visible = true;
-			env.frustumCulled = env.oldFrustumCulled;
-			env.material = env.oldMaterial;
-			env.oldScene.attach( env );
-
-		}
-
-		this._blurringPlane.visible = false;
-
-		renderer.setRenderTarget( currentRenderTarget );
 
 	}
 
@@ -469,6 +606,101 @@ class ProgressiveLightMap {
 		if ( oldMat ) oldMat.dispose();
 
 		this.reset();
+
+	}
+
+	/**
+	 * Sets the number of global directions rasterized per frame — i.e. the
+	 * ArrayCamera tile grid. Use a perfect square for a square grid: `1` (1×1),
+	 * `4` (2×2) or `16` (4×4). Fewer directions make the gather dramatically
+	 * cheaper (its per-direction loop is host-unrolled at this count, so the count
+	 * is baked into the shader) but converge slower / noisier per frame.
+	 *
+	 * Rebuilds all direction-dependent state: the tile layout, the illumination-map
+	 * render target, the sub-cameras / ArrayCamera, the per-direction uniform arrays
+	 * and the illumination + gather materials.
+	 *
+	 * @param {number} count - The number of directions (ArrayCamera tiles).
+	 */
+	setDirectionCount( count ) {
+
+		if ( this.radiosity !== true ) return;
+
+		count = Math.max( 1, Math.floor( count ) );
+		if ( count === this._directions ) return;
+
+		this._directions = count;
+
+		// Recompute the tile layout and resize the illumination map
+		this._tilesX = Math.ceil( Math.sqrt( this._directions ) );
+		this._tilesY = Math.ceil( this._directions / this._tilesX );
+		const illumW = this._tilesX * this._tileResolution;
+		const illumH = this._tilesY * this._tileResolution;
+
+		this._illuminationMap.dispose();
+		this._illuminationMap = new RenderTarget( illumW, illumH, { type: FloatType, minFilter: NearestFilter, magFilter: NearestFilter, generateMipmaps: false, depthBuffer: true } );
+		this._illuminationTex.value = this._illuminationMap.texture; // node identity kept; only the value swaps
+
+		// Rebuild the per-direction CPU state and sub-cameras
+		this._scene.remove( this._arrayCamera );
+
+		this._directionData = [];
+		this._basisUData = [];
+		this._basisVData = [];
+		this._viewProjData = [];
+		this._tileOffsetData = [];
+		this._baseDirections = [];
+		this._subCameras = [];
+
+		const half = this._tileResolution * 0.5;
+
+		for ( let k = 0; k < this._directions; k ++ ) {
+
+			this._directionData.push( new Vector3( 0, 1, 0 ) );
+			this._basisUData.push( new Vector3( 1, 0, 0 ) );
+			this._basisVData.push( new Vector3( 0, 0, 1 ) );
+			this._viewProjData.push( new Matrix4() );
+
+			const tx = k % this._tilesX;
+			const ty = Math.floor( k / this._tilesX );
+			this._tileOffsetData.push( new Vector2( tx / this._tilesX, ty / this._tilesY ) );
+
+			this._baseDirections.push( this._fibonacciSphere( k, this._directions ) );
+
+			const subCamera = new OrthographicCamera( - half, half, half, - half, 0, 1 );
+			subCamera.viewport = new Vector4( tx * this._tileResolution, ty * this._tileResolution, this._tileResolution, this._tileResolution );
+			this._subCameras.push( subCamera );
+
+		}
+
+		this._arrayCamera = new ArrayCamera( this._subCameras );
+		this._scene.add( this._arrayCamera );
+
+		// Re-create the fixed-length uniform arrays (their size is baked) and refresh
+		// the layout-dependent scalar uniforms.
+		this._directionArray = uniformArray( this._directionData, 'vec3' );
+		this._basisUArray = uniformArray( this._basisUData, 'vec3' );
+		this._basisVArray = uniformArray( this._basisVData, 'vec3' );
+		this._viewProjArray = uniformArray( this._viewProjData );
+		this._tileOffsetArray = uniformArray( this._tileOffsetData, 'vec2' );
+
+		this._tileScale.value.set( 1 / this._tilesX, 1 / this._tilesY );
+		this._illumTexel.value.set( 1 / illumW, 1 / illumH );
+
+		// Rebuild the materials: the gather shader bakes the direction count and both
+		// materials capture the freshly-created uniform-array nodes.
+		this._illuminationMaterial.dispose();
+		this._gatherMaterial.dispose();
+		this._illuminationMaterial = this._createIlluminationMaterial( this._debugMode );
+		this._gatherMaterial = this._createGatherMaterial( this._debugMode );
+
+		// Deliberately DON'T reset(): the estimator is N-normalized (the gather's
+		// `4/N`), so the converged brightness is the same for any direction count —
+		// resetting would set frameCount to 0, and the next frame's `mix(prev, s, 1/1)`
+		// would overwrite the converged lightmap with a single (very noisy at low N)
+		// sample, which reads as a sudden darkening. Preserving the accumulation keeps
+		// the brightness and just continues refining with the new tile layout. Use the
+		// public `reset()` to restart accumulation from scratch on purpose.
 
 	}
 

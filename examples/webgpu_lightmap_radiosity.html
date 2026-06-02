@@ -10,6 +10,8 @@
 
 		<div id="container"></div>
 
+		<div id="profile-readout" style="position:absolute;bottom:10px;left:10px;padding:8px 12px;background:rgba(0,0,0,0.6);color:#fff;font:12px monospace;white-space:pre;border-radius:4px;display:none;z-index:10;pointer-events:none;"></div>
+
 		<div id="info">
 			<a href="https://threejs.org/" target="_blank" rel="noopener" class="logo-link"></a>
 
@@ -45,29 +47,35 @@
 			import { ProgressiveLightMap } from 'three/addons/misc/ProgressiveLightMapGPU.js';
 
 			const lightMapRes = 2048;
+			const profileReadout = document.getElementById( 'profile-readout' );
 
 			let camera, scene, renderer, controls, lightmap, sky, lightPanel;
 
 			const lightmapObjects = [];
 			const wallMeshes = []; // walls + ceiling (toggled together)
 
+			// Mobile GPUs can't afford the full 4×4 = 16-direction array camera, so
+			// fall back to a 2×2 = 4-direction grid there (noisier but far cheaper).
+			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test( navigator.userAgent );
+			const directions = isMobile ? 4 : 16;
+
 			const params = {
 				'Enable': true,
 				'Blur Edges': true,
+				'Array Camera': directions,
 				'5×5 Gather': true,
 				'Max History': 0,
 				'Light Intensity': 0.5,
 				'Sky Sphere': true,
 				'Walls & Ceiling': true,
 				'Reset': () => lightmap.reset(),
+				'Profile Passes': () => profilePasses(),
 				'Debug Lightmap': false,
 				'Debug Illumination': false,
 				'Direct Only': false,
 				'Self Bias': 2,
 				'Single Direction': - 1
 			};
-
-			const directions = 16;
 
 			init();
 
@@ -94,11 +102,11 @@
 				scene = new THREE.Scene();
 				scene.background = new THREE.Color( 0x000000 );
 
-				// progressive radiosity lightmap: 16 global directions rasterized per frame
+				// progressive radiosity lightmap: N global directions rasterized per frame
 				lightmap = new ProgressiveLightMap( renderer, lightMapRes, {
 					radiosity: true,
 					directions: directions,
-					tileResolution: 256,
+					tileResolution: 512,
 					gatherRadius: params[ '5×5 Gather' ] ? 2 : 1,
 					maxHistory: params[ 'Max History' ]
 				} );
@@ -250,6 +258,7 @@
 				const gui = renderer.inspector.createParameters( 'Radiosity Settings' );
 				gui.add( params, 'Enable' );
 				gui.add( params, 'Blur Edges' );
+				gui.add( params, 'Array Camera', { '1×1': 1, '2×2': 4, '4×4': 16 } ).onChange( ( value ) => lightmap.setDirectionCount( value ) );
 				gui.add( params, '5×5 Gather' ).onChange( ( value ) => lightmap.setGatherRadius( value ? 2 : 1 ) );
 				gui.add( params, 'Max History', 0, 2000, 1 ).onChange( ( value ) => {
 
@@ -278,12 +287,79 @@
 				gui.add( params, 'Reset' );
 
 				const debug = gui.addFolder( 'Debug' );
+				debug.add( params, 'Profile Passes' ).name( 'Profile Passes (GPU ms)' );
 				debug.add( params, 'Self Bias', 0, 4, 0.1 ).name( 'Self Bias (texels)' ).onChange( ( value ) => lightmap.setSelfBias( value ) );
 				debug.add( params, 'Debug Lightmap' ).onChange( ( value ) => lightmap.showDebugLightmap( value, new THREE.Vector3( - 16, 7.5, 8 ), 12 ) );
 				debug.add( params, 'Debug Illumination' ).onChange( ( value ) => lightmap.showDebugIlluminationMap( value, new THREE.Vector3( 16, 7.5, 8 ), 12 ) );
 				debug.add( params, 'Direct Only' ).name( 'Direct Lighting Only' ).onChange( ( value ) => lightmap.setDebugDirectLighting( value ) );
 				debug.add( params, 'Single Direction', - 1, directions - 1, 1 ).name( 'Single Direction (debug)' ).onChange( ( value ) => lightmap.setDebugDirection( value ) );
 				debug.close();
+
+				// On mobile, collapse all folders so the small screen isn't covered.
+				if ( isMobile ) gui.close();
+
+			}
+
+			// Profile the two heavy passes (illumination vs gather) and report the
+			// per-pass GPU time. Pauses the render loop, discards a warm-up sample,
+			// then averages a few measured bounces. Results go to the console and the
+			// on-screen overlay (the latter so it's visible on mobile).
+			let profiling = false;
+
+			async function profilePasses() {
+
+				if ( profiling ) return; // ignore re-entrant clicks while a run is in flight
+				profiling = true;
+
+				profileReadout.style.display = 'block';
+				profileReadout.textContent = 'Profiling…';
+
+				renderer.setAnimationLoop( null ); // avoid interleaving with the render loop
+
+				const runs = 4;
+				let illum = 0, gather = 0;
+
+				try {
+
+					await lightmap.profileBounce( camera, params[ 'Blur Edges' ] ); // discard warm-up
+
+					for ( let i = 0; i < runs; i ++ ) {
+
+						const t = await lightmap.profileBounce( camera, params[ 'Blur Edges' ] );
+						if ( t === null ) {
+
+							profileReadout.textContent = 'Profiling needs the WebGPU backend\n(this device fell back to WebGL).';
+							return;
+
+						}
+
+						illum += t.illumination;
+						gather += t.gather;
+						profileReadout.textContent = `Profiling… ${ i + 1 }/${ runs }`;
+
+					}
+
+					illum /= runs;
+					gather /= runs;
+
+					const kernel = params[ '5×5 Gather' ] ? '5×5' : '3×3';
+					const msg = `Illumination: ${ illum.toFixed( 2 ) } ms\nGather (${ kernel }): ${ gather.toFixed( 2 ) } ms\nTotal: ${ ( illum + gather ).toFixed( 2 ) } ms\n(${ directions } directions @ ${ lightmap._tileResolution }² tiles)`;
+					console.log( '[Radiosity profile]\n' + msg );
+					profileReadout.textContent = msg;
+
+				} catch ( e ) {
+
+					console.error( '[Radiosity profile] failed:', e );
+					profileReadout.textContent = 'Profiling failed: ' + e.message;
+
+				} finally {
+
+					// ALWAYS resume the render loop, no matter how profiling exited.
+					lightmap.reset(); // the profiling bounces perturbed the estimator
+					renderer.setAnimationLoop( animate );
+					profiling = false;
+
+				}
 
 			}
 
