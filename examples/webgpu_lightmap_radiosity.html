@@ -96,7 +96,7 @@
 				lightmap = new ProgressiveLightMap( renderer, lightMapRes, {
 					radiosity: true,
 					directions: directions,
-					tileResolution: 512,
+					tileResolution: 256,
 					gatherRadius: params[ '5×5 Gather' ] ? 2 : 1,
 					maxHistory: params[ 'Max History' ]
 				} );
@@ -265,11 +265,14 @@
 
 				} );
 				gui.add( params, 'Reset' );
-				gui.add( params, 'Debug Lightmap' ).onChange( ( value ) => lightmap.showDebugLightmap( value, new THREE.Vector3( - 16, 7.5, 8 ), 12 ) );
-				gui.add( params, 'Debug Illumination' ).onChange( ( value ) => lightmap.showDebugIlluminationMap( value, new THREE.Vector3( 16, 7.5, 8 ), 12 ) );
-				gui.add( params, 'Self Bias', 0, 4, 0.1 ).name( 'Self Bias (texels)' ).onChange( ( value ) => lightmap.setSelfBias( value ) );
-				gui.add( params, 'Direct Only' ).name( 'Direct Lighting Only' ).onChange( ( value ) => lightmap.setDebugDirectLighting( value ) );
-				gui.add( params, 'Single Direction', - 1, directions - 1, 1 ).name( 'Single Direction (debug)' ).onChange( ( value ) => lightmap.setDebugDirection( value ) );
+
+				const debug = gui.addFolder( 'Debug' );
+				debug.add( params, 'Self Bias', 0, 4, 0.1 ).name( 'Self Bias (texels)' ).onChange( ( value ) => lightmap.setSelfBias( value ) );
+				debug.add( params, 'Debug Lightmap' ).onChange( ( value ) => lightmap.showDebugLightmap( value, new THREE.Vector3( - 16, 7.5, 8 ), 12 ) );
+				debug.add( params, 'Debug Illumination' ).onChange( ( value ) => lightmap.showDebugIlluminationMap( value, new THREE.Vector3( 16, 7.5, 8 ), 12 ) );
+				debug.add( params, 'Direct Only' ).name( 'Direct Lighting Only' ).onChange( ( value ) => lightmap.setDebugDirectLighting( value ) );
+				debug.add( params, 'Single Direction', - 1, directions - 1, 1 ).name( 'Single Direction (debug)' ).onChange( ( value ) => lightmap.setDebugDirection( value ) );
+				debug.close();
 
 			}
 
