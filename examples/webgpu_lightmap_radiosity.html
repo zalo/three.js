@@ -49,6 +49,7 @@
 			let camera, scene, renderer, controls, lightmap, sky, lightPanel;
 
 			const lightmapObjects = [];
+			const wallMeshes = []; // walls + ceiling (toggled together)
 
 			const params = {
 				'Enable': true,
@@ -57,6 +58,7 @@
 				'Max History': 0,
 				'Light Intensity': 0.5,
 				'Sky Sphere': true,
+				'Walls & Ceiling': true,
 				'Reset': () => lightmap.reset(),
 				'Debug Lightmap': false,
 				'Debug Illumination': false,
@@ -141,6 +143,8 @@
 				ceiling.rotation.x = Math.PI * 0.5;
 				ceiling.position.set( 0, 15, 0 );
 				addObject( ceiling );
+
+				wallMeshes.push( leftWall, rightWall, backWall, ceiling ); // floor kept
 
 				// Boxes - white. BoxGeometry's six faces all share the same [0,1] UVs,
 				// so they would collide into one atlas island; give each face its own
@@ -262,6 +266,12 @@
 
 					sky.visible = value;
 					lightmap.setEnvironmentEnabled( value );
+
+				} );
+				gui.add( params, 'Walls & Ceiling' ).onChange( ( value ) => {
+
+					wallMeshes.forEach( ( m ) => m.visible = value ); // hidden → not rasterized → stops occluding/emitting
+					lightmap.reset();
 
 				} );
 				gui.add( params, 'Reset' );
