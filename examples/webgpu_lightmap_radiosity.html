@@ -39,7 +39,7 @@
 
 			import * as THREE from 'three/webgpu';
 
-			import { color, mix, positionLocal } from 'three/tsl';
+			import { equirectUV, positionLocal, texture } from 'three/tsl';
 			import { Inspector } from 'three/addons/inspector/Inspector.js';
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { ProgressiveLightMap } from 'three/addons/misc/ProgressiveLightMapGPU.js';
@@ -56,7 +56,6 @@
 				'5×5 Gather': false,
 				'Max History': 0,
 				'Light Intensity': 12,
-				'Ceiling Light': true,
 				'Sky Sphere': false,
 				'Reset': () => lightmap.reset(),
 				'Debug Lightmap': false,
@@ -174,19 +173,23 @@
 				// the whole scene; the lightmapper captures it as a far, all-directions
 				// source (within the array camera's far plane) without widening the ortho
 				// frusta. Disabled by default — toggled from the GUI.
-				const skyHeight = positionLocal.normalize().y.mul( 0.5 ).add( 0.5 );
-				const skyColor = mix( color( 0x223344 ), color( 0x88bbff ), skyHeight );
+				const skyTexture = new THREE.TextureLoader().load( 'textures/equirectangular/spruit_sunrise_2k.hdr.jpg' );
+				skyTexture.colorSpace = THREE.SRGBColorSpace;
+
+				// Sample the equirectangular map by the sphere's surface direction so it
+				// works the same for the displayed sphere and the illumination pass.
+				const skyColor = texture( skyTexture, equirectUV( positionLocal.normalize() ) ).rgb;
 
 				const skyMaterial = new THREE.MeshBasicNodeMaterial();
 				skyMaterial.colorNode = skyColor;
 				skyMaterial.side = THREE.BackSide;
 
-				sky = new THREE.Mesh( new THREE.SphereGeometry( 200, 32, 16 ), skyMaterial );
+				sky = new THREE.Mesh( new THREE.SphereGeometry( 200, 48, 24 ), skyMaterial );
 				sky.position.set( 0, 7.5, 0 );
 				sky.visible = false;
 				scene.add( sky );
 
-				lightmap.addEnvironment( sky, skyColor.mul( 2 ) );
+				lightmap.addEnvironment( sky, skyColor.mul( 3 ) );
 				lightmap.setEnvironmentEnabled( false );
 
 				// controls
@@ -249,10 +252,9 @@
 					lightmap.reset();
 
 				} );
-				gui.add( params, 'Ceiling Light' ).onChange( ( value ) => {
+				gui.add( params, 'Light Intensity', 0, 30, 0.5 ).name( 'Ceiling Light' ).onChange( ( value ) => {
 
-					lightPanel.visible = value; // hidden → not rasterized into the illumination map → stops emitting
-					lightmap.reset();
+					lightmap.setEmissive( lightPanel, new THREE.Color( 0xffffff ).multiplyScalar( value ) );
 
 				} );
 				gui.add( params, 'Sky Sphere' ).onChange( ( value ) => {

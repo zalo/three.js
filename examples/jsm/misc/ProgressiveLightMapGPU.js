@@ -490,6 +490,31 @@ class ProgressiveLightMap {
 	}
 
 	/**
+	 * Updates the emitted radiance (Le) of a lightmapped object at runtime by
+	 * rewriting its per-vertex emissive attribute, then restarts accumulation.
+	 *
+	 * @param {Mesh} mesh - A mesh previously passed to {@link ProgressiveLightMap#addObjectsToLightMap}.
+	 * @param {Color} emissive - The new emitted radiance.
+	 */
+	setEmissive( mesh, emissive ) {
+
+		if ( this.radiosity !== true ) return;
+
+		const attribute = mesh.geometry.getAttribute( 'radiosityEmissive' );
+		if ( attribute === undefined ) return;
+
+		for ( let i = 0; i < attribute.count; i ++ ) {
+
+			attribute.setXYZ( i, emissive.r, emissive.g, emissive.b );
+
+		}
+
+		attribute.needsUpdate = true;
+		this.reset();
+
+	}
+
+	/**
 	 * Registers a surrounding environment mesh (e.g. a sky sphere) as a far,
 	 * all-directions light source. It is rasterized into the illumination map each
 	 * frame (so it illuminates the scene from every unoccluded direction) but does
