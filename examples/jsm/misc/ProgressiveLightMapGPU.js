@@ -1188,13 +1188,21 @@ class ProgressiveLightMap {
 
 		material.outputNode = vec4( outgoing, distance );
 
-		// Stochastic depth: a per-pixel, per-frame random value in [0,1).
-		// Decorrelated by frame and depth-along-d so winners shuffle and converge.
-		const seed = screenCoordinate.x
-			.add( screenCoordinate.y.mul( 1931 ) )
-			.add( this._frameSeed.mul( 17 ) )
-			.add( dot( positionWorld, d ).mul( 7 ) );
-		material.depthNode = hash( seed );
+		// Stochastic depth in [0,1): each fragment along a pixel's ray gets a random
+		// depth so overlapping surfaces shuffle which one "wins" per frame; over
+		// frames the 3×3/5×5 gather neighbourhood then statistically represents all
+		// surfaces along the ray. We BLUE-NOISE this rather than white-noise it: a
+		// per-surface rank (stable across the frame, so each surface keeps its slot)
+		// is offset by a spatially blue-noise interleaved-gradient dither that is
+		// animated per frame by the golden ratio. Because the dither is shared by all
+		// fragments at a pixel, surfaces keep their relative ordering while the winner
+		// is decorrelated across neighbouring texels and over frames — markedly
+		// cleaner convergence than an i.i.d. hash.
+		const surfaceRank = hash( dot( positionWorld, d ).mul( 7 ) );
+		const ign = screenCoordinate.x.mul( 0.06711056 )
+			.add( screenCoordinate.y.mul( 0.00583715 ) ).fract().mul( 52.9829189 ).fract();
+		const dither = ign.add( this._frameSeed.mul( 0.61803399 ) ).fract();
+		material.depthNode = surfaceRank.add( dither ).fract();
 
 		return material;
 
@@ -1459,11 +1467,13 @@ class ProgressiveLightMap {
 			? ( radius + this._environmentRadius ) * 1.05
 			: 2 * radius;
 
-		// A fresh random rotation each frame keeps the set stratified while
-		// exploring all directions over time. In single-direction debug the set is
-		// frozen so the inspected direction stays fixed.
+		// Rotate the whole direction set each frame so it explores all directions
+		// over time. We use a LOW-DISCREPANCY rotation sequence (stratified over
+		// frames, ~O(1/n) error decay) rather than i.i.d. random rotations
+		// (~O(1/√n)) — same cost, strictly faster convergence. In single-direction
+		// debug the set is frozen so the inspected direction stays fixed.
 		if ( this._debugMode === 'direction' ) _quaternion.identity();
-		else _quaternion.random();
+		else this._stratifiedRotation( _quaternion, this._frameCount );
 
 		for ( let k = 0; k < this._directions; k ++ ) {
 
@@ -1494,6 +1504,34 @@ class ProgressiveLightMap {
 
 		// The uniform arrays re-upload from these mutated objects automatically
 		// (NodeUpdateType.RENDER), so no explicit invalidation is required.
+
+	}
+
+	/**
+	 * Writes a low-discrepancy uniform rotation for sample index `n` into `q`.
+	 * Uses the 3D R3 additive-recurrence sequence (generator = the "plastic
+	 * number" root of x⁴ = x + 1) to produce a stratified point in [0,1)³, then
+	 * Shoemake's map to a uniformly-distributed unit quaternion. Successive `n`
+	 * cover SO(3) far more evenly than i.i.d. random rotations, so the radiosity
+	 * estimate's directional variance decays faster across frames.
+	 *
+	 * @private
+	 * @param {Quaternion} q - Target quaternion (written in place).
+	 * @param {number} n - Sample index (frame counter).
+	 */
+	_stratifiedRotation( q, n ) {
+
+		// α_i = (1/φ₃)^i, φ₃ ≈ 1.220744 (root of x⁴ = x + 1)
+		const u1 = ( 0.5 + 0.8191725133961644 * n ) % 1;
+		const u2 = ( 0.5 + 0.6710436067037893 * n ) % 1;
+		const u3 = ( 0.5 + 0.5497004779019702 * n ) % 1;
+
+		const s1 = Math.sqrt( 1 - u1 );
+		const s2 = Math.sqrt( u1 );
+		const t2 = 2 * Math.PI * u2;
+		const t3 = 2 * Math.PI * u3;
+
+		q.set( s1 * Math.sin( t2 ), s1 * Math.cos( t2 ), s2 * Math.sin( t3 ), s2 * Math.cos( t3 ) );
 
 	}
 
