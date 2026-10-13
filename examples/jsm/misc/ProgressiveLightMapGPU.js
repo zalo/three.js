@@ -249,6 +249,7 @@ class ProgressiveLightMap {
 			if ( this._environmentMaterial !== null ) this._environmentMaterial.dispose();
 			if ( this._environmentTableMaterial !== null ) this._environmentTableMaterial.dispose();
 			if ( this._environmentTableRT !== null ) this._environmentTableRT.dispose();
+			if ( this._environmentTableMesh !== null ) this._environmentTableScene.remove( this._environmentTableMesh );
 
 		}
 
@@ -976,6 +977,14 @@ class ProgressiveLightMap {
 		this._environmentTableMaterial.vertexNode = vec4( equirectUV( positionLocal.normalize() ).mul( 2 ).sub( 1 ), 0, 1 );
 		this._environmentTableMaterial.outputNode = vec4( radianceNode, 1 );
 
+		// A private mesh sharing the sky's geometry: the sky itself is never
+		// reparented or re-materialed, so the (asynchronous) table build cannot
+		// race the bounce passes or a second build and leave the sky missing.
+		if ( this._environmentTableMesh !== null ) this._environmentTableScene.remove( this._environmentTableMesh );
+		this._environmentTableMesh = new Mesh( mesh.geometry, this._environmentTableMaterial );
+		this._environmentTableMesh.frustumCulled = false;
+		this._environmentTableScene.add( this._environmentTableMesh );
+
 		this.updateEnvironmentImportance();
 
 		this.reset();
@@ -990,9 +999,28 @@ class ProgressiveLightMap {
 	 *
 	 * @return {Promise<void>} Resolves when the table is in use.
 	 */
-	async updateEnvironmentImportance() {
+	updateEnvironmentImportance() {
 
-		if ( this.radiosity !== true || this._environment === null || this._environmentTableMaterial === null ) return;
+		// Serialize builds: a texture-load callback may request one while the
+		// previous readback is still in flight.
+		this._environmentTablePending = this._environmentTablePending
+			.then( () => this._buildEnvironmentTable() )
+			.catch( ( e ) => console.warn( 'THREE.ProgressiveLightMap: environment importance table failed, using uniform sampling.', e ) );
+
+		return this._environmentTablePending;
+
+	}
+
+	/**
+	 * Renders the private sky mesh into the equirect table target, reads it
+	 * back and installs the sampling distribution.
+	 *
+	 * @private
+	 * @return {Promise<void>}
+	 */
+	async _buildEnvironmentTable() {
+
+		if ( this.radiosity !== true || this._environment === null || this._environmentTableMesh === null ) return;
 
 		const renderer = this.renderer;
 		const w = 128, h = 64;
@@ -1006,48 +1034,21 @@ class ProgressiveLightMap {
 
 		}
 
-		const env = this._environment;
-		const oldParent = env.parent;
-		const oldMaterial = env.material;
-		const oldFrustumCulled = env.frustumCulled;
-		const oldVisible = env.visible;
 		const currentRenderTarget = renderer.getRenderTarget();
 		const currentClearAlpha = renderer.getClearAlpha();
 		renderer.getClearColor( this._clearColor );
 
-		let buffer = null;
+		renderer.setClearColor( 0x000000, 0 );
+		renderer.setRenderTarget( this._environmentTableRT );
+		renderer.clear();
+		renderer.render( this._environmentTableScene, this._environmentTableCamera );
+		renderer.setRenderTarget( currentRenderTarget );
+		renderer.setClearColor( this._clearColor, currentClearAlpha );
 
-		try {
+		const buffer = await renderer.readRenderTargetPixelsAsync( this._environmentTableRT, 0, 0, w, h );
 
-			env.material = this._environmentTableMaterial;
-			env.frustumCulled = false;
-			env.visible = true;
-			this._environmentTableScene.add( env );
-
-			renderer.setClearColor( 0x000000, 0 );
-			renderer.setRenderTarget( this._environmentTableRT );
-			renderer.clear();
-			renderer.render( this._environmentTableScene, this._environmentTableCamera );
-			renderer.setRenderTarget( currentRenderTarget );
-			renderer.setClearColor( this._clearColor, currentClearAlpha );
-
-			buffer = await renderer.readRenderTargetPixelsAsync( this._environmentTableRT, 0, 0, w, h );
-
-		} catch ( e ) {
-
-			console.warn( 'THREE.ProgressiveLightMap: environment importance table failed, using uniform sampling.', e );
-			buffer = null;
-
-		} finally {
-
-			env.material = oldMaterial;
-			env.frustumCulled = oldFrustumCulled;
-			env.visible = oldVisible;
-			if ( oldParent !== null ) oldParent.add( env ); else this._environmentTableScene.remove( env );
-
-		}
-
-		if ( buffer === null ) return;
+		// The environment may have been removed/replaced while reading back.
+		if ( this._environment === null || this._environmentTableMesh === null ) return;
 
 		const lum = new Float32Array( w * h );
 		// WebGPU render targets read back top row first (v = 1); WebGL bottom row first.
@@ -1413,7 +1414,9 @@ class ProgressiveLightMap {
 		this._environmentMaterial = null;
 		this._environmentRadiance = null;
 		this._environmentTableMaterial = null;
+		this._environmentTableMesh = null;
 		this._environmentTableRT = null;
+		this._environmentTablePending = Promise.resolve();
 		this._environmentTableScene = new Scene();
 		this._environmentTableCamera = new OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
 		this._environmentRadius = 0;
