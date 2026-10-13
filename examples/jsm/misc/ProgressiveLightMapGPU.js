@@ -1,11 +1,13 @@
 import { BackSide, Box3, BufferAttribute, Color, DoubleSide, FloatType, HalfFloatType, LinearFilter, NearestFilter, ArrayCamera, OrthographicCamera, Matrix4, Quaternion, Sphere, Vector2, Vector3, Vector4, PlaneGeometry, Mesh, RenderTarget, Scene, MeshBasicNodeMaterial, MeshPhongNodeMaterial, NodeMaterial } from 'three/webgpu';
-import { add, attribute, cameraIndex, dot, float, Fn, hash, If, int, Loop, mix, normalWorld, output, positionWorld, screenCoordinate, sub, texture, uniform, uniformArray, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { any, attribute, cameraIndex, dot, float, Fn, hash, If, int, length, Loop, max, mix, normalWorld, output, positionWorld, screenCoordinate, select, sub, texture, uniform, uniformArray, uv, vec2, vec3, vec4 } from 'three/tsl';
 
 import { potpack } from '../libs/potpack.module.js';
 
 const _sphere = /*@__PURE__*/ new Sphere();
 const _box = /*@__PURE__*/ new Box3();
 const _quaternion = /*@__PURE__*/ new Quaternion();
+const _corner = /*@__PURE__*/ new Vector3();
+const _target = /*@__PURE__*/ new Vector3();
 
 /**
  * Progressive Light Map Accumulator, by [zalo](https://github.com/zalo/).
@@ -51,6 +53,14 @@ class ProgressiveLightMap {
 	 * @param {number} [options.maxHistory=0] - Caps the progressive integrator. `0` is a converging cumulative
 	 * mean (sharpest, but freezes residual noise); a finite value `N` is leaky/exponential blending with window
 	 * `N` (the original scheme — keeps refreshing, adapts to dynamic scenes).
+	 * @param {number} [options.maxSamples=0] - Accumulated directions (bounces × directions) after which
+	 * {@link ProgressiveLightMap#updateBounce} stops refining; `0` never stops. Counting directions rather than
+	 * bounces makes a 4×4 ArrayCamera reach the budget four times faster than 1×1.
+	 * @param {string} [options.envSampling='importance'] - How the global directions are drawn: `'uniform'`
+	 * (rotating Fibonacci sphere) or `'importance'` (half uniform, half proportional to the environment's
+	 * luminance from {@link ProgressiveLightMap#setEnvironmentImportance}, combined with the balance heuristic).
+	 * @param {number} [options.fadeInSamples=0] - Accumulated directions over which the displayed lightmap
+	 * fades in (smoothstep), hiding the noisy first bounces; `0` disables the fade.
 	 */
 	constructor( renderer, resolution = 1024, options = {} ) {
 
@@ -324,7 +334,7 @@ class ProgressiveLightMap {
 	 */
 	updateBounce( camera, blurEdges = true ) {
 
-		if ( this.radiosity !== true || this._blurringPlane === null ) {
+		if ( this.radiosity !== true || this._blurringPlane === null || this.converged ) {
 
 			return;
 
@@ -335,6 +345,7 @@ class ProgressiveLightMap {
 		// Store renderer state we are about to override
 		const currentRenderTarget = renderer.getRenderTarget();
 
+		if ( this._needsClear ) this._clearRadiosityMaps();
 		this._advanceEstimator();
 		const env = this._stealObjects();
 
@@ -433,6 +444,13 @@ class ProgressiveLightMap {
 		this._frameSeed.value = this._frameCount;
 		const n = this._maxHistory > 0 ? Math.min( this._frameCount, this._maxHistory ) : this._frameCount;
 		this._invSampleCount.value = 1 / n;
+
+		if ( this._fadeInSamples > 0 ) {
+
+			const t = Math.min( 1, this.samples / this._fadeInSamples );
+			this._fadeWeight.value = t * t * ( 3 - 2 * t );
+
+		}
 
 		// Refresh the global directions and their ArrayCamera tiles
 		this._updateDirections();
@@ -585,6 +603,163 @@ class ProgressiveLightMap {
 	reset() {
 
 		this._frameCount = 0;
+		this._needsClear = true;
+		if ( this._fadeWeight !== undefined ) this._fadeWeight.value = this._fadeInSamples > 0 ? 0 : 1;
+
+	}
+
+	/**
+	 * Accumulated directions so far (bounces × directions per bounce).
+	 *
+	 * @type {number}
+	 */
+	get samples() {
+
+		return this._frameCount * ( this._directions || 0 );
+
+	}
+
+	/**
+	 * Whether the sample budget (`maxSamples`) has been spent; never when the budget is `0`.
+	 *
+	 * @type {boolean}
+	 */
+	get converged() {
+
+		return this._maxSamples > 0 && this.samples >= this._maxSamples;
+
+	}
+
+	/**
+	 * Sets the sample budget in accumulated directions (`0` = unlimited).
+	 *
+	 * @param {number} count - Accumulated directions after which refinement stops.
+	 */
+	setMaxSamples( count ) {
+
+		this._maxSamples = Math.max( 0, Math.floor( count ) );
+
+	}
+
+	/**
+	 * Sets the number of accumulated directions over which the displayed lightmap fades in (`0` = no fade).
+	 *
+	 * @param {number} count - Accumulated directions.
+	 */
+	setFadeIn( count ) {
+
+		this._fadeInSamples = Math.max( 0, Math.floor( count ) );
+		if ( this._fadeInSamples === 0 ) this._fadeWeight.value = 1;
+
+	}
+
+	/**
+	 * Switches between uniform and environment importance sampling of the global
+	 * directions. Importance sampling needs a luminance table from
+	 * {@link ProgressiveLightMap#setEnvironmentImportance}; without one it behaves like uniform.
+	 *
+	 * @param {string} mode - `'uniform'` or `'importance'`.
+	 */
+	setEnvSampling( mode ) {
+
+		if ( this.radiosity !== true ) return;
+
+		const flag = mode !== 'uniform';
+		if ( flag === this._importance ) return;
+
+		this._importance = flag;
+		this._rebuildBaseDirections();
+		this.reset();
+
+	}
+
+	/**
+	 * Builds the importance-sampling distribution from an equirectangular texture
+	 * (the same mapping as TSL's `equirectUV`, so it matches a sky sphere textured
+	 * with it). Pass `null` to go back to uniform sampling.
+	 *
+	 * @param {?Texture} texture - Equirectangular environment texture (image or data texture).
+	 */
+	setEnvironmentImportance( texture ) {
+
+		if ( this.radiosity !== true ) return;
+
+		this._importanceTable = texture ? EnvImportanceTable.fromTexture( texture ) : null;
+		this._rebuildBaseDirections();
+		this.reset();
+
+	}
+
+	/**
+	 * Zeroes both radiosity maps. Render targets start with undefined contents
+	 * (often NaN on real GPUs), and the first bounce samples the previous map
+	 * for the bounce radiance and the seam blur.
+	 *
+	 * @private
+	 */
+	_clearRadiosityMaps() {
+
+		const renderer = this.renderer;
+		const currentRenderTarget = renderer.getRenderTarget();
+		const currentClearAlpha = renderer.getClearAlpha();
+		renderer.getClearColor( this._clearColor );
+		renderer.setClearColor( 0x000000, 0 );
+
+		for ( const rt of [ this._radiosityMap1, this._radiosityMap2 ] ) {
+
+			renderer.setRenderTarget( rt );
+			renderer.clear();
+
+		}
+
+		renderer.setRenderTarget( currentRenderTarget );
+		renderer.setClearColor( this._clearColor, currentClearAlpha );
+		this._needsClear = false;
+
+	}
+
+	/**
+	 * Replaces NaN/Inf/negative texels by zero so one bad texel cannot poison
+	 * the progressive mean or spread through the seam blur.
+	 *
+	 * @private
+	 * @param {Node<vec4>} c - The texel.
+	 * @return {Node<vec4>} The sanitized texel.
+	 */
+	_saneNode( c ) {
+
+		return select( any( c.notEqual( c ) ), vec4( 0 ), max( c, vec4( 0 ) ) );
+
+	}
+
+	/**
+	 * Directions per bounce drawn uniformly; the rest come from the environment table.
+	 *
+	 * @private
+	 * @return {number} The uniform count.
+	 */
+	_uniformCount() {
+
+		const useTable = this._importance && this._importanceTable !== null && this._environment !== null && this._environmentEnabled;
+		if ( ! useTable ) return this._directions;
+		if ( this._directions === 1 ) return this._frameCount % 2 === 0 ? 1 : 0;
+		return Math.ceil( this._directions / 2 );
+
+	}
+
+	/**
+	 * Rebuilds the Fibonacci set used for the uniformly drawn directions.
+	 *
+	 * @private
+	 */
+	_rebuildBaseDirections() {
+
+		const n = this._importance && this._importanceTable !== null
+			? Math.max( 1, Math.ceil( this._directions / 2 ) )
+			: this._directions;
+
+		this._baseDirections = [];
+		for ( let k = 0; k < n; k ++ ) this._baseDirections.push( this._fibonacciSphere( k, n ) );
 
 	}
 
@@ -649,6 +824,9 @@ class ProgressiveLightMap {
 		this._basisVData = [];
 		this._viewProjData = [];
 		this._tileOffsetData = [];
+		this._dirWeightData = [];
+		this._originData = [];
+		this._halfData = [];
 		this._baseDirections = [];
 		this._subCameras = [];
 
@@ -665,7 +843,9 @@ class ProgressiveLightMap {
 			const ty = Math.floor( k / this._tilesX );
 			this._tileOffsetData.push( new Vector2( tx / this._tilesX, ty / this._tilesY ) );
 
-			this._baseDirections.push( this._fibonacciSphere( k, this._directions ) );
+			this._dirWeightData.push( 4 / this._directions );
+			this._originData.push( new Vector3() );
+			this._halfData.push( new Vector2( 1, 1 ) );
 
 			const subCamera = new OrthographicCamera( - half, half, half, - half, 0, 1 );
 			subCamera.viewport = new Vector4( tx * this._tileResolution, ty * this._tileResolution, this._tileResolution, this._tileResolution );
@@ -673,6 +853,7 @@ class ProgressiveLightMap {
 
 		}
 
+		this._rebuildBaseDirections();
 		this._arrayCamera = new ArrayCamera( this._subCameras );
 		this._scene.add( this._arrayCamera );
 
@@ -683,6 +864,9 @@ class ProgressiveLightMap {
 		this._basisVArray = uniformArray( this._basisVData, 'vec3' );
 		this._viewProjArray = uniformArray( this._viewProjData );
 		this._tileOffsetArray = uniformArray( this._tileOffsetData, 'vec2' );
+		this._dirWeightArray = uniformArray( this._dirWeightData, 'float' );
+		this._originArray = uniformArray( this._originData, 'vec3' );
+		this._halfArray = uniformArray( this._halfData, 'vec2' );
 
 		this._tileScale.value.set( 1 / this._tilesX, 1 / this._tilesY );
 		this._illumTexel.value.set( 1 / illumW, 1 / illumH );
@@ -693,6 +877,13 @@ class ProgressiveLightMap {
 		this._gatherMaterial.dispose();
 		this._illuminationMaterial = this._createIlluminationMaterial( this._debugMode );
 		this._gatherMaterial = this._createGatherMaterial( this._debugMode );
+
+		if ( this._environmentMaterial !== null ) {
+
+			this._environmentMaterial.dispose();
+			this._environmentMaterial = this._createEnvironmentMaterial( this._environmentRadiance );
+
+		}
 
 		// Deliberately DON'T reset(): the estimator is N-normalized (the gather's
 		// `4/N`), so the converged brightness is the same for any direction count —
@@ -768,13 +959,28 @@ class ProgressiveLightMap {
 		const scale = Math.max( mesh.scale.x, mesh.scale.y, mesh.scale.z );
 		this._environmentRadius = mesh.geometry.boundingSphere.radius * scale;
 
-		// Same stochastic-depth illumination shader as scene surfaces, but its
-		// radiance is the supplied environment colour and it renders BackSide.
+		this._environmentRadiance = radianceNode;
+		this._environmentMaterial = this._createEnvironmentMaterial( radianceNode );
+
+		this.reset();
+
+	}
+
+	/**
+	 * Same stochastic-depth illumination shader as scene surfaces, but its
+	 * radiance is the supplied environment colour and it renders BackSide.
+	 *
+	 * @private
+	 * @param {Node<vec3>} radianceNode - The emitted radiance.
+	 * @return {NodeMaterial} The environment illumination material.
+	 */
+	_createEnvironmentMaterial( radianceNode ) {
+
 		const material = new NodeMaterial();
 		material.side = BackSide;
 
 		const d = this._directionArray.element( cameraIndex );
-		const distance = dot( positionWorld.sub( this._sceneCenter ), d ).add( this._sceneRadius ).add( 1 );
+		const distance = dot( positionWorld.sub( this._originArray.element( cameraIndex ) ), d ).add( 1 );
 		material.outputNode = vec4( radianceNode, distance );
 
 		const seed = screenCoordinate.x
@@ -783,9 +989,7 @@ class ProgressiveLightMap {
 			.add( dot( positionWorld, d ).mul( 7 ) );
 		material.depthNode = hash( seed );
 
-		this._environmentMaterial = material;
-
-		this.reset();
+		return material;
 
 	}
 
@@ -965,16 +1169,29 @@ class ProgressiveLightMap {
 		const uvNode = uv().flipY().toVar();
 		const pixelOffset = float( 0.5 ).div( float( this.resolution ) ).toVar();
 
-		const color = add(
-			this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset, 0 ) ) ),
-			this._previousShadowMap.sample( uvNode.add( vec2( 0, pixelOffset ) ) ),
-			this._previousShadowMap.sample( uvNode.add( vec2( 0, pixelOffset.negate() ) ) ),
-			this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset.negate(), 0 ) ) ),
-			this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset, pixelOffset ) ) ),
-			this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset.negate(), pixelOffset ) ) ),
-			this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset, pixelOffset.negate() ) ) ),
-			this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset.negate(), pixelOffset.negate() ) ) ),
-		).div( 8 );
+		// Average only the valid (written) neighbours: including cleared texels
+		// would pull the seams toward black, and NaN texels are dropped.
+		const color = Fn( () => {
+
+			const sum = vec4( 0 ).toVar();
+			const count = float( 0 ).toVar();
+			const offsets = [[ 1, 0 ], [ 0, 1 ], [ 0, - 1 ], [ - 1, 0 ], [ 1, 1 ], [ - 1, 1 ], [ 1, - 1 ], [ - 1, - 1 ]];
+
+			for ( const [ ox, oy ] of offsets ) {
+
+				const s = this._saneNode( this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset.mul( ox ), pixelOffset.mul( oy ) ) ) ) ).toVar();
+				If( s.a.greaterThan( 0 ), () => {
+
+					sum.addAssign( s );
+					count.addAssign( 1 );
+
+				} );
+
+			}
+
+			return select( count.greaterThan( 0 ), sum.div( count ), vec4( 0 ) );
+
+		} )();
 
 		blurMaterial.fragmentNode = color;
 
@@ -1004,6 +1221,12 @@ class ProgressiveLightMap {
 		this._tileResolution = options.tileResolution !== undefined ? options.tileResolution : 256;
 		this._gatherRadius = options.gatherRadius !== undefined ? Math.max( 1, Math.floor( options.gatherRadius ) ) : 1;
 		this._maxHistory = options.maxHistory !== undefined ? options.maxHistory : 0;
+		this._maxSamples = options.maxSamples !== undefined ? Math.max( 0, options.maxSamples ) : 0;
+		this._fadeInSamples = options.fadeInSamples !== undefined ? Math.max( 0, options.fadeInSamples ) : 0;
+		this._importance = options.envSampling !== 'uniform';
+		this._importanceTable = null;
+		this._needsClear = true;
+		this._sceneBox = new Box3();
 
 		this._frameCount = 0;
 		this._clearColor = new Color();
@@ -1030,6 +1253,9 @@ class ProgressiveLightMap {
 		this._basisVData = [];
 		this._viewProjData = [];
 		this._tileOffsetData = [];
+		this._dirWeightData = [];
+		this._originData = [];
+		this._halfData = [];
 		this._baseDirections = [];
 		this._subCameras = [];
 
@@ -1046,7 +1272,9 @@ class ProgressiveLightMap {
 			const ty = Math.floor( k / this._tilesX );
 			this._tileOffsetData.push( new Vector2( tx / this._tilesX, ty / this._tilesY ) );
 
-			this._baseDirections.push( this._fibonacciSphere( k, this._directions ) );
+			this._dirWeightData.push( 4 / this._directions );
+			this._originData.push( new Vector3() );
+			this._halfData.push( new Vector2( 1, 1 ) );
 
 			const subCamera = new OrthographicCamera( - half, half, half, - half, 0, 1 );
 			subCamera.viewport = new Vector4( tx * this._tileResolution, ty * this._tileResolution, this._tileResolution, this._tileResolution );
@@ -1054,12 +1282,14 @@ class ProgressiveLightMap {
 
 		}
 
+		this._rebuildBaseDirections();
 		this._arrayCamera = new ArrayCamera( this._subCameras );
 		this._scene.add( this._arrayCamera );
 
 		// Uniforms shared by the illumination and gather materials
 		this._frameSeed = uniform( 0 );
 		this._invSampleCount = uniform( 1 );
+		this._fadeWeight = uniform( this._fadeInSamples > 0 ? 0 : 1 );
 		this._debugDirection = uniform( 0, 'int' );
 		this._debugMode = null; // null | 'direction' | 'direct'
 
@@ -1081,6 +1311,7 @@ class ProgressiveLightMap {
 		// the illumination pass without expanding the ortho frusta.
 		this._environment = null;
 		this._environmentMaterial = null;
+		this._environmentRadiance = null;
 		this._environmentRadius = 0;
 		this._environmentEnabled = false;
 		this._sceneCenter = uniform( new Vector3() );
@@ -1093,6 +1324,9 @@ class ProgressiveLightMap {
 		this._basisVArray = uniformArray( this._basisVData, 'vec3' );
 		this._viewProjArray = uniformArray( this._viewProjData );
 		this._tileOffsetArray = uniformArray( this._tileOffsetData, 'vec2' );
+		this._dirWeightArray = uniformArray( this._dirWeightData, 'float' );
+		this._originArray = uniformArray( this._originData, 'vec3' );
+		this._halfArray = uniformArray( this._halfData, 'vec2' );
 
 		// Texture nodes whose .value we swap each frame (ping-pong)
 		this._lightMapSource = texture( this._radiosityMap1.texture ); // current radiosity (display + illumination source)
@@ -1107,7 +1341,7 @@ class ProgressiveLightMap {
 		this._gatherMaterial = this._createGatherMaterial();
 
 		this._displayMaterial = new MeshBasicNodeMaterial();
-		this._displayMaterial.colorNode = this._lightMapSource.sample( uv( 1 ) );
+		this._displayMaterial.colorNode = this._lightMapSource.sample( uv( 1 ) ).mul( this._fadeWeight );
 
 	}
 
@@ -1180,11 +1414,11 @@ class ProgressiveLightMap {
 			? emissive
 			: mode === 'direction'
 				? attribute( 'radiosityAlbedo', 'vec3' ).add( emissive )
-				: this._lightMapSource.sample( uv( 1 ) ).rgb;
+				: this._saneNode( this._lightMapSource.sample( uv( 1 ) ) ).rgb;
 
-		// Store dot(p - center, d) biased to (0, 2R] so that the clear value (0)
-		// can be rejected as "no surface" during the gather.
-		const distance = dot( positionWorld.sub( this._sceneCenter ), d ).add( this._sceneRadius ).add( 1 );
+		// Store the distance along d from the tile's near plane, biased by +1 so
+		// that the clear value (0) can be rejected as "no surface" during the gather.
+		const distance = dot( positionWorld.sub( this._originArray.element( cameraIndex ) ), d ).add( 1 );
 
 		material.outputNode = vec4( outgoing, distance );
 
@@ -1262,10 +1496,12 @@ class ProgressiveLightMap {
 						// Reconstruct the sample's world position (orthographic ray),
 						// applying the matching reconstruction flips.
 						const localNdc = sampleUv.sub( tileOffset ).div( this._tileScale ).mul( 2 ).sub( 1 ).mul( this._reconstructionFlip ).toVar();
-						const base = this._sceneCenter
-							.add( basisU.mul( localNdc.x.mul( this._sceneRadius ) ) )
-							.add( basisV.mul( localNdc.y.mul( this._sceneRadius ) ) );
-						const samplePos = base.add( d.mul( w.sub( this._sceneRadius ).sub( 1 ) ) ).toVar();
+						const origin = this._originArray.element( i );
+						const half = this._halfArray.element( i );
+						const base = origin
+							.add( basisU.mul( localNdc.x.mul( half.x ) ) )
+							.add( basisV.mul( localNdc.y.mul( half.y ) ) );
+						const samplePos = base.add( d.mul( w.sub( 1 ) ) ).toVar();
 
 						// Reject the receiver's own surface and near-coplanar self hits
 						// (a slope-style bias ~ one illumination-map texel in world units),
@@ -1346,23 +1582,28 @@ class ProgressiveLightMap {
 		material.fragmentNode = Fn( () => {
 
 			const p = positionWorld.toVar();
-			const n = normalWorld.normalize().toVar();
+			// A zero-length normal would normalize to NaN and poison the map: treat it as up.
+			const nLen = length( normalWorld ).toVar();
+			const n = select( nLen.greaterThan( 1e-8 ), normalWorld.div( nLen ), vec3( 0, 1, 0 ) ).toVar();
 			const accum = vec3( 0 ).toVar();
 
 			Loop( { start: int( 0 ), end: int( N ), type: 'int', condition: '<' }, ( { i } ) => {
 
 				const nDotD = dot( n, this._directionArray.element( i ) );
-				accum.addAssign( this._gatherDirection( p, n, i ).mul( nDotD ) );
+				// Monte-Carlo weight 1/(N·π·pdf_k): 4/N for uniform sphere sampling, the
+				// balance-heuristic mixture pdf for environment importance sampling.
+				accum.addAssign( this._gatherDirection( p, n, i ).mul( nDotD ).mul( this._dirWeightArray.element( i ) ) );
 
 			} );
 
-			// Le + 4·ρ·(1/N)·Σ Lk·cos  (the 4 and the 1/π of the diffuse BRDF combine)
-			const indirect = albedoNode.mul( accum ).mul( 4 / N );
-			const sample = emissiveNode.add( indirect );
+			// Le + ρ·Σ w_k·Lk·cos  (the weights carry the 4/N resp. 1/(N·π·pdf) of the estimator)
+			const indirect = albedoNode.mul( accum );
+			const sample = this._saneNode( vec4( emissiveNode.add( indirect ), 1 ) );
 
-			// Progressive cumulative-mean integration
-			const previous = this._prevRadiosity.sample( uv( 1 ) ).rgb;
-			return vec4( mix( previous, sample, this._invSampleCount ), 1 );
+			// Progressive cumulative-mean integration; the first sample overwrites so
+			// garbage in a fresh render target can never leak in through 0·previous.
+			const previous = this._saneNode( this._prevRadiosity.sample( uv( 1 ) ) );
+			return select( this._invSampleCount.greaterThanEqual( 1 ), sample, mix( previous, sample, this._invSampleCount ) );
 
 		} )();
 
@@ -1439,6 +1680,7 @@ class ProgressiveLightMap {
 		}
 
 		_box.getBoundingSphere( _sphere );
+		this._sceneBox.copy( _box );
 
 		this._sceneCenter.value.copy( _sphere.center );
 		this._sceneRadius.value = Math.max( _sphere.radius, 1e-3 );
@@ -1460,12 +1702,13 @@ class ProgressiveLightMap {
 
 		const center = this._sceneCenter.value;
 		const radius = this._sceneRadius.value;
-
-		// Far plane: reach the environment (sky) when enabled, WITHOUT widening the
-		// frustum (left/right/top/bottom stay scene-sized); otherwise just the scene.
-		const far = ( this._environment !== null && this._environmentEnabled )
-			? ( radius + this._environmentRadius ) * 1.05
-			: 2 * radius;
+		const box = this._sceneBox;
+		const envEnabled = this._environment !== null && this._environmentEnabled;
+		const N = this._directions;
+		const table = this._importance && envEnabled ? this._importanceTable : null;
+		const nUniform = this._uniformCount();
+		const nImportance = N - nUniform;
+		const uniformPdf = 1 / ( 4 * Math.PI );
 
 		// Rotate the whole direction set each frame so it explores all directions
 		// over time. We use a LOW-DISCREPANCY rotation sequence (stratified over
@@ -1475,20 +1718,82 @@ class ProgressiveLightMap {
 		if ( this._debugMode === 'direction' ) _quaternion.identity();
 		else this._stratifiedRotation( _quaternion, this._frameCount );
 
-		for ( let k = 0; k < this._directions; k ++ ) {
+		// Lateral/depth margin of two illumination-map texels around the bounds.
+		const margin = ( 2 * radius / this._tileResolution ) * 2;
 
-			const d = this._directionData[ k ].copy( this._baseDirections[ k ] ).applyQuaternion( _quaternion ).normalize();
+		for ( let k = 0; k < N; k ++ ) {
+
+			const d = this._directionData[ k ];
+
+			if ( k < nUniform || table === null ) {
+
+				d.copy( this._baseDirections[ k % this._baseDirections.length ] ).applyQuaternion( _quaternion ).normalize();
+
+			} else {
+
+				// Low-discrepancy 2D point (R2 sequence) for this frame and slot.
+				const n = this._frameCount * nImportance + ( k - nUniform );
+				const u1 = ( 0.5 + 0.7548776662466927 * n ) % 1;
+				const u2 = ( 0.5 + 0.5698402909980532 * n ) % 1;
+				table.sample( u1, u2, d );
+
+			}
+
+			// Balance heuristic over the 50/50 mixture of uniform and environment pdfs.
+			this._dirWeightData[ k ] = table !== null
+				? 1 / ( N * Math.PI * ( 0.5 * uniformPdf + 0.5 * table.pdf( d ) ) )
+				: 4 / N;
 
 			const camera = this._subCameras[ k ];
-			camera.position.copy( center ).addScaledVector( d, - radius );
 			camera.up.set( 0, 1, 0 );
 			if ( Math.abs( d.y ) > 0.99 ) camera.up.set( 0, 0, 1 );
+			camera.position.copy( center ).addScaledVector( d, - 1 );
 			camera.lookAt( center );
+			camera.updateMatrixWorld();
 
-			camera.left = - radius;
-			camera.right = radius;
-			camera.top = radius;
-			camera.bottom = - radius;
+			const bu = this._basisUData[ k ].setFromMatrixColumn( camera.matrixWorld, 0 ).normalize();
+			const bv = this._basisVData[ k ].setFromMatrixColumn( camera.matrixWorld, 1 ).normalize();
+
+			// Fit the orthographic frustum to the bounds as seen along d (a tight
+			// box fit, not the bounding sphere): more illumination texels per surface.
+			let minU = Infinity, maxU = - Infinity, minV = Infinity, maxV = - Infinity, minD = Infinity, maxD = - Infinity;
+
+			for ( let c = 0; c < 8; c ++ ) {
+
+				_corner.set( c & 1 ? box.max.x : box.min.x, c & 2 ? box.max.y : box.min.y, c & 4 ? box.max.z : box.min.z ).sub( center );
+				const pu = _corner.dot( bu ), pv = _corner.dot( bv ), pd = _corner.dot( d );
+				if ( pu < minU ) minU = pu;
+				if ( pu > maxU ) maxU = pu;
+				if ( pv < minV ) minV = pv;
+				if ( pv > maxV ) maxV = pv;
+				if ( pd < minD ) minD = pd;
+				if ( pd > maxD ) maxD = pd;
+
+			}
+
+			const halfU = ( maxU - minU ) / 2 + margin;
+			const halfV = ( maxV - minV ) / 2 + margin;
+			const near = minD - margin;
+
+			// Far plane: reach the environment (sky) when enabled, WITHOUT widening the
+			// frustum (left/right/top/bottom stay scene-sized); otherwise just the scene.
+			const far = envEnabled
+				? ( radius + this._environmentRadius ) * 1.05 - near
+				: maxD + margin - near;
+
+			// Camera on the near plane, centred on the fitted extent.
+			camera.position.copy( center )
+				.addScaledVector( bu, ( minU + maxU ) / 2 )
+				.addScaledVector( bv, ( minV + maxV ) / 2 )
+				.addScaledVector( d, near );
+			this._originData[ k ].copy( camera.position );
+			this._halfData[ k ].set( halfU, halfV );
+			camera.lookAt( _target.copy( camera.position ).add( d ) );
+
+			camera.left = - halfU;
+			camera.right = halfU;
+			camera.top = halfV;
+			camera.bottom = - halfV;
 			camera.near = 0;
 			camera.far = far;
 			camera.updateMatrixWorld();
@@ -1553,6 +1858,189 @@ class ProgressiveLightMap {
 		return new Vector3( Math.cos( phi ) * r, y, Math.sin( phi ) * r );
 
 	}
+
+}
+
+/**
+ * Discrete 2D distribution over an equirectangular luminance table, for drawing
+ * world directions proportional to environment radiance. Uses the `equirectUV`
+ * convention (u from atan2(z, x), v from asin(y)).
+ *
+ * @private
+ */
+class EnvImportanceTable {
+
+	constructor( lum, w, h ) {
+
+		this.w = w;
+		this.h = h;
+		this.dLat = Math.PI / h;
+		this.dLon = ( 2 * Math.PI ) / w;
+
+		const weights = new Float32Array( w * h );
+		const rowCdf = new Float32Array( h );
+		const condCdf = new Float32Array( w * h );
+		let total = 0;
+
+		for ( let i = 0; i < h; i ++ ) {
+
+			const cosLat = Math.cos( ( ( i + 0.5 ) / h - 0.5 ) * Math.PI );
+			let rowSum = 0;
+
+			for ( let j = 0; j < w; j ++ ) {
+
+				const wt = ( Math.max( lum[ i * w + j ], 0 ) + 1e-4 ) * cosLat;
+				weights[ i * w + j ] = wt;
+				rowSum += wt;
+				condCdf[ i * w + j ] = rowSum;
+
+			}
+
+			for ( let j = 0; j < w; j ++ ) condCdf[ i * w + j ] /= rowSum;
+			total += rowSum;
+			rowCdf[ i ] = total;
+
+		}
+
+		for ( let i = 0; i < h; i ++ ) rowCdf[ i ] /= total;
+
+		this.weights = weights;
+		this.total = total;
+		this.rowCdf = rowCdf;
+		this.condCdf = condCdf;
+
+	}
+
+	/**
+	 * Builds a table from an equirectangular texture (image element, bitmap,
+	 * canvas or data texture), downsampled to at most 256×128.
+	 */
+	static fromTexture( texture ) {
+
+		const image = texture.image;
+		if ( ! image ) return null;
+
+		let w, h, lum;
+		const srgbToLinear = ( c ) => ( c <= 0.04045 ? c / 12.92 : Math.pow( ( c + 0.055 ) / 1.055, 2.4 ) );
+
+		if ( image.data !== undefined && image.width !== undefined ) {
+
+			// DataTexture: float (linear) or 8-bit (sRGB) data
+			w = image.width;
+			h = image.height;
+			const data = image.data;
+			const channels = data.length / ( w * h );
+			const is8bit = data instanceof Uint8Array || data instanceof Uint8ClampedArray;
+			lum = new Float32Array( w * h );
+
+			for ( let i = 0; i < w * h; i ++ ) {
+
+				let r = data[ i * channels ], g = data[ i * channels + 1 ], b = data[ i * channels + 2 ];
+				if ( is8bit ) {
+
+					r = srgbToLinear( r / 255 ); g = srgbToLinear( g / 255 ); b = srgbToLinear( b / 255 );
+
+				}
+
+				lum[ i ] = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+			}
+
+		} else {
+
+			const srcW = image.naturalWidth || image.videoWidth || image.width;
+			const srcH = image.naturalHeight || image.videoHeight || image.height;
+			if ( ! srcW || ! srcH ) return null;
+			w = Math.min( 256, srcW );
+			h = Math.min( 128, srcH );
+			const canvas = document.createElement( 'canvas' );
+			canvas.width = w;
+			canvas.height = h;
+			const ctx = canvas.getContext( '2d' );
+			ctx.drawImage( image, 0, 0, w, h );
+			const data = ctx.getImageData( 0, 0, w, h ).data;
+			lum = new Float32Array( w * h );
+
+			for ( let i = 0; i < w * h; i ++ ) {
+
+				lum[ i ] = 0.2126 * srgbToLinear( data[ i * 4 ] / 255 ) + 0.7152 * srgbToLinear( data[ i * 4 + 1 ] / 255 ) + 0.0722 * srgbToLinear( data[ i * 4 + 2 ] / 255 );
+
+			}
+
+		}
+
+		// Row 0 of the table is v = 0 (y = -1). With flipY the image's first row is v = 1.
+		if ( texture.flipY ) {
+
+			const flipped = new Float32Array( w * h );
+			for ( let i = 0; i < h; i ++ ) flipped.set( lum.subarray( ( h - 1 - i ) * w, ( h - i ) * w ), i * w );
+			lum = flipped;
+
+		}
+
+		return new EnvImportanceTable( lum, w, h );
+
+	}
+
+	/** Draws a direction for the 2D sample (u1, u2) into `out`; returns its pdf per solid angle. */
+	sample( u1, u2, out ) {
+
+		const w = this.w, h = this.h;
+		let i = lowerBound( this.rowCdf, 0, h, u1 );
+		if ( i >= h ) i = h - 1;
+		const r0 = i > 0 ? this.rowCdf[ i - 1 ] : 0;
+		const r1 = this.rowCdf[ i ];
+		const xi = r1 > r0 ? Math.min( 0.999999, ( u1 - r0 ) / ( r1 - r0 ) ) : 0.5;
+		const base = i * w;
+		let j = lowerBound( this.condCdf, base, base + w, u2 ) - base;
+		if ( j >= w ) j = w - 1;
+		const c0 = j > 0 ? this.condCdf[ base + j - 1 ] : 0;
+		const c1 = this.condCdf[ base + j ];
+		const zeta = c1 > c0 ? Math.min( 0.999999, ( u2 - c0 ) / ( c1 - c0 ) ) : 0.5;
+		const v = ( i + xi ) / h;
+		const u = ( j + zeta ) / w;
+		const lat = ( v - 0.5 ) * Math.PI;
+		const lon = ( u - 0.5 ) * 2 * Math.PI;
+		const cosLat = Math.cos( lat );
+		out.set( cosLat * Math.cos( lon ), Math.sin( lat ), cosLat * Math.sin( lon ) );
+		return this._pdfCell( i, j );
+
+	}
+
+	/** Pdf per solid angle of an arbitrary direction. */
+	pdf( dir ) {
+
+		const v = Math.asin( Math.max( - 1, Math.min( 1, dir.y ) ) ) / Math.PI + 0.5;
+		let u = Math.atan2( dir.z, dir.x ) / ( 2 * Math.PI ) + 0.5;
+		if ( u < 0 ) u += 1;
+		if ( u >= 1 ) u -= 1;
+		const i = Math.min( this.h - 1, Math.floor( v * this.h ) );
+		const j = Math.min( this.w - 1, Math.floor( u * this.w ) );
+		return this._pdfCell( i, j );
+
+	}
+
+	_pdfCell( i, j ) {
+
+		const cosLat = Math.max( Math.cos( ( ( i + 0.5 ) / this.h - 0.5 ) * Math.PI ), 1e-4 );
+		return this.weights[ i * this.w + j ] / this.total / ( cosLat * this.dLat * this.dLon );
+
+	}
+
+}
+
+/** First index in [lo, hi) whose cdf value is >= u. */
+function lowerBound( cdf, lo, hi, u ) {
+
+	while ( lo < hi ) {
+
+		const mid = ( lo + hi ) >> 1;
+		if ( cdf[ mid ] < u ) lo = mid + 1;
+		else hi = mid;
+
+	}
+
+	return lo;
 
 }
 

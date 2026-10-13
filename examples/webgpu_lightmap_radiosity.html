@@ -65,6 +65,9 @@
 				'Array Camera': directions,
 				'5×5 Gather': true,
 				'Max History': 0,
+				'Importance Sampling': true,
+				'Max Samples': 0,
+				'Fade In': 0,
 				'Light Intensity': 0.5,
 				'Sky Sphere': true,
 				'Walls & Ceiling': true,
@@ -108,7 +111,10 @@
 					directions: directions,
 					tileResolution: 512,
 					gatherRadius: params[ '5×5 Gather' ] ? 2 : 1,
-					maxHistory: params[ 'Max History' ]
+					maxHistory: params[ 'Max History' ],
+					maxSamples: params[ 'Max Samples' ],
+					envSampling: params[ 'Importance Sampling' ] ? 'importance' : 'uniform',
+					fadeInSamples: params[ 'Fade In' ]
 				} );
 
 				// Cornell box (no scene lights — the only source is the emissive panel)
@@ -185,7 +191,13 @@
 				// the whole scene; the lightmapper captures it as a far, all-directions
 				// source (within the array camera's far plane) without widening the ortho
 				// frusta. Disabled by default — toggled from the GUI.
-				const skyTexture = new THREE.TextureLoader().load( 'textures/equirectangular/spruit_sunrise_2k.hdr.jpg' );
+				// Once decoded, the same texture feeds the importance-sampling table so
+				// the bright sun region gets the directions it deserves.
+				const skyTexture = new THREE.TextureLoader().load( 'textures/equirectangular/spruit_sunrise_2k.hdr.jpg', ( tex ) => {
+
+					lightmap.setEnvironmentImportance( tex );
+
+				} );
 				skyTexture.colorSpace = THREE.SRGBColorSpace;
 
 				// Sample the equirectangular map by the sphere's surface direction so it
@@ -263,6 +275,14 @@
 				gui.add( params, 'Max History', 0, 2000, 1 ).onChange( ( value ) => {
 
 					lightmap._maxHistory = value;
+					lightmap.reset();
+
+				} );
+				gui.add( params, 'Importance Sampling' ).onChange( ( value ) => lightmap.setEnvSampling( value ? 'importance' : 'uniform' ) );
+				gui.add( params, 'Max Samples', 0, 40000, 100 ).name( 'Max Samples (0 = ∞)' ).onChange( ( value ) => lightmap.setMaxSamples( value ) );
+				gui.add( params, 'Fade In', 0, 5000, 50 ).name( 'Fade In (samples)' ).onChange( ( value ) => {
+
+					lightmap.setFadeIn( value );
 					lightmap.reset();
 
 				} );
