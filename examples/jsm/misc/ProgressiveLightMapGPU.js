@@ -997,6 +997,9 @@ class ProgressiveLightMap {
 		const renderer = this.renderer;
 		const w = 128, h = 64;
 
+		// addEnvironment() usually runs during scene setup, before the backend is up.
+		if ( renderer.hasInitialized !== undefined && renderer.hasInitialized() === false ) await renderer.init();
+
 		if ( this._environmentTableRT === null ) {
 
 			this._environmentTableRT = new RenderTarget( w, h, { type: FloatType, minFilter: NearestFilter, magFilter: NearestFilter, generateMipmaps: false, depthBuffer: false } );
@@ -1273,28 +1276,22 @@ class ProgressiveLightMap {
 		const pixelOffset = float( 0.5 ).div( float( this.resolution ) ).toVar();
 
 		// Average only the valid (written) neighbours: including cleared texels
-		// would pull the seams toward black, and NaN texels are dropped.
-		const color = Fn( () => {
+		// would pull the seams toward black, and NaN texels are dropped. Pure
+		// node arithmetic (no inline Fn/If) so it needs no layout.
+		const offsets = [[ 1, 0 ], [ 0, 1 ], [ 0, - 1 ], [ - 1, 0 ], [ 1, 1 ], [ - 1, 1 ], [ 1, - 1 ], [ - 1, - 1 ]];
+		let sum = vec4( 0 );
+		let count = float( 0 );
 
-			const sum = vec4( 0 ).toVar();
-			const count = float( 0 ).toVar();
-			const offsets = [[ 1, 0 ], [ 0, 1 ], [ 0, - 1 ], [ - 1, 0 ], [ 1, 1 ], [ - 1, 1 ], [ 1, - 1 ], [ - 1, - 1 ]];
+		for ( const [ ox, oy ] of offsets ) {
 
-			for ( const [ ox, oy ] of offsets ) {
+			const s = this._saneNode( this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset.mul( ox ), pixelOffset.mul( oy ) ) ) ) ).toVar();
+			const valid = s.a.greaterThan( 0 ).toVar();
+			sum = sum.add( select( valid, s, vec4( 0 ) ) ).toVar();
+			count = count.add( select( valid, float( 1 ), float( 0 ) ) ).toVar();
 
-				const s = this._saneNode( this._previousShadowMap.sample( uvNode.add( vec2( pixelOffset.mul( ox ), pixelOffset.mul( oy ) ) ) ) ).toVar();
-				If( s.a.greaterThan( 0 ), () => {
+		}
 
-					sum.addAssign( s );
-					count.addAssign( 1 );
-
-				} );
-
-			}
-
-			return select( count.greaterThan( 0 ), sum.div( count ), vec4( 0 ) );
-
-		} )();
+		const color = select( count.greaterThan( 0 ), sum.div( max( count, 1 ) ), vec4( 0 ) );
 
 		blurMaterial.fragmentNode = color;
 
