@@ -46,7 +46,6 @@
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { ProgressiveLightMap } from 'three/addons/misc/ProgressiveLightMapGPU.js';
 
-			const lightMapRes = 2048;
 			const profileReadout = document.getElementById( 'profile-readout' );
 
 			let camera, scene, renderer, controls, lightmap, sky, lightPanel;
@@ -59,14 +58,20 @@
 			const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test( navigator.userAgent );
 			const directions = isMobile ? 4 : 16;
 
+			// Phones also get a smaller lightmap and illumination tiles, the 3×3 gather
+			// and a sample budget, so the solve converges in a few seconds and the
+			// GPU idles afterwards (a 2048² map with a 5×5 gather is ~400 M taps/bounce).
+			const lightMapRes = isMobile ? 1024 : 2048;
+			const tileResolution = isMobile ? 256 : 512;
+
 			const params = {
 				'Enable': true,
 				'Blur Edges': true,
 				'Array Camera': directions,
-				'5×5 Gather': true,
+				'5×5 Gather': ! isMobile,
 				'Max History': 0,
 				'Importance Sampling': true,
-				'Max Samples': 0,
+				'Max Samples': isMobile ? 4000 : 0,
 				'Fade In': 0,
 				'Light Intensity': 0.5,
 				'Sky Sphere': true,
@@ -87,7 +92,7 @@
 				// renderer
 
 				renderer = new THREE.WebGPURenderer( { antialias: true } );
-				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setPixelRatio( isMobile ? Math.min( window.devicePixelRatio, 2 ) : window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
 				renderer.setAnimationLoop( animate );
 				renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -109,7 +114,7 @@
 				lightmap = new ProgressiveLightMap( renderer, lightMapRes, {
 					radiosity: true,
 					directions: directions,
-					tileResolution: 512,
+					tileResolution: tileResolution,
 					gatherRadius: params[ '5×5 Gather' ] ? 2 : 1,
 					maxHistory: params[ 'Max History' ],
 					maxSamples: params[ 'Max Samples' ],
