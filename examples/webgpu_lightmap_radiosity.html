@@ -191,11 +191,11 @@
 				// the whole scene; the lightmapper captures it as a far, all-directions
 				// source (within the array camera's far plane) without widening the ortho
 				// frusta. Disabled by default — toggled from the GUI.
-				// Once decoded, the same texture feeds the importance-sampling table so
-				// the bright sun region gets the directions it deserves.
-				const skyTexture = new THREE.TextureLoader().load( 'textures/equirectangular/spruit_sunrise_2k.hdr.jpg', ( tex ) => {
+				// The importance-sampling table is rendered from the sky's radiance node;
+				// rebuild it once the texture has decoded so the sun gets its directions.
+				const skyTexture = new THREE.TextureLoader().load( 'textures/equirectangular/spruit_sunrise_2k.hdr.jpg', () => {
 
-					lightmap.setEnvironmentImportance( tex );
+					lightmap.updateEnvironmentImportance();
 
 				} );
 				skyTexture.colorSpace = THREE.SRGBColorSpace;

@@ -1,5 +1,5 @@
 import { BackSide, Box3, BufferAttribute, Color, DoubleSide, FloatType, HalfFloatType, LinearFilter, NearestFilter, ArrayCamera, OrthographicCamera, Matrix4, Quaternion, Sphere, Vector2, Vector3, Vector4, PlaneGeometry, Mesh, RenderTarget, Scene, MeshBasicNodeMaterial, MeshPhongNodeMaterial, NodeMaterial } from 'three/webgpu';
-import { any, attribute, cameraIndex, dot, float, Fn, hash, If, int, length, Loop, max, mix, normalWorld, output, positionWorld, screenCoordinate, select, sub, texture, uniform, uniformArray, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { any, attribute, cameraIndex, dot, equirectUV, float, Fn, hash, If, int, length, Loop, max, mix, normalWorld, output, positionLocal, positionWorld, screenCoordinate, select, sub, texture, uniform, uniformArray, uv, vec2, vec3, vec4 } from 'three/tsl';
 
 import { potpack } from '../libs/potpack.module.js';
 
@@ -247,6 +247,8 @@ class ProgressiveLightMap {
 			this._gatherMaterial.dispose();
 			this._displayMaterial.dispose();
 			if ( this._environmentMaterial !== null ) this._environmentMaterial.dispose();
+			if ( this._environmentTableMaterial !== null ) this._environmentTableMaterial.dispose();
+			if ( this._environmentTableRT !== null ) this._environmentTableRT.dispose();
 
 		}
 
@@ -674,9 +676,10 @@ class ProgressiveLightMap {
 	}
 
 	/**
-	 * Builds the importance-sampling distribution from an equirectangular texture
-	 * (the same mapping as TSL's `equirectUV`, so it matches a sky sphere textured
-	 * with it). Pass `null` to go back to uniform sampling.
+	 * Overrides the importance-sampling distribution with one built on the CPU
+	 * from an equirectangular texture (same mapping as TSL's `equirectUV`).
+	 * Normally not needed: {@link ProgressiveLightMap#addEnvironment} builds the
+	 * table from the radiance node itself. Pass `null` to drop the table (uniform sampling).
 	 *
 	 * @param {?Texture} texture - Equirectangular environment texture (image or data texture).
 	 */
@@ -962,6 +965,106 @@ class ProgressiveLightMap {
 		this._environmentRadiance = radianceNode;
 		this._environmentMaterial = this._createEnvironmentMaterial( radianceNode );
 
+		// Importance-sampling table: the sky mesh is unwrapped into an equirect
+		// render target with the SAME radiance node, so any node (texture,
+		// gradient, procedural) works and no separate texture is needed.
+		if ( this._environmentTableMaterial !== null ) this._environmentTableMaterial.dispose();
+		this._environmentTableMaterial = new NodeMaterial();
+		this._environmentTableMaterial.side = DoubleSide;
+		this._environmentTableMaterial.depthTest = false;
+		this._environmentTableMaterial.depthWrite = false;
+		this._environmentTableMaterial.vertexNode = vec4( equirectUV( positionLocal.normalize() ).mul( 2 ).sub( 1 ), 0, 1 );
+		this._environmentTableMaterial.outputNode = vec4( radianceNode, 1 );
+
+		this.updateEnvironmentImportance();
+
+		this.reset();
+
+	}
+
+	/**
+	 * (Re)builds the importance-sampling table from the environment's radiance
+	 * node by rendering the unwrapped sky mesh into a small equirect target and
+	 * reading it back (asynchronously). Call it again when the radiance changes,
+	 * e.g. once a sky texture has finished loading.
+	 *
+	 * @return {Promise<void>} Resolves when the table is in use.
+	 */
+	async updateEnvironmentImportance() {
+
+		if ( this.radiosity !== true || this._environment === null || this._environmentTableMaterial === null ) return;
+
+		const renderer = this.renderer;
+		const w = 128, h = 64;
+
+		if ( this._environmentTableRT === null ) {
+
+			this._environmentTableRT = new RenderTarget( w, h, { type: FloatType, minFilter: NearestFilter, magFilter: NearestFilter, generateMipmaps: false, depthBuffer: false } );
+
+		}
+
+		const env = this._environment;
+		const oldParent = env.parent;
+		const oldMaterial = env.material;
+		const oldFrustumCulled = env.frustumCulled;
+		const oldVisible = env.visible;
+		const currentRenderTarget = renderer.getRenderTarget();
+		const currentClearAlpha = renderer.getClearAlpha();
+		renderer.getClearColor( this._clearColor );
+
+		let buffer = null;
+
+		try {
+
+			env.material = this._environmentTableMaterial;
+			env.frustumCulled = false;
+			env.visible = true;
+			this._environmentTableScene.add( env );
+
+			renderer.setClearColor( 0x000000, 0 );
+			renderer.setRenderTarget( this._environmentTableRT );
+			renderer.clear();
+			renderer.render( this._environmentTableScene, this._environmentTableCamera );
+			renderer.setRenderTarget( currentRenderTarget );
+			renderer.setClearColor( this._clearColor, currentClearAlpha );
+
+			buffer = await renderer.readRenderTargetPixelsAsync( this._environmentTableRT, 0, 0, w, h );
+
+		} catch ( e ) {
+
+			console.warn( 'THREE.ProgressiveLightMap: environment importance table failed, using uniform sampling.', e );
+			buffer = null;
+
+		} finally {
+
+			env.material = oldMaterial;
+			env.frustumCulled = oldFrustumCulled;
+			env.visible = oldVisible;
+			if ( oldParent !== null ) oldParent.add( env ); else this._environmentTableScene.remove( env );
+
+		}
+
+		if ( buffer === null ) return;
+
+		const lum = new Float32Array( w * h );
+		// WebGPU render targets read back top row first (v = 1); WebGL bottom row first.
+		const topFirst = renderer.backend !== undefined && renderer.backend.isWebGPUBackend === true;
+
+		for ( let i = 0; i < h; i ++ ) {
+
+			const src = topFirst ? h - 1 - i : i;
+
+			for ( let j = 0; j < w; j ++ ) {
+
+				const k = ( src * w + j ) * 4;
+				lum[ i * w + j ] = 0.2126 * buffer[ k ] + 0.7152 * buffer[ k + 1 ] + 0.0722 * buffer[ k + 2 ];
+
+			}
+
+		}
+
+		this._importanceTable = new EnvImportanceTable( lum, w, h );
+		this._rebuildBaseDirections();
 		this.reset();
 
 	}
@@ -1312,6 +1415,10 @@ class ProgressiveLightMap {
 		this._environment = null;
 		this._environmentMaterial = null;
 		this._environmentRadiance = null;
+		this._environmentTableMaterial = null;
+		this._environmentTableRT = null;
+		this._environmentTableScene = new Scene();
+		this._environmentTableCamera = new OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
 		this._environmentRadius = 0;
 		this._environmentEnabled = false;
 		this._sceneCenter = uniform( new Vector3() );
