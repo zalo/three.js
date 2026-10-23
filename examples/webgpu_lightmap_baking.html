@@ -19,7 +19,7 @@
 				<a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a><span>Light Baking</span>
 			</div>
 
-			<small>Progressively bake Light Probe or VXGI diffuse irradiance into a UV atlas by <a href="https://ben3d.ca" target="_blank" rel="noopener">Ben Houston</a>.<br/><span id="status"></span></small>
+			<small>Progressively bake Light Probe, VXGI or Stochastic Radiosity diffuse irradiance into a UV atlas by <a href="https://ben3d.ca" target="_blank" rel="noopener">Ben Houston</a>.<br/><span id="status"></span></small>
 		</div>
 
 		<script type="importmap">
@@ -42,6 +42,9 @@
 			import { Inspector } from 'three/addons/inspector/Inspector.js';
 			import { LightProbeGrid } from 'three/addons/lighting/LightProbeGrid.js';
 			import { LightMapper } from 'three/addons/lighting/LightMapper.js';
+			import { LightMapDenoiser } from 'three/addons/lighting/LightMapDenoiser.js';
+			import { LightMapSeams } from 'three/addons/lighting/LightMapSeams.js';
+			import { StochasticRadiosity, radiosityIrradiance } from 'three/addons/lighting/StochasticRadiosity.js';
 			import { VXGIVolume } from 'three/addons/lighting/vxgi/VXGIVolume.js';
 			import { vxgiIrradiance } from 'three/addons/lighting/vxgi/VXGIIrradiance.js';
 			import { lightProbeGridIrradiance } from 'three/addons/tsl/lighting/LightProbeGridNode.js';
@@ -59,8 +62,8 @@
 			}
 
 			let camera, scene, renderer, controls, renderPipeline;
-			let light, meshes, materials, atlas, status;
-			let source, lightMapper, bakedPass, livePass, liveOutput;
+			let light, lightPanel, meshes, materials, atlas, status, outputControl;
+			let source, lightMapper, denoiser, stitcher, seams = null, bakedPass, livePass, liveOutput;
 			let needsBake = true;
 
 			// shifts the per-pixel cone noise of the live view every frame, like the light map samples
@@ -69,14 +72,17 @@
 
 			const params = {
 				output: 'Baked GI',
-				algorithm: 'VXGI',
-				resolution: 1024
+				algorithm: 'Stochastic Radiosity',
+				resolution: 1024,
+				denoise: true,
+				stitchSeams: true
 			};
 
 			// light probes are deterministic and only need a few samples to antialias the light map,
-			// the VXGI cones are rotated per sample and converge over more samples
+			// the VXGI cones and the radiosity directions are rotated per sample and converge over more samples
 
-			const bakeSamples = { 'Light Probe': 16, 'VXGI': 64 };
+			const bakeSamples = { 'Light Probe': 16, 'VXGI': 64, 'Stochastic Radiosity': 512 };
+			const frameSamples = { 'Light Probe': 1, 'VXGI': 1, 'Stochastic Radiosity': 4 };
 
 			init();
 
@@ -168,6 +174,13 @@
 				light.shadow.autoUpdate = false;
 				scene.add( light );
 
+				// Area light, whose direct light the radiosity bakes with soft shadows. Light probes and VXGI
+				// bake the indirect light of the point light instead, which stays live
+				lightPanel = new THREE.Mesh( new THREE.PlaneGeometry( 2, 2 ), new THREE.MeshStandardMaterial( { color: 0x000000, emissive: 0xffffff, emissiveIntensity: 20 } ) );
+				lightPanel.rotation.x = Math.PI / 2;
+				lightPanel.position.y = 4.99;
+				scene.add( lightPanel );
+
 				// Renderer
 
 				renderer = new THREE.WebGPURenderer( { antialias: true } );
@@ -204,9 +217,11 @@
 				// GUI
 
 				const gui = renderer.inspector.createParameters( 'Light Baking' );
-				gui.add( params, 'output', [ 'Baked GI', 'Live GI' ] ).name( 'Output' ).onChange( setOutput );
-				gui.add( params, 'algorithm', [ 'Light Probe', 'VXGI' ] ).name( 'GI Algorithm' ).onChange( requestBake );
+				outputControl = gui.add( params, 'output', [ 'Baked GI', 'Live GI' ] ).name( 'Output' ).onChange( setOutput );
+				gui.add( params, 'algorithm', [ 'Light Probe', 'VXGI', 'Stochastic Radiosity' ] ).name( 'GI Algorithm' ).onChange( requestBake );
 				gui.add( params, 'resolution', [ 256, 1024, 2048, 4096 ] ).name( 'Light Map Resolution' ).onChange( requestBake );
+				gui.add( params, 'denoise' ).name( 'Denoise' ).onChange( updateLightMap );
+				gui.add( params, 'stitchSeams' ).name( 'Stitch Seams' ).onChange( updateLightMap );
 				gui.add( { bake: requestBake }, 'bake' ).name( 'Re-Bake GI' );
 
 				window.addEventListener( 'resize', onWindowResize );
@@ -226,6 +241,8 @@
 				for ( const material of materials ) material.lightMap = null;
 
 				lightMapper?.dispose();
+				denoiser?.dispose();
+				stitcher?.dispose();
 				if ( liveOutput !== livePass ) liveOutput?.dispose();
 				livePass?.dispose();
 				source?.dispose();
@@ -234,8 +251,31 @@
 
 					const geometries = new Set( meshes.map( ( mesh ) => mesh.geometry ) );
 					atlas = unwrapUVs( scene, { resolution: params.resolution, padding: 3 } );
+					seams = null;
 
 					for ( const geometry of geometries ) geometry.dispose();
+
+				}
+
+				// the radiosity bakes the direct light of the area light, light probes and VXGI the indirect light
+				// of the point light
+
+				const areaLight = params.algorithm === 'Stochastic Radiosity';
+
+				light.visible = areaLight === false;
+				lightPanel.visible = areaLight;
+
+				// the radiosity sees the area light from a few directions per frame, too noisy for the live view
+
+				if ( areaLight ) {
+
+					params.output = 'Baked GI';
+					outputControl.setValue( params.output );
+					outputControl.hide();
+
+				} else {
+
+					outputControl.show();
 
 				}
 
@@ -250,7 +290,7 @@
 					irradiance = ( position, normal ) => lightProbeGridIrradiance( probes, position, normal );
 					source = probes;
 
-				} else {
+				} else if ( params.algorithm === 'VXGI' ) {
 
 					const volume = new VXGIVolume();
 					volume.update( renderer, scene );
@@ -260,12 +300,29 @@
 					irradiance = vxgiIrradiance( volume, { coneCount: 3 } );
 					source = volume;
 
+				} else {
+
+					// collects the scene and solves the bounces, which the light map gathers
+
+					const radiosity = new StochasticRadiosity();
+					radiosity.update( renderer, scene );
+
+					irradiance = radiosityIrradiance( radiosity );
+					source = radiosity;
+
 				}
 
-				// the light map accumulates one sample per frame in animate()
+				// the light map accumulates samples in animate(), with the variance of each texel for the denoiser
 
-				lightMapper = new LightMapper( renderer, atlas.resolution, irradiance );
+				lightMapper = new LightMapper( renderer, atlas.resolution, irradiance, { moments: true } );
 				lightMapper.addObjects( meshes );
+
+				// the baked light map is denoised and its seams are stitched. The seams stay the same while the
+				// atlas does
+
+				denoiser = new LightMapDenoiser( renderer, lightMapper );
+				stitcher = new LightMapSeams( renderer, lightMapper, { seams } );
+				seams = stitcher.seams;
 
 				for ( const material of materials ) material.lightMap = lightMapper.texture;
 
@@ -296,10 +353,47 @@
 
 				lightMapper.reset();
 
-				for ( const material of materials ) material.lightMapIntensity = live ? 0 : 1;
+				for ( const material of materials ) {
+
+					material.lightMap = lightMapper.texture;
+					material.lightMapIntensity = live ? 0 : 1;
+
+				}
 
 				renderPipeline.outputNode = live ? liveOutput : bakedPass;
 				renderPipeline.needsUpdate = true;
+
+			}
+
+			function getBakeSamples() {
+
+				return Math.min( bakeSamples[ params.algorithm ], lightMapper.maxSamples );
+
+			}
+
+			function updateLightMap() {
+
+				// the light map shows the raw samples while baking, and is denoised and stitched once it is baked
+
+				if ( lightMapper.samples < getBakeSamples() ) return;
+
+				let map = lightMapper.texture;
+
+				if ( params.denoise ) {
+
+					denoiser.update();
+					map = denoiser.texture;
+
+				}
+
+				if ( params.stitchSeams ) {
+
+					stitcher.update( map );
+					map = stitcher.texture;
+
+				}
+
+				for ( const material of materials ) material.lightMap = map;
 
 			}
 
@@ -323,7 +417,7 @@
 
 				}
 
-				const samples = bakeSamples[ params.algorithm ];
+				const samples = getBakeSamples();
 
 				if ( params.output === 'Live GI' ) {
 
@@ -332,8 +426,10 @@
 
 				} else if ( lightMapper.samples < samples ) {
 
-					lightMapper.update();
+					lightMapper.update( Math.min( frameSamples[ params.algorithm ], samples - lightMapper.samples ) );
 					status.textContent = `Baking ${ params.algorithm }: ${ lightMapper.samples } / ${ samples } samples`;
+
+					updateLightMap();
 
 				} else {
 

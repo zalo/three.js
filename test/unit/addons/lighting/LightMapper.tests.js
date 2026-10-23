@@ -1,4 +1,4 @@
-import { Group, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three/webgpu';
+import { FloatType, Group, HalfFloatType, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three/webgpu';
 import { vec3 } from 'three/tsl';
 import { LightMapper } from '../../../../examples/jsm/lighting/LightMapper.js';
 
@@ -21,6 +21,7 @@ export default QUnit.module( 'Addons', () => {
 				let bakedPosition;
 				const renderer = {
 					autoClear: true,
+					hasFeature: () => false,
 					getRenderTarget: () => null,
 					getActiveCubeFace: () => 0,
 					getActiveMipmapLevel: () => 0,
@@ -50,6 +51,23 @@ export default QUnit.module( 'Addons', () => {
 				mapper.dispose();
 				geometry.dispose();
 				material.dispose();
+
+			} );
+
+			QUnit.test( 'Sums samples and moments in float with float32-blendable, in half float without', assert => {
+
+				for ( const floatBlendable of [ true, false ] ) {
+
+					const renderer = { hasFeature: name => name === 'float32-blendable' && floatBlendable };
+					const mapper = new LightMapper( renderer, 32, () => vec3( 1 ), { moments: true } );
+
+					assert.strictEqual( mapper.sampleTexture.type, floatBlendable ? FloatType : HalfFloatType );
+					assert.strictEqual( mapper.maxSamples, floatBlendable ? Infinity : 256 );
+					assert.strictEqual( mapper.momentTexture !== null, floatBlendable, 'half floats would overflow the sums of squares' );
+
+					mapper.dispose();
+
+				}
 
 			} );
 
