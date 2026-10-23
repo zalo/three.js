@@ -35,7 +35,11 @@ const FRAMES_IN_FLIGHT = 3;
 
 const FIRST_NOISE_CHECK = 8;
 
-const OPTIONS = [ 'algorithm', 'resolution', 'pageSize', 'padding', 'unwrap', 'ignoreOutlines', 'directional', 'specularIntensity', 'denoise', 'stitchSeams', 'noiseTolerance', 'maxSamples', 'samplesPerFrame', 'directLight', 'directions', 'cacheSize', 'probes', 'vxgiResolution' ];
+// the bounce passes of the light probes with multi-bounce
+
+const PROBE_BOUNCES = 3;
+
+const OPTIONS = [ 'algorithm', 'resolution', 'pageSize', 'padding', 'unwrap', 'ignoreOutlines', 'directional', 'specularIntensity', 'denoise', 'stitchSeams', 'noiseTolerance', 'maxSamples', 'samplesPerFrame', 'directLight', 'multiBounce', 'directions', 'cacheSize', 'probes', 'vxgiResolution' ];
 
 // the ray traced source needs three-mesh-bvh, so it is loaded on demand
 
@@ -241,6 +245,18 @@ class LightBaker {
 		 * @default 'live'
 		 */
 		this.directLight = 'live';
+
+		/**
+		 * Whether to include further cached indirect reflections. For directional, point and spot
+		 * lights, false bakes one indirect reflection. Environment and emissive transport can differ.
+		 * When true, radiosity iterates its bounce cache, light probes use three additional capture
+		 * passes, and VXGI uses two cached propagation passes. Quality and transport depth differ
+		 * between algorithms; this does not change direct light or the final bake sample count.
+		 *
+		 * @type {boolean}
+		 * @default true
+		 */
+		this.multiBounce = true;
 
 		/**
 		 * The directions per sample of the stochastic radiosity. More directions converge in fewer
@@ -774,6 +790,30 @@ class LightBaker {
 
 		} );
 
+		// a bounce pass of the light probes per frame, so that the page keeps rendering
+
+		if ( algorithm === 'probes' && this.multiBounce ) {
+
+			const probes = this.source;
+
+			for ( let pass = 1; pass <= PROBE_BOUNCES; pass ++ ) {
+
+				await nextFrame();
+
+				if ( this.source !== probes ) throw new DOMException( 'The preparation was superseded by another one.', 'AbortError' );
+
+				this._withPreparedScene( () => this._bakeProbePass( probes, pass ) );
+
+			}
+
+			// Let the visible scene show the final pass before switching to light maps.
+
+			await nextFrame();
+
+			if ( this.source !== probes ) throw new DOMException( 'The preparation was superseded by another one.', 'AbortError' );
+
+		}
+
 		this._lightCopies = this.bakedLights.map( copyLight );
 
 		// the light map accumulates the samples. A directional light map also bakes the dominant
@@ -1066,6 +1106,8 @@ class LightBaker {
 
 		if ( ALGORITHMS.includes( this.algorithm ) === false ) throw new Error( `THREE.LightBaker: Unknown algorithm "${ this.algorithm }", use one of ${ ALGORITHMS.join( ', ' ) }.` );
 		if ( this.unwrap !== true && this.unwrap !== false && this.unwrap !== 'repack' ) throw new Error( `THREE.LightBaker: unwrap must be true, false or 'repack', not "${ this.unwrap }".` );
+		if ( typeof this.multiBounce !== 'boolean' ) throw new Error( 'THREE.LightBaker: multiBounce must be a boolean.' );
+
 		if ( this.directLight !== 'live' && this.directLight !== 'baked' ) throw new Error( `THREE.LightBaker: directLight must be 'live' or 'baked', not "${ this.directLight }".` );
 		if ( integer( this.resolution, 16 ) === false ) throw new Error( 'THREE.LightBaker: The resolution must be an integer of at least 16.' );
 		if ( integer( this.pageSize, 16 ) === false ) throw new Error( 'THREE.LightBaker: The page size must be an integer of at least 16.' );
@@ -1108,7 +1150,7 @@ class LightBaker {
 	 */
 	_getPrepareKey( scene, root ) {
 
-		return JSON.stringify( [ scene.uuid, root.uuid, this.algorithm, this.resolution, this.pageSize, this.padding, this.unwrap, this.ignoreOutlines, this.directLight, this.directions, this.cacheSize, this.probes, this.vxgiResolution ] );
+		return JSON.stringify( [ scene.uuid, root.uuid, this.algorithm, this.resolution, this.pageSize, this.padding, this.unwrap, this.ignoreOutlines, this.directLight, this.multiBounce, this.directions, this.cacheSize, this.probes, this.vxgiResolution ] );
 
 	}
 
@@ -1244,7 +1286,7 @@ class LightBaker {
 
 			const { RayTracedRadiosity, rayTracedRadiosityIrradiance } = _rayTracedRadiosity;
 
-			const radiosity = new RayTracedRadiosity( { cacheSize } );
+			const radiosity = new RayTracedRadiosity( { cacheSize, multiBounce: this.multiBounce, bounces: this.multiBounce ? 16 : 1 } );
 			radiosity.update( renderer, scene );
 
 			this.irradianceNode = rayTracedRadiosityIrradiance( radiosity );
@@ -1255,7 +1297,7 @@ class LightBaker {
 			// stochastic depth radiosity, the bounces are cached in a light map before baking. It captures a
 			// sky as a large unlit sphere around the scene
 
-			const radiosity = new StochasticRadiosity( { directions: this.directions, cacheSize } );
+			const radiosity = new StochasticRadiosity( { directions: this.directions, cacheSize, bounces: this.multiBounce ? 16 : 0 } );
 			const sky = createSkySphere( scene );
 
 			if ( sky !== null ) scene.add( sky );
@@ -1281,25 +1323,15 @@ class LightBaker {
 
 		} else if ( this.algorithm === 'probes' ) {
 
-			const { size, position, counts, near, far, cubemapSize } = this._getProbeGrid();
+			const { size, position, counts } = this._getProbeGrid();
 			const probes = new LightProbeGrid( size.x, size.y, size.z, ...counts );
 			probes.position.copy( position );
 			probes.updateBoundingBox();
+			probes.multiBounce = this.multiBounce;
 
-			// background colors are not part of the bake
+			// the direct light pass, prepare() captures the bounce passes in later frames
 
-			const background = scene.background;
-			if ( background !== null && background.isColor ) scene.background = null;
-
-			try {
-
-				probes.bake( renderer, scene, { cubemapSize, near, far } );
-
-			} finally {
-
-				scene.background = background;
-
-			}
+			this._bakeProbePass( probes, 0 );
 
 			this.irradianceNode = ( position, normal, sample, direction ) => {
 
@@ -1316,12 +1348,43 @@ class LightBaker {
 		} else {
 
 			const volume = new VXGIVolume( this.vxgiResolution );
+			volume.bounces = this.multiBounce ? 2 : 0;
 			volume.update( renderer, scene );
 
 			// three cones like webgpu_vxgi
 
 			this.irradianceNode = vxgiIrradiance( volume, { coneCount: 3 } );
 			this.source = volume;
+
+		}
+
+	}
+
+	/**
+	 * Captures one pass of the light probes. Each pass captures the previous one, keeping the feedback
+	 * independent of the probe order.
+	 *
+	 * @private
+	 * @param {LightProbeGrid} probes - The light probes.
+	 * @param {number} pass - The pass, 0 for direct light and one more for each bounce.
+	 */
+	_bakeProbePass( probes, pass ) {
+
+		const { near, far, cubemapSize } = this._getProbeGrid();
+		const scene = this.scene;
+
+		// background colors are not part of the bake
+
+		const background = scene.background;
+		if ( background !== null && background.isColor ) scene.background = null;
+
+		try {
+
+			probes.bake( this.renderer, scene, { cubemapSize, near, far, pass } );
+
+		} finally {
+
+			scene.background = background;
 
 		}
 
