@@ -1,5 +1,5 @@
 import { BackSide, BufferAttribute, BufferGeometry, DoubleSide, FloatType, HalfFloatType, Mesh, NodeMaterial, NoBlending, OrthographicCamera, QuadMesh, RendererUtils, RenderTarget, Scene, Vector2 } from 'three/webgpu';
-import { Fn, If, abs, attribute, dot, exp, float, ivec2, length, luminance, max, mrt, normalWorldGeometry, positionWorld, pow, round, screenCoordinate, sqrt, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
+import { Fn, If, abs, attribute, dot, exp, float, ivec2, length, luminance, max, mix, mrt, normalWorldGeometry, positionWorld, pow, round, screenCoordinate, sqrt, texture, uniform, uv, vec2, vec3, vec4 } from 'three/tsl';
 
 // the surface buffer is rasterized with these jitters, so that it covers the texels that
 // the first samples of the light mapper cover
@@ -24,7 +24,7 @@ let _rendererState;
  *
  * The filter removes the fine grain of the noise, so a denoised light map can be baked to a higher
  * noise tolerance. The noise that is correlated between texels, e.g. from directions shared by
- * all texels of a sample, is blotchy and stays.
+ * all texels of a sample, is blotchy, see {@link LightMapDenoiser#correlation} to filter it.
  *
  * ```js
  * const lightMapper = new LightMapper( renderer, size, irradiance, { moments: true } );
@@ -52,8 +52,9 @@ class LightMapDenoiser {
 	 * @param {number} [options.luminancePhi=3] - How many standard deviations of the noise luminance differences may span before texels stop being averaged.
 	 * @param {number} [options.normalPhi=64] - The exponent of the normal similarity weight.
 	 * @param {number} [options.planePhi=0.2] - The sine of the angle to the tangent plane at which neighbors lose most of their weight.
+	 * @param {number} [options.correlation=0] - How much of their noise neighboring texels share, see {@link LightMapDenoiser#correlation}.
 	 */
-	constructor( renderer, lightMapper, { iterations = 4, luminancePhi = 3, normalPhi = 64, planePhi = 0.2 } = {} ) {
+	constructor( renderer, lightMapper, { iterations = 4, luminancePhi = 3, normalPhi = 64, planePhi = 0.2, correlation = 0 } = {} ) {
 
 		/**
 		 * The renderer.
@@ -98,6 +99,19 @@ class LightMapDenoiser {
 		 * @type {UniformNode<float>}
 		 */
 		this.planePhi = uniform( planePhi );
+
+		/**
+		 * How much of their noise neighboring texels share, from 0 for independent noise, e.g. of rays
+		 * per texel, to 1 for noise that neighbors share, e.g. of the directions that all texels of a
+		 * {@link StochasticRadiosity} sample share. Averaging texels with independent noise reduces it,
+		 * so the noise estimate shrinks over the passes and the wider passes average less. Correlated
+		 * noise does not average out between neighbors, so its estimate is kept, and the wider passes
+		 * keep averaging the streaks of the noise. Since the estimate stays large, lower the
+		 * {@link LightMapDenoiser#luminancePhi} with it to keep details like contact shadows.
+		 *
+		 * @type {UniformNode<float>}
+		 */
+		this.correlation = uniform( correlation );
 
 		/**
 		 * The relative noise of the light map, the standard deviation of a texel over its value. It is only
@@ -365,6 +379,7 @@ class LightMapDenoiser {
 		const luminancePhi = this.luminancePhi;
 		const normalPhi = this.normalPhi;
 		const planePhi = this.planePhi;
+		const correlation = this.correlation;
 
 		const filter = Fn( () => {
 
@@ -433,6 +448,7 @@ class LightMapDenoiser {
 				const sumY = vec3( 0 ).toVar();
 				const noise = vec3( 0 ).toVar(); // sums of w w s s, times 1, x, y
 				const noiseSpread = vec3( 0 ).toVar(); // times x x, x y, y y
+				const deviations = vec3( 0 ).toVar(); // sums of w s, times 1, x, y
 
 				for ( let y = - 2; y <= 2; y ++ ) {
 
@@ -454,6 +470,7 @@ class LightMapDenoiser {
 							sumY.addAssign( value.rgb.mul( weight.mul( y ) ) );
 							noise.addAssign( vec3( deviation2, deviation2.mul( x ), deviation2.mul( y ) ) );
 							noiseSpread.addAssign( vec3( deviation2.mul( x * x ), deviation2.mul( x * y ), deviation2.mul( y * y ) ) );
+							deviations.addAssign( vec3( 1, x, y ).mul( weight.mul( value.a ) ) );
 
 						} );
 
@@ -474,7 +491,11 @@ class LightMapDenoiser {
 				const fitNoise = row.x.pow2().mul( noise.x ).add( row.y.pow2().mul( noiseSpread.x ) ).add( row.z.pow2().mul( noiseSpread.z ) )
 					.add( row.x.mul( row.y ).mul( noise.y ).mul( 2 ) ).add( row.x.mul( row.z ).mul( noise.z ).mul( 2 ) ).add( row.y.mul( row.z ).mul( noiseSpread.y ).mul( 2 ) );
 
-				result.assign( vec4( fit, sqrt( fitNoise.max( 0 ) ) ) );
+				// the noise of the fit if the noise of the taps were independent, and if it were shared
+
+				const sharedNoise = dot( row, deviations ).pow2();
+
+				result.assign( vec4( fit, sqrt( mix( fitNoise, sharedNoise, correlation ).max( 0 ) ) ) );
 
 			} );
 

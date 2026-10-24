@@ -81,8 +81,13 @@
 			// light probes are deterministic and only need a few samples to antialias the light map,
 			// the VXGI cones and the radiosity directions are rotated per sample and converge over more samples
 
-			const bakeSamples = { 'Light Probe': 16, 'VXGI': 64, 'Stochastic Radiosity': 512 };
+			const bakeSamples = { 'Light Probe': 16, 'VXGI': 64, 'Stochastic Radiosity': 1024 };
 			const frameSamples = { 'Light Probe': 1, 'VXGI': 1, 'Stochastic Radiosity': 4 };
+
+			// the radiosity converges in fewer samples with more directions per sample. Desktop GPUs render
+			// them at almost no extra cost, but they take memory and more time per sample on phones
+
+			const phone = window.matchMedia( '(pointer: coarse)' ).matches;
 
 			init();
 
@@ -304,7 +309,7 @@
 
 					// collects the scene and solves the bounces, which the light map gathers
 
-					const radiosity = new StochasticRadiosity();
+					const radiosity = new StochasticRadiosity( { directions: phone ? 16 : 64 } );
 					radiosity.update( renderer, scene );
 
 					irradiance = radiosityIrradiance( radiosity );
@@ -318,9 +323,10 @@
 				lightMapper.addObjects( meshes );
 
 				// the baked light map is denoised and its seams are stitched. The seams stay the same while the
-				// atlas does
+				// atlas does. All texels of a radiosity sample share its directions, so their noise is correlated,
+				// and a lower luminance threshold keeps the contact shadows
 
-				denoiser = new LightMapDenoiser( renderer, lightMapper );
+				denoiser = new LightMapDenoiser( renderer, lightMapper, params.algorithm === 'Stochastic Radiosity' ? { correlation: 1, luminancePhi: 2 } : {} );
 				stitcher = new LightMapSeams( renderer, lightMapper, { seams } );
 				seams = stitcher.seams;
 
