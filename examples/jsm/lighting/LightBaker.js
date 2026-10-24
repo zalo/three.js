@@ -783,12 +783,15 @@ class LightBaker {
 		this.lightMapper.addObjects( record.lightMapped );
 
 		// each page has its own denoiser and seams. Finding the seams takes a while, so they are reused while
-		// the meshes and their light map UVs and transforms stay the same, e.g. for another algorithm
+		// the meshes and their light map UVs and transforms stay the same, e.g. for another algorithm. The
+		// noise of stochastic radiosity is correlated, a lower luminance threshold keeps the contact shadows
 
 		const seamsKey = this._getSeamsKey();
 		const seams = seamsKey === this._seamsKey ? this._seams : [];
 
-		this._denoisers = this.lightMapper.pages.map( ( page, i ) => new LightMapDenoiser( this.renderer, this.lightMapper, { page: i } ) );
+		const denoise = this.algorithm === 'stochastic' ? { correlation: 1, luminancePhi: 2 } : {};
+
+		this._denoisers = this.lightMapper.pages.map( ( page, i ) => new LightMapDenoiser( this.renderer, this.lightMapper, { ...denoise, page: i } ) );
 		this._stitchers = this.lightMapper.pages.map( ( page, i ) => new LightMapSeams( this.renderer, this.lightMapper, { page: i, seams: seams[ i ] } ) );
 
 		this._seams = this._stitchers.map( ( stitcher ) => stitcher.seams );

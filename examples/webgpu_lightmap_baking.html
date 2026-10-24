@@ -863,7 +863,11 @@
 
 				// stochastic radiosity converges in fewer samples with more directions per sample, desktop GPUs
 				// render them at almost no extra cost, but they take memory and more time per sample on phones.
-				// A VXGI volume of 256³ takes about 700 MB of GPU memory, phones use 128³
+				// A VXGI volume of 256³ takes about 700 MB of GPU memory, phones use 128³. The emissive panel is
+				// small and bright, few of the directions that all texels of a stochastic radiosity sample share
+				// find it, so its blotchy noise bakes to a lower tolerance
+
+				const panelRadiosity = params.algorithm === 'Stochastic Radiosity' && world.lightPanel !== null;
 
 				lightBaker.setOptions( {
 					algorithm: algorithms[ params.algorithm ],
@@ -873,7 +877,8 @@
 					directions: phone ? 16 : 64,
 					cacheSize: params.algorithm === 'Stochastic Radiosity' ? world.cacheSize : 256,
 					probes: world.probes,
-					vxgiResolution: phone ? 128 : 256
+					vxgiResolution: phone ? 128 : 256,
+					noiseTolerance: panelRadiosity ? 0.014 : null
 				} );
 
 				// unwrapping a large model takes a moment
