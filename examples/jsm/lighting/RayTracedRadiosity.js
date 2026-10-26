@@ -1,5 +1,5 @@
-import { BackSide, Box3, BufferAttribute, BufferGeometry, ClampToEdgeWrapping, Color, DataUtils, DoubleSide, EquirectangularReflectionMapping, EquirectangularRefractionMapping, FrontSide, HalfFloatType, LinearMipmapLinearFilter, Matrix4, MirroredRepeatWrapping, Node, NodeMaterial, NodeUpdateType, QuadMesh, RendererUtils, RenderTarget, RepeatWrapping, SRGBColorSpace, StorageBufferAttribute, StructTypeNode, UnsignedByteType, Vector3, Vector4 } from 'three/webgpu';
-import { Fn, If, Loop, abs, asin, atan, cos, cross, dFdx, dFdy, dot, float, fract, hash, int, length, luminance, mix, nodeObject, normalize, pmremTexture, screenCoordinate, select, sin, smoothstep, sqrt, storage, texture, uint, uniform, uv, uvec2, vec2, vec3, vec4 } from 'three/tsl';
+import { BackSide, Box3, BufferAttribute, BufferGeometry, ClampToEdgeWrapping, Color, DoubleSide, EquirectangularReflectionMapping, EquirectangularRefractionMapping, FloatType, FrontSide, LinearMipmapLinearFilter, Matrix4, MirroredRepeatWrapping, Node, NodeMaterial, NodeUpdateType, QuadMesh, RendererUtils, RenderTarget, RepeatWrapping, SRGBColorSpace, StorageBufferAttribute, StructTypeNode, Vector3, Vector4 } from 'three/webgpu';
+import { Fn, If, Loop, abs, asin, atan, cos, cross, dFdx, dFdy, dot, float, fract, hash, instanceIndex, int, length, luminance, mix, nodeObject, normalize, pmremTexture, screenCoordinate, select, sin, smoothstep, sqrt, storage, texture, textureLoad, uint, uniform, uv, uvec2, vec2, vec3, vec4 } from 'three/tsl';
 import { BVHComputeData, bvhNodeBoundsStruct, bvhNodeStruct, intersectRayTriangle, rayIntersectionResultStruct, rayStruct, wgslTagCode, wgslTagFn } from 'three-mesh-bvh/webgpu';
 
 import { LightMapper } from './LightMapper.js';
@@ -23,10 +23,13 @@ let _rendererState;
 const R2 = [ 3242174889, 2447445414 ];
 const R3 = [ 3518319154, 2882110346, 2360945575 ];
 
-// latitude-longitude cells of the sky, sampled by their power
+// latitude-longitude cells of the sky, sampled by their power, which is measured with a grid of
+// directions per cell
 
 const SKY_COLUMNS = 128;
 const SKY_ROWS = 64;
+const SKY_CELLS = SKY_COLUMNS * SKY_ROWS;
+const SKY_GRID = 8;
 
 // vec4 items per material entry, emitter and analytic light, see _collect() and _createEmitters()
 
@@ -47,8 +50,8 @@ const ALPHA_BLEND = 2;
  * Approximates diffuse global illumination with ray traced radiosity. Every sample casts
  * cosine-distributed rays from each point through a {@link https://github.com/gkjohnson/three-mesh-bvh three-mesh-bvh}
  * BVH of the scene, and looks up the light leaving the hit surfaces in a light map of the bounces.
- * Emissive surfaces and a sky with data on the CPU, like the textures of HDRLoader and EXRLoader, are
- * also sampled directly with shadow rays, so small lights and suns converge quickly.
+ * Emissive surfaces and the sky are also sampled directly with shadow rays, so small lights and suns
+ * converge quickly.
  *
  * Further bounces are cached in a light map that `update()` solves iteratively, so the meshes need
  * light map UVs in `uv1`, e.g. generated with {@link unwrapUVs}.
@@ -195,6 +198,7 @@ class RayTracedRadiosity {
 		this._clear();
 		this._collect( scene );
 		this._createTextures( renderer );
+		this._createSky( renderer );
 		this._createTrace();
 
 		if ( this.bounces > 0 ) {
@@ -279,12 +283,10 @@ class RayTracedRadiosity {
 			this._environmentIntensity.value = scene.backgroundIntensity;
 			this._environmentInverseRotation.value.makeRotationFromEuler( scene.backgroundRotation );
 			this._environmentRotation.value.copy( this._environmentInverseRotation.value ).transpose();
-			this._sky = createSkyTable( background );
 
 		} else {
 
 			this._environment = null;
-			this._sky = null;
 
 		}
 
@@ -653,6 +655,121 @@ class RayTracedRadiosity {
 		material.dispose();
 
 		this._textures = target;
+
+	}
+
+	/**
+	 * Builds the table that samples the sky by the power of its latitude-longitude cells, measured on
+	 * the GPU from the radiance that the rays see. So any equirectangular or cube texture works, also
+	 * without data on the CPU, like the textures of TextureLoader and CubeTextureLoader, and render
+	 * targets. A cell stores its power and the sum of the powers of its row up to it. Then an item per
+	 * row stores the power of the row, the sum of the powers of the rows up to it, and the factor that
+	 * turns the power of a cell of the row into its density over the solid angle.
+	 *
+	 * @private
+	 * @param {WebGPURenderer} renderer - The renderer.
+	 */
+	_createSky( renderer ) {
+
+		const environment = this._environment;
+
+		if ( environment === null ) return;
+
+		const attribute = new StorageBufferAttribute( new Float32Array( ( SKY_CELLS + SKY_ROWS ) * 4 ), 4 );
+		const table = storage( attribute, 'vec4', SKY_CELLS + SKY_ROWS );
+
+		// the power of a cell is its mean luminance times its solid angle, from a grid of directions that
+		// are distributed over the solid angle like the shadow rays, see _gather()
+
+		const target = new RenderTarget( SKY_COLUMNS, SKY_ROWS, { type: FloatType, depthBuffer: false } );
+		const material = new NodeMaterial();
+
+		material.fragmentNode = Fn( () => {
+
+			const cell = vec2( uvec2( screenCoordinate.xy ) ).toVar();
+			const lower = sin( cell.y.div( SKY_ROWS ).sub( 0.5 ).mul( Math.PI ) ).toVar();
+			const upper = sin( cell.y.add( 1 ).div( SKY_ROWS ).sub( 0.5 ).mul( Math.PI ) ).toVar();
+			const sum = float( 0 ).toVar();
+
+			Loop( SKY_GRID, SKY_GRID, ( { i, j } ) => {
+
+				const phi = cell.x.add( float( i ).add( 0.5 ).div( SKY_GRID ) ).div( SKY_COLUMNS ).sub( 0.5 ).mul( 2 * Math.PI ).toVar();
+				const z = mix( lower, upper, float( j ).add( 0.5 ).div( SKY_GRID ) ).toVar();
+				const r = sqrt( z.mul( z ).oneMinus().max( 0 ) );
+
+				sum.addAssign( luminance( pmremTexture( environment, vec3( r.mul( cos( phi ) ), z, r.mul( sin( phi ) ) ), float( 0 ) ).rgb ) );
+
+			} );
+
+			return vec4( sum.mul( upper.sub( lower ).mul( 2 * Math.PI / ( SKY_COLUMNS * SKY_GRID * SKY_GRID ) ) ), 0, 0, 1 );
+
+		} )();
+
+		const quad = new QuadMesh( material );
+
+		_rendererState = RendererUtils.resetRendererState( renderer, _rendererState );
+
+		renderer.setRenderTarget( target );
+		quad.render( renderer );
+
+		RendererUtils.restoreRendererState( renderer, _rendererState );
+
+		// the sums of the powers along the rows, then over the rows. Invalid and infinite powers count as none
+
+		const sumRows = Fn( () => {
+
+			const row = instanceIndex;
+			const sum = float( 0 ).toVar();
+
+			Loop( SKY_COLUMNS, ( { i } ) => {
+
+				const power = textureLoad( target.texture, uvec2( i, row ) ).x.toVar();
+				const value = select( power.greaterThan( 0 ).and( power.lessThan( 1e30 ) ), power, float( 0 ) ).toVar();
+
+				sum.addAssign( value );
+				table.element( row.mul( SKY_COLUMNS ).add( uint( i ) ) ).assign( vec4( value, sum, 0, 0 ) );
+
+			} );
+
+			table.element( row.add( SKY_CELLS ) ).assign( vec4( sum, 0, 0, 0 ) );
+
+		} )().compute( SKY_ROWS );
+
+		const sumSky = Fn( () => {
+
+			const total = float( 0 ).toVar();
+
+			Loop( SKY_ROWS, ( { i } ) => {
+
+				const item = table.element( uint( i ).add( SKY_CELLS ) );
+
+				total.addAssign( item.x );
+				item.assign( vec4( item.x, total, 0, 0 ) );
+
+			} );
+
+			// the density of a cell is its share of the total power over its solid angle
+
+			Loop( SKY_ROWS, ( { i } ) => {
+
+				const item = table.element( uint( i ).add( SKY_CELLS ) );
+				const row = float( i );
+				const solidAngle = sin( row.add( 1 ).div( SKY_ROWS ).sub( 0.5 ).mul( Math.PI ) ).sub( sin( row.div( SKY_ROWS ).sub( 0.5 ).mul( Math.PI ) ) ).mul( 2 * Math.PI / SKY_COLUMNS );
+
+				item.assign( vec4( item.xy, select( total.greaterThan( 0 ), float( 1 ).div( total.mul( solidAngle ) ), float( 0 ) ), 0 ) );
+
+			} );
+
+		} )().compute( 1 );
+
+		renderer.compute( [ sumRows, sumSky ] );
+
+		sumRows.dispose();
+		sumSky.dispose();
+		material.dispose();
+		target.dispose();
+
+		this._sky = storage( attribute, 'vec4', SKY_CELLS + SKY_ROWS ).toReadOnly();
 
 	}
 
@@ -1226,7 +1343,35 @@ class RayTracedRadiosity {
 			const column = int( atan( local.z, local.x ).div( 2 * Math.PI ).add( 0.5 ).mul( SKY_COLUMNS ) ).clamp( 0, SKY_COLUMNS - 1 );
 			const row = int( asin( local.y.clamp( - 1, 1 ) ).div( Math.PI ).add( 0.5 ).mul( SKY_ROWS ) ).clamp( 0, SKY_ROWS - 1 );
 
-			return sky.element( row.mul( SKY_COLUMNS ).add( column ) ).z;
+			return sky.element( row.mul( SKY_COLUMNS ).add( column ) ).x.mul( sky.element( row.add( SKY_CELLS ) ).z );
+
+		};
+
+		// the first of the items of the sky table from an offset whose sum of powers exceeds a target, by
+		// a binary search of a power of two items
+
+		const searchSky = ( offset, count, target ) => {
+
+			const low = int( 0 ).toVar();
+			const high = int( count - 1 ).toVar();
+
+			Loop( Math.log2( count ), () => {
+
+				const middle = low.add( high ).shiftRight( 1 ).toVar();
+
+				If( sky.element( middle.add( offset ) ).y.greaterThan( target ), () => {
+
+					high.assign( middle );
+
+				} ).Else( () => {
+
+					low.assign( middle.add( 1 ) );
+
+				} );
+
+			} );
+
+			return low;
 
 		};
 
@@ -1477,21 +1622,24 @@ class RayTracedRadiosity {
 
 				}
 
-				// shadow ray to the sky, to a cell picked by its power with the alias table and a uniformly
-				// distributed direction in the cell
+				// shadow ray to the sky, to a cell picked by its power, first its row and then its column by the
+				// sums of the powers, and a uniformly distributed direction in the cell
 
 				if ( sky !== null ) {
 
 					const v = fract( skyOffset.add( vec3( float( n.mul( R3[ 0 ] ) ), float( n.mul( R3[ 1 ] ) ), float( n.mul( R3[ 2 ] ) ) ).mul( 2 ** - 32 ) ) ).toVar();
 
-					const scaled = v.x.mul( SKY_COLUMNS * SKY_ROWS ).toVar();
-					const index = int( scaled ).min( SKY_COLUMNS * SKY_ROWS - 1 ).toVar();
-					const alias = sky.element( index ).toVar();
-					const cell = select( fract( scaled ).lessThan( alias.x ), index, int( alias.y ) ).toVar();
-					const density = sky.element( cell ).z.toVar();
+					const target = v.x.mul( sky.element( SKY_CELLS + SKY_ROWS - 1 ).y ).toVar();
+					const rowIndex = searchSky( SKY_CELLS, SKY_ROWS, target ).toVar();
+					const rowItem = sky.element( rowIndex.add( SKY_CELLS ) ).toVar();
 
-					const column = float( cell.mod( SKY_COLUMNS ) );
-					const row = float( cell.div( SKY_COLUMNS ) );
+					target.subAssign( rowItem.y.sub( rowItem.x ) );
+
+					const columnIndex = searchSky( rowIndex.mul( SKY_COLUMNS ), SKY_COLUMNS, target ).toVar();
+					const density = sky.element( rowIndex.mul( SKY_COLUMNS ).add( columnIndex ) ).x.mul( rowItem.z ).toVar();
+
+					const column = float( columnIndex );
+					const row = float( rowIndex );
 					const phi = column.add( v.y ).div( SKY_COLUMNS ).sub( 0.5 ).mul( 2 * Math.PI ).toVar();
 					const z = mix( sin( row.div( SKY_ROWS ).sub( 0.5 ).mul( Math.PI ) ), sin( row.add( 1 ).div( SKY_ROWS ).sub( 0.5 ).mul( Math.PI ) ), v.z ).toVar();
 					const r = sqrt( z.mul( z ).oneMinus().max( 0 ) );
@@ -1914,114 +2062,6 @@ function vec4Storage( data ) {
 	array.set( data );
 
 	return storage( new StorageBufferAttribute( array, 4 ), 'vec4', array.length / 4 ).toReadOnly();
-
-}
-
-/**
- * Builds the alias table that samples a sky by the power of its latitude-longitude cells, see
- * "A Linear Algorithm for Generating Random Numbers with a Given Distribution" (Vose, 1991).
- * Every cell stores the probability to keep it, its alias and its density over the solid angle.
- *
- * @private
- * @param {Texture} environment - The sky texture.
- * @return {?StorageBufferNode} The table, or `null` if the texture data is not available on the CPU.
- */
-function createSkyTable( environment ) {
-
-	const image = environment.image;
-
-	if ( environment.isCubeTexture === true || image === null || image === undefined || ! image.data ) return null;
-
-	const { data, width, height } = image;
-	const channels = data.length / ( width * height );
-
-	if ( channels !== 3 && channels !== 4 ) return null;
-
-	const read = environment.type === HalfFloatType ? ( i ) => DataUtils.fromHalfFloat( data[ i ] ) : environment.type === UnsignedByteType ? ( i ) => data[ i ] / 255 : ( i ) => data[ i ];
-
-	// the mean luminance of the cells, the rows go up like the texture coordinates of equirectUV()
-
-	const cells = SKY_COLUMNS * SKY_ROWS;
-	const power = new Float64Array( cells );
-	const counts = new Uint32Array( cells );
-
-	for ( let y = 0; y < height; y ++ ) {
-
-		const v = environment.flipY ? 1 - ( y + 0.5 ) / height : ( y + 0.5 ) / height;
-		const row = Math.min( Math.floor( v * SKY_ROWS ), SKY_ROWS - 1 );
-
-		for ( let x = 0; x < width; x ++ ) {
-
-			const i = ( y * width + x ) * channels;
-			const cell = row * SKY_COLUMNS + Math.min( Math.floor( ( x + 0.5 ) / width * SKY_COLUMNS ), SKY_COLUMNS - 1 );
-
-			power[ cell ] += 0.2126 * read( i ) + 0.7152 * read( i + 1 ) + 0.0722 * read( i + 2 );
-			counts[ cell ] ++;
-
-		}
-
-	}
-
-	// the power of a cell is its mean luminance times its solid angle
-
-	const solidAngles = new Float64Array( SKY_ROWS );
-
-	for ( let row = 0; row < SKY_ROWS; row ++ ) {
-
-		solidAngles[ row ] = 2 * Math.PI / SKY_COLUMNS * ( Math.sin( ( ( row + 1 ) / SKY_ROWS - 0.5 ) * Math.PI ) - Math.sin( ( row / SKY_ROWS - 0.5 ) * Math.PI ) );
-
-	}
-
-	let total = 0;
-
-	for ( let i = 0; i < cells; i ++ ) {
-
-		const value = counts[ i ] > 0 ? power[ i ] / counts[ i ] * solidAngles[ Math.floor( i / SKY_COLUMNS ) ] : 0;
-
-		power[ i ] = value > 0 && Number.isFinite( value ) ? value : 0;
-		total += power[ i ];
-
-	}
-
-	if ( total === 0 ) return null;
-
-	// cells less likely than average are kept with their scaled probability and otherwise replaced by
-	// a more likely alias, which gives away the remaining probability
-
-	const table = new Float32Array( cells * 4 );
-	const scaled = new Float64Array( cells );
-	const small = [], large = [];
-
-	for ( let i = 0; i < cells; i ++ ) {
-
-		scaled[ i ] = power[ i ] / total * cells;
-		table[ i * 4 + 2 ] = power[ i ] / total / solidAngles[ Math.floor( i / SKY_COLUMNS ) ];
-
-		( scaled[ i ] < 1 ? small : large ).push( i );
-
-	}
-
-	while ( small.length > 0 && large.length > 0 ) {
-
-		const less = small.pop();
-		const more = large.pop();
-
-		table[ less * 4 ] = scaled[ less ];
-		table[ less * 4 + 1 ] = more;
-
-		scaled[ more ] += scaled[ less ] - 1;
-		( scaled[ more ] < 1 ? small : large ).push( more );
-
-	}
-
-	for ( const i of small.concat( large ) ) {
-
-		table[ i * 4 ] = 1;
-		table[ i * 4 + 1 ] = i;
-
-	}
-
-	return vec4Storage( table );
 
 }
 
