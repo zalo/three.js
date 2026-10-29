@@ -43,7 +43,7 @@ export default QUnit.module( 'Addons', () => {
 				assert.strictEqual( baker.samples, 0 );
 				assert.false( baker.converged, 'A bake that has not started has not converged' );
 
-				const maxSamples = { stochastic: 8192, ray: 1024, probes: 16, vxgi: 256 };
+				const maxSamples = { stochastic: 8192, ray: 1024, probes: 16, vxgi: 256, cascades: 1024, cascadesRaster: 1024 };
 
 				for ( const algorithm in maxSamples ) {
 

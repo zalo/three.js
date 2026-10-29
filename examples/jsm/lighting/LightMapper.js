@@ -12,7 +12,6 @@ const NOISE_BLOCK = 16;
 const _uvTransforms = /*@__PURE__*/ new WeakMap();
 const _identity = /*@__PURE__*/ new Vector4( 1, 1, 0, 0 );
 
-let _rendererState;
 
 /**
  * Bakes indirect diffuse irradiance into a light map. The irradiance is defined by a
@@ -66,8 +65,11 @@ class LightMapper {
 	 * @param {boolean} [options.moments=false] - Whether to also sum the squared sample luminances into {@link LightMapper#momentTexture}, e.g. for a {@link LightMapDenoiser}. Requires the 'float32-blendable' renderer feature.
 	 * @param {boolean} [options.directional=false] - Whether to also bake the dominant direction of the incident light into {@link LightMapper#directionTexture}.
 	 * @param {number} [options.pages=1] - The number of light map pages, each one of `size`, e.g. the `pages` of {@link unwrapUVs}.
+	 * @param {?function(Node<float>): Node<float>} [options.sampleWeight=null] - Returns the weight of a sample by its index, `1` by
+	 * default. Sources that return their estimate of all samples so far, e.g. {@link RadianceCascades} that accumulate their rays,
+	 * weigh the later samples higher. The moments are not weighted.
 	 */
-	constructor( renderer, size, irradianceNode, { lights = [], moments = false, directional = false, pages = 1 } = {} ) {
+	constructor( renderer, size, irradianceNode, { lights = [], moments = false, directional = false, pages = 1, sampleWeight = null } = {} ) {
 
 		/**
 		 * The renderer.
@@ -180,6 +182,10 @@ class LightMapper {
 
 		this._camera = new OrthographicCamera();
 		this._objects = [];
+
+		// the renderer state of each light mapper, light mappers can update others from their samples
+
+		this._rendererState = undefined;
 		this._proxies = [];
 		this._jitter = uniform( new Vector2() );
 		this._sample = uniform( 0 );
@@ -189,6 +195,7 @@ class LightMapper {
 		this._uvTransform = uniform( new Vector4() ).onObjectUpdate( ( { object } ) => _uvTransforms.get( object ) ?? _identity );
 
 		this._lights = lights;
+		this._sampleWeight = sampleWeight;
 		this._frontMaterial = this._createBakeMaterial( irradianceNode, false, lights );
 		this._backMaterial = this._createBakeMaterial( irradianceNode, true, lights );
 
@@ -361,7 +368,7 @@ class LightMapper {
 
 		samples = Math.min( samples, this.maxSamples - this.samples );
 
-		_rendererState = RendererUtils.resetRendererState( renderer, _rendererState );
+		this._rendererState = RendererUtils.resetRendererState( renderer, this._rendererState );
 
 		renderer.autoClear = false;
 		renderer.setClearColor( 0x000000, 0 );
@@ -423,7 +430,7 @@ class LightMapper {
 
 		}
 
-		RendererUtils.restoreRendererState( renderer, _rendererState );
+		RendererUtils.restoreRendererState( renderer, this._rendererState );
 
 	}
 
@@ -458,7 +465,7 @@ class LightMapper {
 
 		if ( previous > 0 && added === 0 ) return this._noise;
 
-		_rendererState = RendererUtils.resetRendererState( renderer, _rendererState );
+		this._rendererState = RendererUtils.resetRendererState( renderer, this._rendererState );
 
 		for ( const page of this._pages ) {
 
@@ -470,7 +477,7 @@ class LightMapper {
 
 		}
 
-		RendererUtils.restoreRendererState( renderer, _rendererState );
+		RendererUtils.restoreRendererState( renderer, this._rendererState );
 
 		this._snapshotSamples = this.samples;
 
@@ -630,7 +637,7 @@ class LightMapper {
 		material.depthTest = false;
 		material.depthWrite = false;
 
-		// additive blending, the sample count accumulates in alpha
+		// additive blending, the sample count, or the sum of the sample weights, accumulates in alpha
 
 		material.blending = CustomBlending;
 		material.blendSrc = OneFactor;
@@ -661,7 +668,10 @@ class LightMapper {
 		} )();
 
 		// the squared luminance of each sample accumulates in a second target, for variance estimates,
-		// and the directions in another one
+		// and the directions in another one. Weighted samples weigh all of them
+
+		const weight = this._sampleWeight !== null ? this._sampleWeight( this._sample ) : null;
+		const weigh = ( value ) => weight !== null ? vec4( value.rgb.mul( weight ), weight ) : value;
 
 		const outputs = ( value ) => {
 
@@ -669,9 +679,10 @@ class LightMapper {
 
 			const members = { output: value };
 
-			const moment = this.momentTexture !== null ? luminance( value.rgb ).pow2() : 0;
+			const moment = this.momentTexture !== null ? luminance( value.rgb ).pow2().div( value.a ) : 0;
+			const directions = lightDirection !== null ? direction.add( lightDirection ) : direction;
 
-			if ( direction !== null ) members.direction = vec4( lightDirection !== null ? direction.add( lightDirection ) : direction, moment );
+			if ( direction !== null ) members.direction = vec4( weight !== null ? directions.mul( weight ) : directions, moment );
 			else if ( this.momentTexture !== null ) members.moment = moment;
 
 			return mrt( members );
@@ -685,13 +696,13 @@ class LightMapper {
 			material.lightsNode = lights( directLights ).context( { positionView: modelViewMatrix.mul( positionLocal ).xyz.toVarying() } );
 			material.normalNode = flipNormal ? normalViewGeometry.negate() : normalViewGeometry;
 			material.emissiveNode = irradiance.div( Math.PI );
-			material.outputNode = vec4( output.rgb.mul( Math.PI ), 1 );
+			material.outputNode = weigh( vec4( output.rgb.mul( Math.PI ), 1 ) );
 			if ( this.momentTexture !== null || direction !== null ) material.mrtNode = outputs( material.outputNode );
 			if ( lightDirection !== null ) material.setupLightingModel = () => new DirectionalLambertLightingModel( lightDirection );
 
 		} else {
 
-			material.fragmentNode = outputs( vec4( irradiance, 1 ) );
+			material.fragmentNode = outputs( weigh( vec4( irradiance, 1 ) ) );
 
 		}
 

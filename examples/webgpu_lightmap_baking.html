@@ -19,7 +19,7 @@
 				<a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a><span>Light Baking</span>
 			</div>
 
-			<small>Bake Stochastic Radiosity, Ray Radiosity (<a href="https://github.com/gkjohnson/three-mesh-bvh" target="_blank" rel="noopener">three-mesh-bvh</a>), Light Probe or VXGI into denoised directional light maps of these scenes or your own glTF, with the light mapper by <a href="https://ben3d.ca" target="_blank" rel="noopener">Ben Houston</a>, or into the vertices.<br/><span id="status"></span><span id="warning" style="display: block; color: #ffc040;"></span></small>
+			<small>Bake Stochastic Radiosity, Ray Radiosity (<a href="https://github.com/gkjohnson/three-mesh-bvh" target="_blank" rel="noopener">three-mesh-bvh</a>), Radiance Cascades, Light Probe or VXGI into denoised directional light maps of these scenes or your own glTF, with the light mapper by <a href="https://ben3d.ca" target="_blank" rel="noopener">Ben Houston</a>, or into the vertices.<br/><span id="status"></span><span id="warning" style="display: block; color: #ffc040;"></span></small>
 		</div>
 
 		<script type="importmap">
@@ -67,7 +67,7 @@
 			let world, materials, status, warning, lightBaker;
 			let busy = false, bakePending = false, bakeController = null, bakeId = 0;
 			let capture = null, captureBakeId = - 1, previewBakeId = - 1, captureStatus = '', probeMaterialKey = '';
-			let gltfLoader = null, gltfSky = null, sceneControl, resolutionControl, subdivisionControl, refineControl, simplifyControl, wireframeControl;
+			let gltfLoader = null, gltfSky = null, sceneControl, algorithmControl, targetControl, resolutionControl, subdivisionControl, refineControl, simplifyControl, wireframeControl;
 			let framesInFlight = 0;
 
 			const worlds = {};
@@ -97,7 +97,7 @@
 			// below 2%, or after a maximum of samples per algorithm, and bakes several cheap samples of the
 			// stochastic radiosity per frame
 
-			const algorithms = { 'Stochastic Radiosity': 'stochastic', 'Ray Radiosity': 'ray', 'Light Probe': 'probes', 'VXGI': 'vxgi' };
+			const algorithms = { 'Stochastic Radiosity': 'stochastic', 'Ray Radiosity': 'ray', 'Radiance Cascades (BVH)': 'cascades', 'Radiance Cascades (Raster)': 'cascadesRaster', 'Light Probe': 'probes', 'VXGI': 'vxgi' };
 
 			// the light is baked into light maps, or into the vertices of the meshes, which need no light map UVs.
 			// Vertex bakes gather the light at points all over the triangles and add it to their vertices
@@ -146,7 +146,7 @@
 				// eight, e.g. for a sky, lights and emissive meshes together
 
 				const adapter = await navigator.gpu?.requestAdapter();
-				const requiredLimits = adapter ? { maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage } : {};
+				const requiredLimits = adapter ? { maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage, maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize, maxBufferSize: adapter.limits.maxBufferSize } : {};
 
 				// at most twice the resolution of the page, three times on phones would take memory and GPU time
 				// from the bake
@@ -200,8 +200,8 @@
 				const gui = renderer.inspector.createParameters( 'Light Baking' );
 				gui.add( { openGLTF }, 'openGLTF' ).name( 'Open glTF…' ).info( 'or drop a .glb, or a .gltf with its files, onto the page' );
 				sceneControl = gui.add( params, 'scene', Object.keys( scenes ) ).name( 'Scene' ).onChange( setScene );
-				gui.add( params, 'algorithm', Object.keys( algorithms ) ).name( 'GI Algorithm' ).onChange( setAlgorithm );
-				gui.add( params, 'target', Object.keys( targets ) ).name( 'Bake Into' ).onChange( setTarget );
+				algorithmControl = gui.add( params, 'algorithm', Object.keys( algorithms ) ).name( 'GI Algorithm' ).onChange( setAlgorithm );
+				targetControl = gui.add( params, 'target', Object.keys( targets ) ).name( 'Bake Into' ).onChange( setTarget );
 				resolutionControl = gui.add( params, 'resolution', [ 256, 1024, 2048, 4096 ] ).name( 'Resolution' ).listen().onChange( changeSettings );
 				subdivisionControl = gui.add( params, 'subdivision', Object.keys( subdivisions ) ).name( 'Max Edge' ).info( 'the longest triangle edge of vertex bakes, relative to the size of the scene' ).onChange( changeSettings );
 				refineControl = gui.add( params, 'refine', [ 0, 1, 2, 3, 4, 5, 6 ] ).name( 'Refine' ).info( 'splits the edges of vertex bakes at the shadows, and bakes them again' ).onChange( changeSettings );
@@ -258,13 +258,33 @@
 
 			function setTarget() {
 
-				setPreset();
 				updateControls();
+
+				// radiance cascades bake no vertices, the change of the algorithm bakes
+
+				if ( params.algorithm.startsWith( 'Radiance Cascades' ) && params.target === 'Vertex Colors' ) {
+
+					algorithmControl.setValue( 'Ray Radiosity' );
+					return;
+
+				}
+
+				setPreset();
 				changeSettings();
 
 			}
 
 			function setAlgorithm() {
+
+				// radiance cascades gather their rays from the texels of light maps, they bake no vertices. The change
+				// of the target bakes
+
+				if ( params.algorithm.startsWith( 'Radiance Cascades' ) && params.target === 'Vertex Colors' ) {
+
+					targetControl.setValue( 'Light Maps' );
+					return;
+
+				}
 
 				setPreset();
 				changeSettings();
@@ -1000,10 +1020,10 @@
 
 				restoreVertices();
 
-				// both radiosity solvers bake the emissive panel of the Cornell Box, light probes and VXGI its live
-				// point light
+				// the radiosity solvers and the radiance cascades bake the emissive panel of the Cornell Box, light
+				// probes and VXGI its live point light
 
-				const emissive = params.algorithm === 'Ray Radiosity' || params.algorithm === 'Stochastic Radiosity';
+				const emissive = params.algorithm === 'Ray Radiosity' || params.algorithm === 'Stochastic Radiosity' || params.algorithm.startsWith( 'Radiance Cascades' );
 
 				if ( world.lightPanel !== null ) world.lightPanel.visible = emissive;
 				if ( world.light !== null ) world.light.visible = emissive === false;
@@ -1033,7 +1053,7 @@
 					pageSize: world.pageSize ?? 2048,
 					unwrap: world.unwrap ?? true,
 					directions: phone && vertex === false ? 16 : 64,
-					cacheSize: params.algorithm === 'Stochastic Radiosity' ? world.cacheSize : 256,
+					cacheSize: params.algorithm === 'Stochastic Radiosity' || params.algorithm === 'Radiance Cascades (Raster)' ? world.cacheSize : 256,
 					probes: world.probes,
 					vxgiResolution: phone ? 128 : 256,
 					noiseTolerance: panelRadiosity && vertex === false ? 0.014 : null

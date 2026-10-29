@@ -775,7 +775,17 @@ class StochasticRadiosity {
 
 		this._sampleKey = sampleKey;
 
-		const renderer = frame.renderer;
+		this._renderPass( frame.renderer );
+
+	}
+
+	/**
+	 * Rotates the directions and renders the illumination map.
+	 *
+	 * @private
+	 * @param {WebGPURenderer} renderer - The renderer.
+	 */
+	_renderPass( renderer ) {
 
 		this._pass ++;
 		this._seedNode.value = this._pass;
@@ -901,11 +911,6 @@ class StochasticRadiosity {
 	 */
 	_gather( positionNode, normalNode, directionNode = null, faceNormalNode = null ) {
 
-		const resolution = this.resolution;
-		const radius = this.gatherRadius;
-		const tilesX = this._tilesX;
-		const maxTexel = ivec2( resolution - 1 );
-
 		return Fn( () => {
 
 			const position = positionNode.toVar();
@@ -925,6 +930,7 @@ class StochasticRadiosity {
 
 			const irradiance = vec3( 0 ).toVar();
 			const lightDirection = directionNode !== null ? vec3( 0 ).toVar() : null;
+			const nearest = this._createNearest( position, faceNormal );
 
 			Loop( this.directions, ( { i } ) => {
 
@@ -933,51 +939,7 @@ class StochasticRadiosity {
 
 				If( cosine.greaterThan( 0 ), () => {
 
-					const basisU = this._basisUNode.element( i ).toVar();
-					const basisV = this._basisVNode.element( i ).toVar();
-					const size = this._sizeNode.element( i ).toVar();
-					const offset = position.sub( this._originNode.element( i ) ).toVar();
-					const depth = dot( offset, direction ).toVar();
-
-					// texel of the position in the tile of this direction, rows run top to bottom
-
-					const ndc = vec2( dot( offset, basisU ).div( size.x ), dot( offset, basisV ).div( size.y ).negate() );
-					const texel = ivec2( ndc.mul( 0.5 ).add( 0.5 ).mul( resolution ).floor() ).toVar();
-					const tile = ivec2( int( i ).mod( tilesX ), int( i ).div( tilesX ) ).mul( resolution ).toVar();
-
-					const nearest = float( 1e20 ).toVar();
-					const radiance = vec3( 0 ).toVar();
-
-					for ( let y = - radius; y <= radius; y ++ ) {
-
-						for ( let x = - radius; x <= radius; x ++ ) {
-
-							const coord = texel.add( ivec2( x, y ) ).clamp( ivec2( 0 ), maxTexel ).toVar();
-							const sample = this._illuminationNode.load( tile.add( coord ) ).toVar();
-
-							If( sample.a.greaterThan( 0.5 ), () => {
-
-								// reconstruct the surface from the texel center, relative to the position
-
-								const u = float( coord.x ).add( 0.5 ).div( resolution ).mul( 2 ).sub( 1 ).mul( size.x );
-								const v = float( coord.y ).add( 0.5 ).div( resolution ).mul( 2 ).sub( 1 ).mul( size.y ).negate();
-								const distance = sample.a.sub( 1 ).sub( depth ).toVar();
-								const delta = basisU.mul( u ).add( basisV.mul( v ) ).add( direction.mul( sample.a.sub( 1 ) ) ).sub( offset );
-
-								// keep the nearest surface ahead along the direction and in front of the receiver
-
-								If( distance.greaterThan( 0 ).and( distance.lessThan( nearest ) ).and( dot( delta, faceNormal ).greaterThan( this._biasNode ) ), () => {
-
-									nearest.assign( distance );
-									radiance.assign( sample.rgb );
-
-								} );
-
-							} );
-
-						}
-
-					}
+					const { radiance } = nearest( i );
 
 					radiance.mulAssign( cosine );
 					irradiance.addAssign( radiance );
@@ -995,6 +957,77 @@ class StochasticRadiosity {
 			return irradiance.mul( 4 * Math.PI / this.directions );
 
 		} )();
+
+	}
+
+	/**
+	 * Returns a function that finds the nearest surface in front of a point along a direction of the
+	 * illumination map: its distance, negative if there is none, and its outgoing radiance.
+	 *
+	 * @private
+	 * @param {Node<vec3>} position - The world-space position.
+	 * @param {Node<vec3>} faceNormal - The normal of the receiving face, surfaces behind its plane are ignored.
+	 * @return {function(Node<int>): {distance: Node<float>, radiance: Node<vec3>}} The search, by the index of the direction.
+	 */
+	_createNearest( position, faceNormal ) {
+
+		const resolution = this.resolution;
+		const radius = this.gatherRadius;
+		const tilesX = this._tilesX;
+		const maxTexel = ivec2( resolution - 1 );
+
+		return ( i ) => {
+
+			const direction = this._directionNode.element( i ).toVar();
+			const basisU = this._basisUNode.element( i ).toVar();
+			const basisV = this._basisVNode.element( i ).toVar();
+			const size = this._sizeNode.element( i ).toVar();
+			const offset = position.sub( this._originNode.element( i ) ).toVar();
+			const depth = dot( offset, direction ).toVar();
+
+			// texel of the position in the tile of this direction, rows run top to bottom
+
+			const ndc = vec2( dot( offset, basisU ).div( size.x ), dot( offset, basisV ).div( size.y ).negate() );
+			const texel = ivec2( ndc.mul( 0.5 ).add( 0.5 ).mul( resolution ).floor() ).toVar();
+			const tile = ivec2( int( i ).mod( tilesX ), int( i ).div( tilesX ) ).mul( resolution ).toVar();
+
+			const nearest = float( 1e20 ).toVar();
+			const radiance = vec3( 0 ).toVar();
+
+			for ( let y = - radius; y <= radius; y ++ ) {
+
+				for ( let x = - radius; x <= radius; x ++ ) {
+
+					const coord = texel.add( ivec2( x, y ) ).clamp( ivec2( 0 ), maxTexel ).toVar();
+					const sample = this._illuminationNode.load( tile.add( coord ) ).toVar();
+
+					If( sample.a.greaterThan( 0.5 ), () => {
+
+						// reconstruct the surface from the texel center, relative to the position
+
+						const u = float( coord.x ).add( 0.5 ).div( resolution ).mul( 2 ).sub( 1 ).mul( size.x );
+						const v = float( coord.y ).add( 0.5 ).div( resolution ).mul( 2 ).sub( 1 ).mul( size.y ).negate();
+						const distance = sample.a.sub( 1 ).sub( depth ).toVar();
+						const delta = basisU.mul( u ).add( basisV.mul( v ) ).add( direction.mul( sample.a.sub( 1 ) ) ).sub( offset );
+
+						// keep the nearest surface ahead along the direction and in front of the receiver
+
+						If( distance.greaterThan( 0 ).and( distance.lessThan( nearest ) ).and( dot( delta, faceNormal ).greaterThan( this._biasNode ) ), () => {
+
+							nearest.assign( distance );
+							radiance.assign( sample.rgb );
+
+						} );
+
+					} );
+
+				}
+
+			}
+
+			return { distance: select( nearest.lessThan( 1e19 ), nearest, float( - 1 ) ), radiance };
+
+		};
 
 	}
 

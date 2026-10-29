@@ -1720,6 +1720,133 @@ class RayTracedRadiosity {
 	}
 
 	/**
+	 * Returns the sky radiance in a world direction, times pi.
+	 *
+	 * @private
+	 * @param {Node<vec3>} direction - The direction.
+	 * @return {Node<vec3>} The radiance times pi.
+	 */
+	_skyRadiance( direction ) {
+
+		return pmremTexture( this._environment, this._environmentRotation.mul( direction ), float( 0 ) ).rgb.mul( this._environmentIntensity.mul( Math.PI ) );
+
+	}
+
+	/**
+	 * Returns the density of sampling a world direction by the sky table.
+	 *
+	 * @private
+	 * @param {Node<vec3>} direction - The direction.
+	 * @return {Node<float>} The density over the solid angle.
+	 */
+	_skyDensity( direction ) {
+
+		const local = this._environmentRotation.mul( direction ).xyz.toVar();
+		const column = int( atan( local.z, local.x ).div( 2 * Math.PI ).add( 0.5 ).mul( SKY_COLUMNS ) ).clamp( 0, SKY_COLUMNS - 1 );
+		const row = int( asin( local.y.clamp( - 1, 1 ) ).div( Math.PI ).add( 0.5 ).mul( SKY_ROWS ) ).clamp( 0, SKY_ROWS - 1 );
+
+		return this._sky.element( row.mul( SKY_COLUMNS ).add( column ) ).x.mul( this._sky.element( row.add( SKY_CELLS ) ).z );
+
+	}
+
+	/**
+	 * Returns the share of the incident light that a surface reflects towards a view direction: the diffuse color
+	 * under the specular layer of a dielectric, and the specular layer. The incident light is the share of
+	 * it from the dominant direction, by the length of the mean direction (1 from one direction, 2/3 from
+	 * all directions alike), reflected by GGX, and the rest from all directions alike, reflected by the
+	 * directional albedo of the specular layer, with multiple scattering like PhysicalLightingModel. The
+	 * directional albedo of GGX by the fit of "Physically Based Shading on Mobile" (Karis, 2014)
+	 *
+	 * @private
+	 * @param {Node<int>} entry - The material entry.
+	 * @param {Node<vec3>} albedo - The diffuse color.
+	 * @param {Node<vec3>} normal - The normal, on the side of the view.
+	 * @param {Node<vec3>} view - The direction towards the viewer.
+	 * @param {?Node<vec3>} meanDirection - The mean direction of the incident light, or null for light from all directions alike.
+	 * @return {Node<vec3>} The reflectance.
+	 */
+	_reflectance( entry, albedo, normal, view, meanDirection ) {
+
+		if ( this.specular === false ) return albedo;
+
+		const materials = this._materials;
+		const layer = materials.element( entry.mul( MATERIAL_STRIDE ).add( 11 ) ).toVar();
+		const roughness = layer.w.max( 0 ).toVar();
+		const cosView = dot( normal, view ).max( 1e-4 ).toVar();
+		const r = roughness.mul( vec4( - 1, - 0.0275, - 0.572, 0.022 ) ).add( vec4( 1, 0.0425, 1.04, - 0.04 ) ).toVar();
+		const a004 = r.x.mul( r.x ).min( exp2( cosView.mul( - 9.28 ) ) ).mul( r.x ).add( r.y );
+		const fab = vec2( - 1.04, 1.04 ).mul( a004 ).add( r.zw ).toVar();
+		const ems = fab.x.add( fab.y ).oneMinus().toVar();
+
+		const directionalAlbedo = ( f0 ) => {
+
+			const fssEss = f0.mul( fab.x ).add( fab.y );
+			const fAverage = f0.add( f0.oneMinus().mul( 0.047619 ) );
+			const fms = fssEss.mul( fAverage ).div( ems.mul( fAverage ).oneMinus() );
+
+			return fssEss.add( fms.mul( ems ) );
+
+		};
+
+		const spread = directionalAlbedo( layer.rgb ).toVar();
+
+		if ( meanDirection !== null ) {
+
+			// GGX with Smith's height-correlated visibility, times pi, towards the dominant direction. The
+			// roughness is at least 0.25, the direction is too coarse for sharper reflections
+
+			const meanLength = length( meanDirection ).toVar();
+			const share = meanLength.mul( 3 ).sub( 2 ).clamp( 0, 1 ).toVar();
+			const light = meanDirection.div( meanLength.max( 1e-8 ) ).toVar();
+			const cosLight = dot( normal, light ).toVar();
+			const half = normalize( light.add( view ) ).toVar();
+			const cosHalf = dot( normal, half ).max( 0 );
+			const alpha = roughness.max( 0.25 ).mul( roughness.max( 0.25 ) ).toVar();
+			const alphaSq = alpha.mul( alpha ).toVar();
+			const denominator = cosHalf.mul( cosHalf ).mul( alphaSq.sub( 1 ) ).add( 1 );
+			const distribution = alphaSq.div( denominator.mul( denominator ).max( 1e-8 ) );
+			const cosL = cosLight.max( 1e-4 );
+			const visibility = float( 0.5 ).div( cosL.mul( sqrt( cosView.mul( cosView ).mul( alphaSq.oneMinus() ).add( alphaSq ) ) ).add( cosView.mul( sqrt( cosL.mul( cosL ).mul( alphaSq.oneMinus() ).add( alphaSq ) ) ) ) );
+			const fresnel = layer.rgb.add( layer.rgb.oneMinus().mul( dot( light, half ).clamp( 0, 1 ).oneMinus().pow( 5 ) ) );
+			const lobe = select( cosLight.greaterThan( 0 ), fresnel.mul( visibility ).mul( distribution ), vec3( 0 ) );
+
+			spread.assign( mix( spread, lobe, share ) );
+
+		}
+
+		const layered = albedo.mul( directionalAlbedo( float( 0.04 ) ).oneMinus() ).add( spread );
+
+		return select( layer.w.lessThan( 0 ), albedo, layered );
+
+	}
+
+	/**
+	 * Returns the light leaving the visible side of a hit surface towards the ray, times pi: its reflectance
+	 * times the bounces of the light map cache.
+	 *
+	 * @private
+	 * @param {Node<vec4>} hit - The hit, see `_trace`.
+	 * @param {Node<vec3>} direction - The direction of the ray.
+	 * @param {Node<float>} lod - The level of detail of the material maps.
+	 * @return {Node<vec3>} The radiance times pi.
+	 */
+	_hitRadiance( hit, direction, lod ) {
+
+		if ( this._cache === null ) return vec3( 0 );
+
+		const materials = this._materials;
+		const entry = int( this._triangles.element( int( abs( hit.z ) ).sub( 1 ).mul( 3 ) ).w ).toVar();
+		const coords = this._surface( hit ).toVar();
+		const facing = select( hit.z.lessThan( 0 ), materials.element( entry.mul( MATERIAL_STRIDE ).add( 1 ) ).w, materials.element( entry.mul( MATERIAL_STRIDE ) ).w );
+		const color = this._textures !== null ? this._albedo( uint( entry ), coords.zw, lod ) : materials.element( entry.mul( MATERIAL_STRIDE ) ).rgb;
+		const albedo = this._vertexColors ? color.mul( this._vertexColor( hit ) ) : color;
+		const bounces = texture( this._cache.texture ).sample( coords.xy ).level( 0 ).rgb;
+
+		return this._reflectance( entry, albedo, this._faceNormal( hit, direction ), direction.negate(), null ).mul( bounces ).mul( facing );
+
+	}
+
+	/**
 	 * Returns the irradiance gathered with rays at a world-space position and normal.
 	 *
 	 * @private
@@ -1731,9 +1858,12 @@ class RayTracedRadiosity {
 	 * @param {?Node<vec3>} [options.faceNormal=null] - The world-space face normal, by default from the derivatives of the position.
 	 * @param {?Node<uint>} [options.seed=null] - A seed of the point, by default the pixel.
 	 * @param {?Node<float>} [options.inside=null] - A variable to add the share of rays to that hit back faces.
+	 * @param {boolean} [options.gatherRays=true] - Whether to cast the gathering rays, otherwise only the lights are sampled.
+	 * @param {boolean} [options.uniformRays=false] - Whether the gathering rays, which the sky samples are weighted against,
+	 * are distributed uniformly in the hemisphere rather than by the cosine, like the rays of {@link RadianceCascades}.
 	 * @return {Node<vec3>} The irradiance.
 	 */
-	_gather( positionNode, normalNode, analyticLights, directionNode = null, { faceNormal: faceNormalNode = null, seed: seedNode = null, inside: insideNode = null, smoothNormal: smoothNormalNode = null, bounces: forBounces = false } = {} ) {
+	_gather( positionNode, normalNode, analyticLights, directionNode = null, { faceNormal: faceNormalNode = null, seed: seedNode = null, inside: insideNode = null, smoothNormal: smoothNormalNode = null, bounces: forBounces = false, gatherRays = true, uniformRays = false } = {} ) {
 
 		const rays = this.rays;
 		const trace = this._trace;
@@ -1773,68 +1903,9 @@ class RayTracedRadiosity {
 
 		const albedoAt = ( entry, coord, lod ) => textured ? this._albedo( uint( entry ), coord, lod ) : materials.element( entry.mul( MATERIAL_STRIDE ) ).rgb;
 
-		// the share of the incident light that a surface reflects towards a view direction: the diffuse color
-		// under the specular layer of a dielectric, and the specular layer. The incident light is the share of
-		// it from the dominant direction, by the length of the mean direction (1 from one direction, 2/3 from
-		// all directions alike), reflected by GGX, and the rest from all directions alike, reflected by the
-		// directional albedo of the specular layer, with multiple scattering like PhysicalLightingModel. The
-		// directional albedo of GGX by the fit of "Physically Based Shading on Mobile" (Karis, 2014)
-
 		const specular = this.specular;
 
-		const reflectance = ( entry, albedo, normal, view, meanDirection ) => {
-
-			if ( specular === false ) return albedo;
-
-			const layer = materials.element( entry.mul( MATERIAL_STRIDE ).add( 11 ) ).toVar();
-			const roughness = layer.w.max( 0 ).toVar();
-			const cosView = dot( normal, view ).max( 1e-4 ).toVar();
-			const r = roughness.mul( vec4( - 1, - 0.0275, - 0.572, 0.022 ) ).add( vec4( 1, 0.0425, 1.04, - 0.04 ) ).toVar();
-			const a004 = r.x.mul( r.x ).min( exp2( cosView.mul( - 9.28 ) ) ).mul( r.x ).add( r.y );
-			const fab = vec2( - 1.04, 1.04 ).mul( a004 ).add( r.zw ).toVar();
-			const ems = fab.x.add( fab.y ).oneMinus().toVar();
-
-			const directionalAlbedo = ( f0 ) => {
-
-				const fssEss = f0.mul( fab.x ).add( fab.y );
-				const fAverage = f0.add( f0.oneMinus().mul( 0.047619 ) );
-				const fms = fssEss.mul( fAverage ).div( ems.mul( fAverage ).oneMinus() );
-
-				return fssEss.add( fms.mul( ems ) );
-
-			};
-
-			const spread = directionalAlbedo( layer.rgb ).toVar();
-
-			if ( meanDirection !== null ) {
-
-				// GGX with Smith's height-correlated visibility, times pi, towards the dominant direction. The
-				// roughness is at least 0.25, the direction is too coarse for sharper reflections
-
-				const meanLength = length( meanDirection ).toVar();
-				const share = meanLength.mul( 3 ).sub( 2 ).clamp( 0, 1 ).toVar();
-				const light = meanDirection.div( meanLength.max( 1e-8 ) ).toVar();
-				const cosLight = dot( normal, light ).toVar();
-				const half = normalize( light.add( view ) ).toVar();
-				const cosHalf = dot( normal, half ).max( 0 );
-				const alpha = roughness.max( 0.25 ).mul( roughness.max( 0.25 ) ).toVar();
-				const alphaSq = alpha.mul( alpha ).toVar();
-				const denominator = cosHalf.mul( cosHalf ).mul( alphaSq.sub( 1 ) ).add( 1 );
-				const distribution = alphaSq.div( denominator.mul( denominator ).max( 1e-8 ) );
-				const cosL = cosLight.max( 1e-4 );
-				const visibility = float( 0.5 ).div( cosL.mul( sqrt( cosView.mul( cosView ).mul( alphaSq.oneMinus() ).add( alphaSq ) ) ).add( cosView.mul( sqrt( cosL.mul( cosL ).mul( alphaSq.oneMinus() ).add( alphaSq ) ) ) ) );
-				const fresnel = layer.rgb.add( layer.rgb.oneMinus().mul( dot( light, half ).clamp( 0, 1 ).oneMinus().pow( 5 ) ) );
-				const lobe = select( cosLight.greaterThan( 0 ), fresnel.mul( visibility ).mul( distribution ), vec3( 0 ) );
-
-				spread.assign( mix( spread, lobe, share ) );
-
-			}
-
-			const layered = albedo.mul( directionalAlbedo( float( 0.04 ) ).oneMinus() ).add( spread );
-
-			return select( layer.w.lessThan( 0 ), albedo, layered );
-
-		};
+		const reflectance = ( entry, albedo, normal, view, meanDirection ) => this._reflectance( entry, albedo, normal, view, meanDirection );
 
 		const cacheDirections = vertexCache && specular ? texture( this._cache.directionTexture ) : null;
 
@@ -1891,17 +1962,8 @@ class RayTracedRadiosity {
 
 		// the sky radiance in a world direction, times pi, and the density of sampling it by the sky table
 
-		const skyRadiance = ( direction ) => pmremTexture( environment, this._environmentRotation.mul( direction ), float( 0 ) ).rgb.mul( this._environmentIntensity.mul( Math.PI ) );
-
-		const skyDensity = ( direction ) => {
-
-			const local = this._environmentRotation.mul( direction ).xyz.toVar();
-			const column = int( atan( local.z, local.x ).div( 2 * Math.PI ).add( 0.5 ).mul( SKY_COLUMNS ) ).clamp( 0, SKY_COLUMNS - 1 );
-			const row = int( asin( local.y.clamp( - 1, 1 ) ).div( Math.PI ).add( 0.5 ).mul( SKY_ROWS ) ).clamp( 0, SKY_ROWS - 1 );
-
-			return sky.element( row.mul( SKY_COLUMNS ).add( column ) ).x.mul( sky.element( row.add( SKY_CELLS ) ).z );
-
-		};
+		const skyRadiance = ( direction ) => this._skyRadiance( direction );
+		const skyDensity = ( direction ) => this._skyDensity( direction );
 
 		// the first of the items of the sky table from an offset whose sum of powers exceeds a target, by
 		// a binary search of a power of two items
@@ -1930,10 +1992,6 @@ class RayTracedRadiosity {
 			return low;
 
 		};
-
-		// power heuristic of two strategies with one sample each
-
-		const misWeight = ( density, otherDensity ) => density.mul( density ).div( density.mul( density ).add( otherDensity.mul( otherDensity ) ).max( 1e-20 ) );
 
 		return Fn( () => {
 
@@ -2020,7 +2078,7 @@ class RayTracedRadiosity {
 
 				// cosine-distributed gathering ray
 
-				if ( cache !== null || environment !== null || occlusion ) {
+				if ( gatherRays && ( cache !== null || environment !== null || occlusion ) ) {
 
 					const u = fract( offset.xy.add( vec2( float( n.mul( R2[ 0 ] ) ), float( n.mul( R2[ 1 ] ) ) ).mul( 2 ** - 32 ) ) ).toVar();
 					const radius = sqrt( u.x );
@@ -2280,7 +2338,7 @@ class RayTracedRadiosity {
 
 						If( transmittance.greaterThan( 0 ), () => {
 
-							const weight = misWeight( density, cosReceiver.div( Math.PI ) );
+							const weight = misWeight( density, uniformRays ? float( 0.5 / Math.PI ) : cosReceiver.div( Math.PI ) );
 							const light = skyRadiance( direction ).mul( cosReceiver.mul( weight ).mul( transmittance ).div( density.mul( Math.PI ) ) ).toVar();
 
 							direct.addAssign( light );
@@ -2908,4 +2966,121 @@ function vec4Storage( data ) {
 
 }
 
-export { RayTracedRadiosity, rayTracedRadiosityIrradiance };
+/**
+ * Returns the weight of the power heuristic of two strategies with one sample each.
+ *
+ * @private
+ * @param {Node<float>} density - The density of the sampled strategy.
+ * @param {Node<float>} otherDensity - The density of the other strategy.
+ * @return {Node<float>} The weight.
+ */
+function misWeight( density, otherDensity ) {
+
+	return density.mul( density ).div( density.mul( density ).add( otherDensity.mul( otherDensity ) ).max( 1e-20 ) );
+
+}
+
+/**
+ * Creates a ray source of {@link RadianceCascades} that traces rays through the BVH of a prepared
+ * {@link RayTracedRadiosity}. The rays see the cached bounces and the sky, the emitters and the sky are
+ * also sampled with shadow rays per texel, like the irradiance of the radiosity solver.
+ *
+ * @param {RayTracedRadiosity} radiosity - The prepared radiosity solver, with a light map cache.
+ * @param {Object} [options] - The options.
+ * @param {number} [options.rays=8] - The rays per texel and sample.
+ * @return {Object} The ray source.
+ */
+function rayTracedCascadeSource( radiosity, { rays = 8 } = {} ) {
+
+	const pass = uniform( 0, 'uint' );
+
+	return {
+
+		// the sequences of the rays and of the shadow rays continue over the samples
+
+		updateSample() {
+
+			pass.value ++;
+			radiosity._passNode.value = ++ radiosity._pass;
+			radiosity._biasNode.value = radiosity.bias;
+
+		},
+
+		trace( cascades, position, normal, faceNormal ) {
+
+			const environment = radiosity._environment;
+			const sky = environment !== null ? radiosity._sky : null;
+			const spread = Math.log2( Math.sqrt( Math.PI / ( 32 * rays ) ) );
+
+			const probes = cascades.probesAt( position, faceNormal );
+			const origin = position.add( faceNormal.mul( radiosity._biasNode ) ).toVar();
+
+			// one of nine random offsets of the sequence per texel
+
+			const pixel = uvec2( screenCoordinate.xy );
+			const seed = uint( hash( pixel.x.add( pixel.y.mul( 65536 ) ) ).mul( 9 ) ).min( 8 ).mul( 2 ).toVar();
+			const offset = vec2( hash( seed ), hash( seed.add( 1 ) ) ).toVar();
+
+			Loop( { start: 0, end: rays, type: 'uint', condition: '<', name: 'ray' }, ( { ray } ) => {
+
+				const direction = cascades.hemisphereDirection( faceNormal, pass.mul( rays ).add( ray ), offset ).toVar();
+				const hit = radiosity._trace( origin, direction, float( 0 ) ).toVar();
+				const radiance = vec3( 0 ).toVar();
+				const distance = float( - 1 ).toVar();
+
+				If( hit.z.notEqual( 0 ), () => {
+
+					radiance.assign( radiosity._hitRadiance( hit, direction, hit.w.add( spread ) ).div( Math.PI ) );
+					distance.assign( radiosity._hitDistance( hit, origin ) );
+
+				} ).Else( () => {
+
+					// rays that leave the scene see the sky, weighted against sampling it directly
+
+					if ( environment !== null ) {
+
+						const weight = sky !== null ? misWeight( float( 0.5 / Math.PI ), radiosity._skyDensity( direction ) ) : float( 1 );
+
+						radiance.assign( radiosity._skyRadiance( direction ).mul( weight.div( Math.PI ) ) );
+
+					}
+
+				} );
+
+				cascades.depositHit( probes, direction, distance, radiance, origin );
+
+			} );
+
+		},
+
+		// the hits closer than the probes, traced by each texel
+
+		nearHit( position, faceNormal, direction, maxDistance ) {
+
+			const origin = position.add( faceNormal.mul( radiosity._biasNode ) ).toVar();
+			const hit = radiosity._trace( origin, direction, maxDistance ).toVar();
+			const radiance = vec3( 0 ).toVar();
+			const transmittance = float( 1 ).toVar();
+
+			If( hit.z.notEqual( 0 ), () => {
+
+				radiance.assign( radiosity._hitRadiance( hit, direction, hit.w ).div( Math.PI ) );
+				transmittance.assign( 0 );
+
+			} );
+
+			return { radiance, transmittance };
+
+		},
+
+		direct( position, normal, direction ) {
+
+			return radiosity._gather( position, normal, false, direction, { gatherRays: false, uniformRays: true } );
+
+		}
+
+	};
+
+}
+
+export { RayTracedRadiosity, rayTracedRadiosityIrradiance, rayTracedCascadeSource };

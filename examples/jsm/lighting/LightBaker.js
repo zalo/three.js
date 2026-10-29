@@ -6,6 +6,7 @@ import { LightMapDenoiser } from './LightMapDenoiser.js';
 import { LightMapSeams } from './LightMapSeams.js';
 import { LightProbeGrid } from './LightProbeGrid.js';
 import { VertexLightMapper, imprintContacts, refineContacts, simplifyGeometry, subdivideGeometry, vertexLightMap } from './VertexLightMapper.js';
+import { RadianceCascades, RasterCascadeSource, radianceCascadesIrradiance } from './RadianceCascades.js';
 import { StochasticRadiosity, radiosityIrradiance } from './StochasticRadiosity.js';
 import { VXGIVolume } from './vxgi/VXGIVolume.js';
 import { vxgiIrradiance } from './vxgi/VXGIIrradiance.js';
@@ -14,7 +15,7 @@ import { directionalLightMap, instancedLightMap } from '../tsl/lighting/Directio
 import { unwrapUVs } from '../utils/unwrapUVs.js';
 import { mergeVertices } from '../utils/BufferGeometryUtils.js';
 
-const ALGORITHMS = [ 'stochastic', 'ray', 'probes', 'vxgi' ];
+const ALGORITHMS = [ 'stochastic', 'ray', 'probes', 'vxgi', 'cascades', 'cascadesRaster' ];
 const TARGETS = [ 'lightMap', 'vertex' ];
 
 // the bake stops once the estimated noise of the light map drops below the tolerance, which is checked
@@ -29,8 +30,8 @@ const NOISE_TOLERANCE = 0.02;
 // blotches, and vertex bakes need far fewer samples than light maps
 
 const VERTEX_NOISE_TOLERANCE = 0.01;
-const MAX_SAMPLES = { ray: 1024, stochastic: 8192, probes: 16, vxgi: 256 };
-const SAMPLES_PER_FRAME = { ray: 1, stochastic: 4, probes: 1, vxgi: 1 };
+const MAX_SAMPLES = { ray: 1024, stochastic: 8192, probes: 16, vxgi: 256, cascades: 1024, cascadesRaster: 1024 };
+const SAMPLES_PER_FRAME = { ray: 1, stochastic: 4, probes: 1, vxgi: 1, cascades: 1, cascadesRaster: 1 };
 
 // a sample of a vertex bake gathers at far fewer points than one of a light map
 
@@ -59,17 +60,18 @@ const VERTEX_CACHE_MAX_EDGE = 0.04;
 
 const REFINE_CONTRAST = 0.1;
 
-const OPTIONS = [ 'algorithm', 'target', 'maxEdgeLength', 'refine', 'simplify', 'resolution', 'pageSize', 'padding', 'unwrap', 'ignoreOutlines', 'directional', 'specularIntensity', 'denoise', 'stitchSeams', 'noiseTolerance', 'maxSamples', 'samplesPerFrame', 'directLight', 'directions', 'cacheSize', 'probes', 'vxgiResolution' ];
+const OPTIONS = [ 'algorithm', 'target', 'maxEdgeLength', 'refine', 'simplify', 'resolution', 'pageSize', 'padding', 'unwrap', 'ignoreOutlines', 'directional', 'specularIntensity', 'denoise', 'stitchSeams', 'noiseTolerance', 'maxSamples', 'samplesPerFrame', 'directLight', 'directions', 'cacheSize', 'probes', 'vxgiResolution', 'cascadeOptions' ];
 
 // the ray traced source needs three-mesh-bvh, so it is loaded on demand
 
 let _rayTracedRadiosity = null;
 
 /**
- * Bakes the global illumination of a scene into light maps, with one of four sources of indirect
+ * Bakes the global illumination of a scene into light maps, with one of six sources of indirect
  * light: `'stochastic'` for {@link StochasticRadiosity}, `'ray'` for {@link RayTracedRadiosity},
- * `'probes'` for a {@link LightProbeGrid} and `'vxgi'` for a {@link VXGIVolume}. It runs the whole
- * pipeline that the individual classes provide:
+ * `'cascades'` and `'cascadesRaster'` for {@link RadianceCascades} with the rays of a {@link RayTracedRadiosity}
+ * or of a {@link StochasticRadiosity}, `'probes'` for a {@link LightProbeGrid} and `'vxgi'` for a
+ * {@link VXGIVolume}. It runs the whole pipeline that the individual classes provide:
  *
  * - {@link unwrapUVs} generates the light map UVs in `uv1`, in pages of `pageSize` if `resolution`
  * exceeds it. `mesh.userData.lightMapScale` scales the texel density of a mesh. Textures that used the
@@ -142,7 +144,7 @@ class LightBaker {
 		this.renderer = renderer;
 
 		/**
-		 * The source of the indirect light: `'stochastic'`, `'ray'`, `'probes'` or `'vxgi'`.
+		 * The source of the indirect light: `'stochastic'`, `'ray'`, `'cascades'`, `'cascadesRaster'`, `'probes'` or `'vxgi'`.
 		 *
 		 * @type {string}
 		 * @default 'stochastic'
@@ -362,6 +364,15 @@ class LightBaker {
 		this.vxgiResolution = 256;
 
 		/**
+		 * The options of the {@link RadianceCascades} of the `'cascades'` and `'cascadesRaster'` algorithms, e.g.
+		 * `{ spacing: 4, directions: 4 }`.
+		 *
+		 * @type {Object}
+		 * @default {}
+		 */
+		this.cascadeOptions = {};
+
+		/**
 		 * The scene of the last bake.
 		 *
 		 * @type {?Scene}
@@ -379,7 +390,7 @@ class LightBaker {
 
 		/**
 		 * The source of the indirect light, a {@link StochasticRadiosity}, {@link RayTracedRadiosity},
-		 * {@link LightProbeGrid} or {@link VXGIVolume}.
+		 * {@link RadianceCascades}, {@link LightProbeGrid} or {@link VXGIVolume}.
 		 *
 		 * @type {?Object}
 		 * @readonly
@@ -889,7 +900,7 @@ class LightBaker {
 
 		const algorithm = this.algorithm;
 
-		if ( algorithm === 'ray' && _rayTracedRadiosity === null ) _rayTracedRadiosity = await import( './RayTracedRadiosity.js' );
+		if ( ( algorithm === 'ray' || algorithm === 'cascades' ) && _rayTracedRadiosity === null ) _rayTracedRadiosity = await import( './RayTracedRadiosity.js' );
 
 		this._stop();
 		this._disposeBake();
@@ -942,7 +953,7 @@ class LightBaker {
 
 			if ( object.isDirectionalLight || object.isPointLight || object.isSpotLight ) this.lights.push( object );
 			else if ( object.isHemisphereLight && algorithm === 'ray' && this.target === 'vertex' ) this.lights.push( object );
-			else if ( object.isRectAreaLight && ( algorithm === 'stochastic' || ( this.target === 'vertex' && this.directLight === 'baked' ) ) ) this._areaLights.push( object );
+			else if ( object.isRectAreaLight && ( algorithm === 'stochastic' || algorithm === 'cascadesRaster' || ( this.target === 'vertex' && this.directLight === 'baked' ) ) ) this._areaLights.push( object );
 
 		} );
 
@@ -992,7 +1003,13 @@ class LightBaker {
 		// the light map accumulates the samples. A directional light map also bakes the dominant
 		// direction of the light, so that normal maps show under baked light
 
-		this.lightMapper = new LightMapper( this.renderer, record.size, this.irradianceNode, { lights: this._lightCopies, moments: true, directional: this.directional, pages: record.pages } );
+		// radiance cascades that accumulate their rays return their estimate of all samples so far, which
+		// improves with the samples, so the later samples weigh more
+
+		const accumulate = this.source?.isRadianceCascades === true && this.source.accumulate;
+		const sampleWeight = accumulate ? ( sample ) => sample.add( 1 ) : null;
+
+		this.lightMapper = new LightMapper( this.renderer, record.size, this.irradianceNode, { lights: this._lightCopies, moments: accumulate === false, directional: this.directional, pages: record.pages, sampleWeight } );
 		this.lightMapper.addObjects( record.lightMapped );
 
 		// each page has its own denoiser and seams. Finding the seams takes a while, so they are reused while
@@ -1163,6 +1180,7 @@ class LightBaker {
 	reset() {
 
 		this.lightMapper?.reset();
+		if ( this.source?.isRadianceCascades === true ) this.source.restart();
 
 		this.noise = Infinity;
 		this.time = 0;
@@ -1349,6 +1367,7 @@ class LightBaker {
 		if ( ALGORITHMS.includes( this.algorithm ) === false ) throw new Error( `THREE.LightBaker: Unknown algorithm "${ this.algorithm }", use one of ${ ALGORITHMS.join( ', ' ) }.` );
 		if ( TARGETS.includes( this.target ) === false ) throw new Error( `THREE.LightBaker: Unknown target "${ this.target }", use one of ${ TARGETS.join( ', ' ) }.` );
 		if ( this.target === 'vertex' && this.directLight === 'baked' && this.algorithm !== 'ray' ) throw new Error( 'THREE.LightBaker: Vertex bakes only bake the direct light with the \'ray\' algorithm.' );
+		if ( this.target === 'vertex' && this.algorithm.startsWith( 'cascades' ) ) throw new Error( 'THREE.LightBaker: Radiance cascades only bake light maps.' );
 		if ( this.maxEdgeLength !== null && ! ( this.maxEdgeLength > 0 ) ) throw new Error( 'THREE.LightBaker: The maximum edge length must be positive or null.' );
 		if ( integer( this.refine, 0 ) === false ) throw new Error( 'THREE.LightBaker: The refinements must be an integer of at least 0.' );
 		if ( this.simplify !== null && ! ( this.simplify > 0 ) ) throw new Error( 'THREE.LightBaker: The simplification error must be positive or null.' );
@@ -1395,7 +1414,7 @@ class LightBaker {
 	 */
 	_getPrepareKey( scene, root ) {
 
-		return JSON.stringify( [ scene.uuid, root.uuid, this.algorithm, this.target, this.maxEdgeLength, this.refine, this.simplify, this.resolution, this.pageSize, this.padding, this.unwrap, this.ignoreOutlines, this.directLight, this.directions, this.cacheSize, this.probes, this.vxgiResolution ] );
+		return JSON.stringify( [ scene.uuid, root.uuid, this.algorithm, this.target, this.maxEdgeLength, this.refine, this.simplify, this.resolution, this.pageSize, this.padding, this.unwrap, this.ignoreOutlines, this.directLight, this.directions, this.cacheSize, this.probes, this.vxgiResolution, this.cascadeOptions ] );
 
 	}
 
@@ -2042,6 +2061,62 @@ class LightBaker {
 
 			this.irradianceNode = radiosityIrradiance( radiosity );
 			this.source = radiosity;
+
+		} else if ( this.algorithm === 'cascades' || this.algorithm === 'cascadesRaster' ) {
+
+			// radiance cascades gather rays from the texels of the light map: rays traced through a BVH, or the
+			// rasterized directions of stochastic radiosity, which all texels of a sample share, so the cascades
+			// accumulate the rays of all samples
+
+			let source;
+
+			if ( this.algorithm === 'cascades' ) {
+
+				const { RayTracedRadiosity, rayTracedCascadeSource } = _rayTracedRadiosity;
+
+				const radiosity = new RayTracedRadiosity( { cacheSize } );
+				radiosity.lightSamples = this._lightSamples;
+				radiosity.lightShape = this._lightShape;
+				if ( this._bias !== null ) radiosity.bias = this._bias;
+				if ( this._bounces !== null ) radiosity.bounces = this._bounces;
+				radiosity._pass = ( this._seed * 65536 ) >>> 0;
+				radiosity.update( renderer, scene );
+
+				source = rayTracedCascadeSource( radiosity );
+				source.dispose = () => radiosity.dispose();
+
+			} else {
+
+				const radiosity = new StochasticRadiosity( { directions: this.directions, cacheSize } );
+				const sky = createSkySphere( scene );
+
+				if ( sky !== null ) scene.add( sky );
+
+				try {
+
+					radiosity.update( renderer, scene );
+
+				} finally {
+
+					if ( sky !== null ) {
+
+						scene.remove( sky );
+						sky.geometry.dispose();
+						sky.material.dispose();
+
+					}
+
+				}
+
+				source = new RasterCascadeSource( radiosity );
+
+			}
+
+			const cascades = new RadianceCascades( source, { ...this.cascadeOptions, accumulate: this.algorithm === 'cascadesRaster' } );
+			cascades.update( renderer, scene, record.size );
+
+			this.irradianceNode = radianceCascadesIrradiance( cascades );
+			this.source = cascades;
 
 		} else if ( this.algorithm === 'probes' ) {
 
