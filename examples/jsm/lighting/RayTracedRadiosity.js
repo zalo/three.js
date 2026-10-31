@@ -50,6 +50,11 @@ const MAX_TEXTURE_LAYERS = 256;
 // alpha modes of the materials, bits that are set for alpha tested and for transparent materials
 
 const ALPHA_TEST = 1;
+
+// the format of serializeBVH()
+
+const BVH_MAGIC = 0x48564252;
+const BVH_VERSION = 1;
 const ALPHA_BLEND = 2;
 
 /**
@@ -278,6 +283,25 @@ class RayTracedRadiosity {
 		 */
 		this.specular = true;
 
+		/**
+		 * Whether the meshes without a bounce cache keep their colors, for rays that light their hits
+		 * themselves, e.g. of {@link RealtimeRadianceCascades}. Otherwise their color is zero, since their
+		 * hits can not sample the cached bounces.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.shadeHits = false;
+
+		/**
+		 * A BVH of the scene from `serializeBVH()`, which `update()` uses instead of building it, if it was
+		 * made for the same geometry. Building the BVH takes most of the time of `update()` for large scenes.
+		 *
+		 * @type {?ArrayBuffer}
+		 * @default null
+		 */
+		this.bvhData = null;
+
 		this._bvh = null;
 		this._geometry = null;
 		this._trace = null;
@@ -361,6 +385,51 @@ class RayTracedRadiosity {
 			this._solve();
 
 		}
+
+	}
+
+	/**
+	 * Returns the BVH of the scene of the last `update()` in a binary form for `bvhData`: the nodes of
+	 * the tree, the order of the triangles and a checksum of their positions.
+	 *
+	 * @return {ArrayBuffer} The BVH.
+	 */
+	serializeBVH() {
+
+		const geometry = this._geometry;
+		const { roots } = MeshBVH.serialize( geometry.boundsTree, { cloneBuffers: false } );
+		const index = geometry.getIndex().array;
+		const triangles = index.length / 3;
+
+		// the header: the magic number, the triangles, the roots and the checksum, then the byte lengths of the
+		// roots, the roots, and the triangle of each position of the sorted index
+
+		const headerBytes = 16 + 8 + roots.length * 4;
+		const byteLength = headerBytes + roots.reduce( ( total, root ) => total + root.byteLength, 0 ) + triangles * 4;
+		const buffer = new ArrayBuffer( byteLength );
+		const view = new DataView( buffer );
+
+		view.setUint32( 0, BVH_MAGIC, true );
+		view.setUint32( 4, BVH_VERSION, true );
+		view.setUint32( 8, triangles, true );
+		view.setUint32( 12, roots.length, true );
+		view.setFloat64( 16, positionChecksum( geometry ), true );
+
+		let offset = headerBytes;
+
+		roots.forEach( ( root, i ) => {
+
+			view.setUint32( 24 + i * 4, root.byteLength, true );
+			new Uint8Array( buffer, offset, root.byteLength ).set( new Uint8Array( root ) );
+			offset += root.byteLength;
+
+		} );
+
+		const order = new Uint32Array( buffer, offset, triangles );
+
+		for ( let i = 0; i < triangles; i ++ ) order[ i ] = index[ i * 3 ] / 3;
+
+		return buffer;
 
 	}
 
@@ -741,7 +810,7 @@ class RayTracedRadiosity {
 
 					if ( material === undefined || material.visible === false ) continue;
 
-					const entry = getEntry( material, cached, instanceColor );
+					const entry = getEntry( material, cached || this.shadeHits, instanceColor );
 					const emissive = entry.emission.r + entry.emission.g + entry.emission.b > 0;
 					const color = colors !== null && material.vertexColors === true ? colorAttribute ?? null : null;
 
@@ -826,9 +895,12 @@ class RayTracedRadiosity {
 		geometry.setIndex( new BufferAttribute( new Uint32Array( positions.length / 3 ).map( ( value, i ) => i ), 1 ) );
 
 		// a SAH tree with small leaves traces the rays about 1.7 times faster than the default one, which
-		// splits at the centers and is built a little faster
+		// splits at the centers and is built a little faster. A serialized tree of the same geometry is used
+		// instead of building it
 
-		geometry.boundsTree = new MeshBVH( geometry, { strategy: SAH, targetLeafSize: 4 } );
+		const serialized = this.bvhData !== null ? readBVH( this.bvhData, geometry ) : null;
+
+		geometry.boundsTree = serialized !== null ? MeshBVH.deserialize( serialized, geometry, { setIndex: true } ) : new MeshBVH( geometry, { strategy: SAH, targetLeafSize: 4 } );
 
 		const bvh = new BVHComputeData( geometry, { attributes: { surface: 'vec4f', ...( colors !== null ? { color: 'vec4f' } : {} ) } } );
 		bvh.update();
@@ -1821,6 +1893,29 @@ class RayTracedRadiosity {
 	}
 
 	/**
+	 * Returns the material of a hit: its entry, light map UV and uv0, whether the side that was hit is
+	 * visible, its diffuse albedo with the vertex colors, and its emitted radiance.
+	 *
+	 * @private
+	 * @param {Node<vec4>} hit - The hit, see `_trace`.
+	 * @param {Node<float>} lod - The level of detail of the material maps.
+	 * @return {{entry: Node<int>, coords: Node<vec4>, facing: Node<float>, albedo: Node<vec3>, emission: Node<vec3>}} The material.
+	 */
+	_hitMaterial( hit, lod ) {
+
+		const materials = this._materials;
+		const entry = int( this._triangles.element( int( abs( hit.z ) ).sub( 1 ).mul( 3 ) ).w ).toVar();
+		const coords = this._surface( hit ).toVar();
+		const facing = select( hit.z.lessThan( 0 ), materials.element( entry.mul( MATERIAL_STRIDE ).add( 1 ) ).w, materials.element( entry.mul( MATERIAL_STRIDE ) ).w ).toVar();
+		const color = this._textures !== null ? this._albedo( uint( entry ), coords.zw, lod ) : materials.element( entry.mul( MATERIAL_STRIDE ) ).rgb;
+		const albedo = ( this._vertexColors ? color.mul( this._vertexColor( hit ) ) : color ).toVar();
+		const emission = this._emission( uint( entry ), coords.zw, lod ).toVar();
+
+		return { entry, coords, facing, albedo, emission };
+
+	}
+
+	/**
 	 * Returns the light leaving the visible side of a hit surface towards the ray, times pi: its reflectance
 	 * times the bounces of the light map cache.
 	 *
@@ -1834,12 +1929,7 @@ class RayTracedRadiosity {
 
 		if ( this._cache === null ) return vec3( 0 );
 
-		const materials = this._materials;
-		const entry = int( this._triangles.element( int( abs( hit.z ) ).sub( 1 ).mul( 3 ) ).w ).toVar();
-		const coords = this._surface( hit ).toVar();
-		const facing = select( hit.z.lessThan( 0 ), materials.element( entry.mul( MATERIAL_STRIDE ).add( 1 ) ).w, materials.element( entry.mul( MATERIAL_STRIDE ) ).w );
-		const color = this._textures !== null ? this._albedo( uint( entry ), coords.zw, lod ) : materials.element( entry.mul( MATERIAL_STRIDE ) ).rgb;
-		const albedo = this._vertexColors ? color.mul( this._vertexColor( hit ) ) : color;
+		const { entry, coords, facing, albedo } = this._hitMaterial( hit, lod );
 		const bounces = texture( this._cache.texture ).sample( coords.xy ).level( 0 ).rgb;
 
 		return this._reflectance( entry, albedo, this._faceNormal( hit, direction ), direction.negate(), null ).mul( bounces ).mul( facing );
@@ -2662,6 +2752,83 @@ function rayTracedRadiosityIrradiance( radiosity, { analyticLights = false } = {
  * @param {Scene} scene - The scene.
  * @return {number} The number of pages.
  */
+/**
+ * Reads a BVH of `serializeBVH()` for a merged geometry, whose triangles do not share vertices: the data
+ * of `MeshBVH.deserialize()`, or null if it was made for other geometry.
+ *
+ * @private
+ * @param {ArrayBuffer} buffer - The BVH.
+ * @param {BufferGeometry} geometry - The geometry.
+ * @return {?Object} The serialized BVH.
+ */
+function readBVH( buffer, geometry ) {
+
+	const view = new DataView( buffer );
+	const triangles = geometry.getIndex().count / 3;
+
+	if ( buffer.byteLength < 24 || view.getUint32( 0, true ) !== BVH_MAGIC || view.getUint32( 4, true ) !== BVH_VERSION ) {
+
+		console.warn( 'THREE.RayTracedRadiosity: bvhData is not a serialized BVH, the BVH is built.' );
+		return null;
+
+	}
+
+	if ( view.getUint32( 8, true ) !== triangles || view.getFloat64( 16, true ) !== positionChecksum( geometry ) ) {
+
+		console.warn( 'THREE.RayTracedRadiosity: bvhData was made for other geometry, the BVH is built.' );
+		return null;
+
+	}
+
+	const rootCount = view.getUint32( 12, true );
+	const roots = [];
+	let offset = 24 + rootCount * 4;
+
+	for ( let i = 0; i < rootCount; i ++ ) {
+
+		const length = view.getUint32( 24 + i * 4, true );
+		roots.push( buffer.slice( offset, offset + length ) );
+		offset += length;
+
+	}
+
+	// the sorted index from the order of the triangles, whose corners follow each other
+
+	const order = new Uint32Array( buffer, offset, triangles );
+	const index = new Uint32Array( triangles * 3 );
+
+	for ( let i = 0; i < triangles; i ++ ) {
+
+		const first = order[ i ] * 3;
+
+		index[ i * 3 ] = first;
+		index[ i * 3 + 1 ] = first + 1;
+		index[ i * 3 + 2 ] = first + 2;
+
+	}
+
+	return { version: 1, roots, index, indirectBuffer: null };
+
+}
+
+/**
+ * A checksum of the positions of a geometry, in their original order, to match a serialized BVH to it.
+ *
+ * @private
+ * @param {BufferGeometry} geometry - The geometry.
+ * @return {number} The checksum.
+ */
+function positionChecksum( geometry ) {
+
+	const positions = geometry.getAttribute( 'position' ).array;
+	let sum = positions.length;
+
+	for ( let i = 0; i < positions.length; i += 7 ) sum += positions[ i ] * ( ( i % 31 ) + 1 );
+
+	return sum;
+
+}
+
 function countPages( scene ) {
 
 	let pages = 1;
