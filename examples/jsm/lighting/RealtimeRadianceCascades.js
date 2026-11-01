@@ -53,8 +53,8 @@ const _size = /*@__PURE__*/ new Vector2();
  *
  * Every frame:
  *
- * - The scene is rendered into a G-buffer of the lit color, the diffuse color, the geometry normal, the
- * velocity and depth.
+ * - The scene is rendered into a G-buffer of the lit color, the diffuse color, the geometry normal, depth
+ * and, with `velocity`, the velocity.
  * - Every visible surface allocates the probe of its cell in sparse hash tables, one per cascade. The cells
  * grow with the Chebyshev distance to the camera in levels of detail, and near the boundary of a level the
  * surfaces use both levels ("blending radius"). Secondary probes, two levels coarser, sit at the hits of the
@@ -81,7 +81,7 @@ const _size = /*@__PURE__*/ new Vector2();
  * The options are properties that can change at any time, they apply in the next `update()`: the ones of the
  * probe layout and of the levels of detail (`spacing`, `levelDistance`, `levels`, `cascades`, `directions`,
  * `maxProbes`, `orientations`) clear the probes and rebuild the passes, `rayStride`,
- * `secondary` and `useQualityWeight` rebuild the passes, the others are uniforms. Fetch `getCompositeNode()`
+ * `secondary`, `useQualityWeight` and `velocity` rebuild the passes, the others are uniforms. Fetch `getCompositeNode()`
  * again after the passes were rebuilt.
  *
  * The geometry of the scene is static, see `setScene()`. The suns, directional lights, and the camera can
@@ -122,8 +122,9 @@ class RealtimeRadianceCascades {
 	 * @param {number} [options.maxRadiance=500] - The radiance of a ray is clamped to this, for the fixed point sums.
 	 * @param {boolean} [options.adaptiveLOD=true] - Whether the levels of detail coarsen while the cascades are nearly full, so that
 	 * views that need more probes than `maxProbes` get coarser probes instead of none, see `lodBias`.
+	 * @param {boolean} [options.velocity=false] - Whether the G-buffer has a velocity texture, e.g. for {@link TRAANode}.
 	 */
-	constructor( { spacing = 0.0625, levelDistance = 4, levels = 16, blendingRadius = 1.1, cascades = 4, directions = 4, maxProbes = 32768, rayStride = 1, secondary = true, qualityDecay = 0.97, minDirectionWeight = 2, useQualityWeight = true, maxLifetime = 1, secondaryLifetime = 10, orientations = false, maxRadiance = 500, adaptiveLOD = true } = {} ) {
+	constructor( { spacing = 0.0625, levelDistance = 4, levels = 16, blendingRadius = 1.1, cascades = 4, directions = 4, maxProbes = 32768, rayStride = 1, secondary = true, qualityDecay = 0.97, minDirectionWeight = 2, useQualityWeight = true, maxLifetime = 1, secondaryLifetime = 10, orientations = false, maxRadiance = 500, adaptiveLOD = true, velocity = false } = {} ) {
 
 		this._blendingOctaves = uniform( 0 );
 		this._maxLifetime = uniform( 1, 'uint' );
@@ -143,6 +144,7 @@ class RealtimeRadianceCascades {
 		this.secondaryLifetime = secondaryLifetime;
 		this.orientations = orientations;
 		this.adaptiveLOD = adaptiveLOD;
+		this.velocity = velocity;
 
 		/**
 		 * The octaves added to the distances of the levels of detail. With `adaptiveLOD`, it rises while a cascade
@@ -228,8 +230,6 @@ class RealtimeRadianceCascades {
 		this._kernels = null;
 		this._frameKernels = null;
 		this._compositeNode = null;
-		this._width = 0;
-		this._height = 0;
 		this._frame = 0;
 		this._layout = null;
 		this._buffers = [];
@@ -390,13 +390,17 @@ class RealtimeRadianceCascades {
 	}
 
 	/**
-	 * Returns a texture of the G-buffer: `'output'`, `'albedo'`, `'normal'`, `'velocity'` or `'depth'`, e.g. for
-	 * {@link TRAANode}.
+	 * Returns a texture of the G-buffer: `'output'`, `'albedo'`, `'normal'`, `'depth'` or, with `velocity`,
+	 * `'velocity'`, e.g. for {@link TRAANode}.
 	 *
 	 * @param {string} name - The name of the texture.
 	 * @return {TextureNode} The texture.
 	 */
 	getTextureNode( name ) {
+
+		this._applyChanges();
+
+		if ( name === 'velocity' && ! this.velocity ) throw new Error( 'THREE.RealtimeRadianceCascades: The G-buffer has a velocity texture only with the velocity option.' );
 
 		const gbuffer = this._getGBuffer( 1, 1 );
 
@@ -506,13 +510,7 @@ class RealtimeRadianceCascades {
 
 		// the passes read the size of the screen from uniforms, only the buffer of the hits of the pixels grows
 
-		if ( width !== this._width || height !== this._height ) {
-
-			gbuffer.setSize( width, height );
-			this._width = width;
-			this._height = height;
-
-		}
+		if ( width !== gbuffer.width || height !== gbuffer.height ) gbuffer.setSize( width, height );
 
 		if ( pixels > this._hitCapacity ) {
 
@@ -741,7 +739,7 @@ class RealtimeRadianceCascades {
 	_applyChanges() {
 
 		const bufferKey = [ this.spacing, this.levelDistance, this.levels, this.cascades, this.directions, this.maxProbes, this.orientations ].join();
-		const kernelKey = [ bufferKey, this.rayStride, this.secondary, this.useQualityWeight ].join();
+		const kernelKey = [ bufferKey, this.rayStride, this.secondary, this.useQualityWeight, this.velocity ].join();
 
 		if ( kernelKey === this._kernelKey ) return;
 
@@ -761,6 +759,15 @@ class RealtimeRadianceCascades {
 			this.capacities = this._layout.cascades.map( ( cascade ) => cascade.capacity );
 			this._createBuffers();
 			this._bufferKey = bufferKey;
+
+		}
+
+		// the passes and the composite read the textures of the G-buffer, which has a velocity texture or not
+
+		if ( this._gbuffer !== null && this._gbuffer.textures.length !== ( this.velocity ? 4 : 3 ) ) {
+
+			this._gbuffer.dispose();
+			this._gbuffer = null;
 
 		}
 
@@ -923,11 +930,11 @@ class RealtimeRadianceCascades {
 
 		if ( this._gbuffer !== null ) return this._gbuffer;
 
-		const gbuffer = new RenderTarget( width, height, { count: 4, type: HalfFloatType } );
+		const gbuffer = new RenderTarget( width, height, { count: this.velocity ? 4 : 3, type: HalfFloatType } );
 		gbuffer.textures[ 0 ].name = 'output';
 		gbuffer.textures[ 1 ].name = 'albedo';
 		gbuffer.textures[ 2 ].name = 'normal';
-		gbuffer.textures[ 3 ].name = 'velocity';
+		if ( this.velocity ) gbuffer.textures[ 3 ].name = 'velocity';
 		gbuffer.depthTexture = new DepthTexture( width, height, FloatType );
 
 		// the vertex normal on the side of the visible face, the flat normal of the triangle towards the camera: the back
@@ -939,7 +946,12 @@ class RealtimeRadianceCascades {
 		const normal = select( dot( normalWorldGeometry, facing ).lessThan( 0 ), normalWorldGeometry.negate(), normalWorldGeometry );
 
 		this._gbuffer = gbuffer;
-		this._mrt = mrt( { output, albedo: vec4( diffuseColor.rgb, 1 ), normal: vec4( normal, 1 ), velocity } );
+		// the velocity needs the transforms of the last frame of every object, so it is only there on request
+
+		const outputs = { output, albedo: vec4( diffuseColor.rgb, 1 ), normal: vec4( normal, 1 ) };
+		if ( this.velocity ) outputs.velocity = velocity;
+
+		this._mrt = mrt( outputs );
 
 		return gbuffer;
 

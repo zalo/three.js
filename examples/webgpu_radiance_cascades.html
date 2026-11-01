@@ -274,7 +274,10 @@
 
 			function updateOutput() {
 
-				// the composite changes when the cascades rebuild their passes for changed options
+				// the composite changes when the cascades rebuild their passes for changed options, and TRAA needs the
+				// velocity texture of the G-buffer
+
+				cascades.velocity = params.traa;
 
 				const composite = cascades.getCompositeNode();
 
@@ -283,7 +286,7 @@
 					compositeNode = composite;
 
 					traaPass?.dispose();
-					traaPass = traa( composite, cascades.getTextureNode( 'depth' ), cascades.getTextureNode( 'velocity' ), camera );
+					traaPass = params.traa ? traa( composite, cascades.getTextureNode( 'depth' ), cascades.getTextureNode( 'velocity' ), camera ) : null;
 
 				}
 
