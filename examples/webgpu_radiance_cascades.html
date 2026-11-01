@@ -98,6 +98,7 @@
 			const models = {};
 			const progress = new Map();
 			let gltfLoader = null, chandraSky = null;
+			const chandraSkies = {};
 
 			init();
 
@@ -109,7 +110,7 @@
 				const requiredLimits = adapter ? { maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage, maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize, maxBufferSize: adapter.limits.maxBufferSize } : {};
 
 				renderer = new THREE.WebGPURenderer( { requiredLimits, trackTimestamp: true } );
-				renderer.setPixelRatio( Math.min( window.devicePixelRatio, 1.5 ) );
+				renderer.setPixelRatio( Math.min( window.devicePixelRatio, 1 ) );
 				renderer.setSize( window.innerWidth, window.innerHeight );
 				renderer.toneMapping = THREE.ACESFilmicToneMapping;
 				renderer.shadowMap.enabled = true;
@@ -639,7 +640,16 @@
 
 			}
 
-			async function loadChandraSky( intensity ) {
+			function loadChandraSky( intensity ) {
+
+				// one texture per intensity, also when a scene loads again: the renderer keeps the environment maps it
+				// made of each sky texture
+
+				return chandraSkies[ intensity ] ??= createChandraSky( intensity );
+
+			}
+
+			async function createChandraSky( intensity ) {
 
 				// chandra's sky, scaled. Its equirectangular map is in Z-up coordinates and runs the other way round
 				// than the one of three.js: its column u is the three.js column 0.75 - u
