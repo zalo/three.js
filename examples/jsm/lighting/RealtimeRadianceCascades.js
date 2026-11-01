@@ -585,7 +585,7 @@ class RealtimeRadianceCascades {
 
 		run( 'allocate', kernels.clear );
 		run( 'allocate', frameKernels.gather, pixels );
-		run( 'allocate', frameKernels.gatherSecondary, pixels );
+		run( 'allocate', frameKernels.gatherSecondary, blocks );
 		run( 'allocate', kernels.keep );
 		run( 'allocate', kernels.assign[ 0 ] );
 
@@ -605,7 +605,7 @@ class RealtimeRadianceCascades {
 		for ( let n = 1; n < this.cascades; n ++ ) run( 'allocate', kernels.countUp[ n ] );
 		for ( let n = this.cascades - 1; n >= 0; n -- ) run( 'allocate', kernels.offsets[ n ] );
 
-		run( 'trace', frameKernels.traceSecondary, pixels );
+		run( 'trace', frameKernels.traceSecondary, blocks );
 		run( 'trace', frameKernels.trace, blocks );
 
 		for ( let n = 0; n < this.cascades; n ++ ) run( 'accumulate', kernels.accumulate[ n ] );
@@ -1993,23 +1993,46 @@ class RealtimeRadianceCascades {
 
 		const pixelOf = ( index ) => ivec2( int( index.mod( width ) ), int( index.div( width ) ) );
 
-		// every pixel inserts the probes of its levels of detail
+		// every pixel inserts the probes of its levels of detail, except those of the pixel to its left: a probe covers
+		// many pixels, and only the first pixel of each run along a row inserting it halves the time of the pass
 
 		const gather = Fn( () => {
 
 			If( instanceIndex.lessThan( pixels ), () => {
 
-				const surface = this._pixelSurface( pixelOf( instanceIndex ) );
+				const pixel = pixelOf( instanceIndex ).toVar();
+				const surface = this._pixelSurface( pixel );
 
 				If( surface.valid, () => {
 
 					const group = this._groupOf( surface.normal ).toVar();
 
+					// the keys of the pixel to the left, NONE where it inserts none
+
+					const left = this._pixelSurface( pixel.sub( ivec2( 1, 0 ) ).max( ivec2( 0 ) ) );
+					const leftKeys = [ uint( NONE ).toVar(), uint( NONE ).toVar() ];
+
+					If( left.valid.and( pixel.x.greaterThan( 0 ) ).and( this._groupOf( left.normal ).equal( group ) ), () => {
+
+						this._levelsOf( left.position ).forEach( ( { level, weight }, i ) => {
+
+							If( weight.greaterThan( 0 ), () => {
+
+								leftKeys[ i ].assign( this._keyOf( this._surfaceCell( left.position, left.normal, level, 0 ), level ) );
+
+							} );
+
+						} );
+
+					} );
+
 					for ( const { level, weight } of this._levelsOf( surface.position ) ) {
 
-						If( weight.greaterThan( 0 ), () => {
+						const key = this._keyOf( this._surfaceCell( surface.position, surface.normal, level, 0 ), level ).toVar();
 
-							this._insert( 0, this._keyOf( this._surfaceCell( surface.position, surface.normal, level, 0 ), level ), group );
+						If( weight.greaterThan( 0 ).and( key.notEqual( leftKeys[ 0 ] ) ).and( key.notEqual( leftKeys[ 1 ] ) ), () => {
+
+							this._insert( 0, key, group );
 
 						} );
 
@@ -2021,48 +2044,48 @@ class RealtimeRadianceCascades {
 
 		} )().computeKernel().setName( 'RC.Gather' );
 
-		// the hits of the last frame insert their secondary probes, two levels coarser
-
-		const secondaryHit = ( index ) => {
-
-			const position = this._hits.element( index.mul( 2 ) ).toVar();
-			const valid = position.w.equal( float( this._frameNode.sub( 1 ) ) ).and( this._frameNode.greaterThan( 1 ) );
-			const level = this._levelOf( position.xyz ).add( 2 ).toVar();
-
-			return { valid: valid.and( level.greaterThanEqual( 2 ) ).and( level.lessThan( this.levels ) ), position: position.xyz, normal: this._hits.element( index.mul( 2 ).add( 1 ) ).xyz, level };
-
-		};
-
-		const gatherSecondary = this.secondary ? Fn( () => {
-
-			If( instanceIndex.lessThan( pixels ), () => {
-
-				const hit = secondaryHit( instanceIndex );
-
-				If( hit.valid, () => {
-
-					this._insert( 0, this._keyOf( this._surfaceCell( hit.position, hit.normal, hit.level, 0 ), hit.level ), this._groupOf( hit.normal ) );
-
-				} );
-
-			} );
-
-		} )().computeKernel().setName( 'RC.GatherSecondary' ) : null;
-
 		// a pixel of each block of rayStride x rayStride pixels traces a ray, in turns
 
 		const stride = this.rayStride;
 		const blocksX = this._blocksX, blocks = this._blocks;
 
-		const tracedPixel = ( index ) => {
+		const tracedPixel = ( index, frame = this._frameNode ) => {
 
 			const block = ivec2( int( index.mod( blocksX ) ), int( index.div( blocksX ) ) );
-			const turn = this._frameNode.add( uint( hash( index ).mul( stride * stride ) ) ).mod( stride * stride );
+			const turn = frame.add( uint( hash( index ).mul( stride * stride ) ) ).mod( stride * stride );
 			const pixel = block.mul( stride ).add( ivec2( int( turn.mod( stride ) ), int( turn.div( stride ) ) ) ).toVar();
 
 			return { pixel, valid: index.lessThan( blocks ).and( pixel.x.lessThan( int( width ) ) ).and( pixel.y.lessThan( int( height ) ) ) };
 
 		};
+
+		// the hits of the rays of the last frame, at the pixels that the blocks traced: they insert their secondary
+		// probes, two levels coarser, and trace their rays. The passes run over the blocks rather than the pixels, of
+		// which only one per block has a hit, so that the threads of a SIMD group all trace
+
+		const secondaryHit = ( block ) => {
+
+			const traced = tracedPixel( block, this._frameNode.sub( 1 ) );
+			const index = uint( traced.pixel.y ).mul( width ).add( uint( traced.pixel.x ) ).toVar();
+			const position = this._hits.element( index.mul( 2 ) ).toVar();
+			const valid = traced.valid.and( position.w.equal( float( this._frameNode.sub( 1 ) ) ) ).and( this._frameNode.greaterThan( 1 ) );
+			const level = this._levelOf( position.xyz ).add( 2 ).toVar();
+
+			return { valid: valid.and( level.greaterThanEqual( 2 ) ).and( level.lessThan( this.levels ) ), position: position.xyz, normal: this._hits.element( index.mul( 2 ).add( 1 ) ).xyz, level, index };
+
+		};
+
+		const gatherSecondary = this.secondary ? Fn( () => {
+
+			const hit = secondaryHit( instanceIndex );
+
+			If( hit.valid, () => {
+
+				this._insert( 0, this._keyOf( this._surfaceCell( hit.position, hit.normal, hit.level, 0 ), hit.level ), this._groupOf( hit.normal ) );
+
+			} );
+
+		} )().computeKernel().setName( 'RC.GatherSecondary' ) : null;
 
 		// the rays of the probes of the finest cascade, from their pixels in their level of detail
 
@@ -2116,15 +2139,11 @@ class RealtimeRadianceCascades {
 
 		const traceSecondary = this.secondary ? Fn( () => {
 
-			If( instanceIndex.lessThan( pixels ), () => {
+			const hit = secondaryHit( instanceIndex );
 
-				const hit = secondaryHit( instanceIndex );
+			If( hit.valid, () => {
 
-				If( hit.valid, () => {
-
-					this._traceSecondary( hit, instanceIndex );
-
-				} );
+				this._traceSecondary( hit, hit.index );
 
 			} );
 
