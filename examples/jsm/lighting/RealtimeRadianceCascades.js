@@ -1,5 +1,5 @@
 import { DepthTexture, FloatType, HalfFloatType, Matrix4, NodeMaterial, QuadMesh, RenderTarget, StorageBufferAttribute, Vector2, Vector3 } from 'three/webgpu';
-import { Break, Fn, If, Loop, abs, atan, atomicAdd, atomicLoad, atomicMax, atomicMin, atomicStore, cameraPosition, ceil, cos, cross, diffuseColor, dot, equirectUV, exp2, float, floor, fract, getViewPosition, hash, instanceIndex, int, ivec2, ivec3, ivec4, log2, max, min, mrt, normalWorldGeometry, normalize, output, positionWorld, screenUV, select, sin, sqrt, storage, texture, uint, uniform, uv, uvec3, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { Break, Fn, If, Loop, abs, atan, atomicAdd, atomicLoad, atomicMax, atomicMin, atomicStore, cameraPosition, ceil, clamp, cos, cross, diffuseColor, dot, equirectUV, exp2, float, floor, fract, getViewPosition, hash, instanceIndex, int, ivec2, ivec3, ivec4, log2, max, min, mix, mrt, normalWorldGeometry, normalize, output, positionWorld, screenUV, select, sin, sqrt, storage, texture, uint, uniform, uv, uvec3, vec2, vec3, vec4, velocity } from 'three/tsl';
 
 import { RayTracedRadiosity } from './RayTracedRadiosity.js';
 
@@ -64,8 +64,8 @@ const _size = /*@__PURE__*/ new Vector2();
  * probe in them does. Freed slots go to a free list.
  * - Every pixel traces a ray through a BVH of the scene, see {@link RayTracedRadiosity}, in a direction of an
  * R2 sequence over the rays of its probes, and every hit of the last frame traces a secondary ray. A hit adds
- * its emission, the light of the suns with a shadow ray and the irradiance of its secondary probe ("infinite
- * bounces"). A ray adds its radiance to the cascade whose interval holds its hit distance, and its
+ * its emission, the light of the sun, which a shadow ray or the shadow map of the sun (`useShadowMap`) occludes,
+ * and the irradiance of its secondary probe ("infinite bounces"). A ray adds its radiance to the cascade whose interval holds its hit distance, and its
  * transmittance to the cascades below ("ray splitting").
  * - The bins sum their rays, and decay their sums by `qualityDecay` every frame. The probes count their rays
  * likewise ("quality"), which weighs them in the merge and the final gather.
@@ -81,11 +81,11 @@ const _size = /*@__PURE__*/ new Vector2();
  * The options are properties that can change at any time, they apply in the next `update()`: the ones of the
  * probe layout and of the levels of detail (`spacing`, `levelDistance`, `levels`, `cascades`, `directions`,
  * `maxProbes`, `orientations`) clear the probes and rebuild the passes, `rayStride`,
- * `secondary`, `useQualityWeight` and `velocity` rebuild the passes, the others are uniforms. Fetch `getCompositeNode()`
+ * `secondary`, `useQualityWeight`, `velocity` and `useShadowMap` rebuild the passes, the others are uniforms. Fetch `getCompositeNode()`
  * again after the passes were rebuilt.
  *
- * The geometry of the scene is static, see `setScene()`. The suns, directional lights, and the camera can
- * change every frame. The direct light of the analytic lights is left to the materials of the G-buffer;
+ * The geometry of the scene is static, see `setScene()`. The sun, the first visible directional light, and the
+ * camera can change every frame. The direct light of the analytic lights is left to the materials of the G-buffer;
  * emissive surfaces and the sky light the scene only through the cascades.
  *
  * This class can only be used with {@link WebGPURenderer} and a WebGPU backend.
@@ -123,8 +123,10 @@ class RealtimeRadianceCascades {
 	 * @param {boolean} [options.adaptiveLOD=true] - Whether the levels of detail coarsen while the cascades are nearly full, so that
 	 * views that need more probes than `maxProbes` get coarser probes instead of none, see `lodBias`.
 	 * @param {boolean} [options.velocity=false] - Whether the G-buffer has a velocity texture, e.g. for {@link TRAANode}.
+	 * @param {boolean} [options.useShadowMap=true] - Whether the hits read the light of the sun from its shadow map, where the map
+	 * covers them, instead of tracing a shadow ray. The sun must cast shadows.
 	 */
-	constructor( { spacing = 0.0625, levelDistance = 4, levels = 16, blendingRadius = 1.1, cascades = 4, directions = 4, maxProbes = 32768, rayStride = 1, secondary = true, qualityDecay = 0.97, minDirectionWeight = 2, useQualityWeight = true, maxLifetime = 1, secondaryLifetime = 10, orientations = false, maxRadiance = 500, adaptiveLOD = true, velocity = false } = {} ) {
+	constructor( { spacing = 0.0625, levelDistance = 4, levels = 16, blendingRadius = 1.1, cascades = 4, directions = 4, maxProbes = 32768, rayStride = 1, secondary = true, qualityDecay = 0.97, minDirectionWeight = 2, useQualityWeight = true, maxLifetime = 1, secondaryLifetime = 10, orientations = false, maxRadiance = 500, adaptiveLOD = true, velocity = false, useShadowMap = true } = {} ) {
 
 		this._blendingOctaves = uniform( 0 );
 		this._maxLifetime = uniform( 1, 'uint' );
@@ -145,6 +147,7 @@ class RealtimeRadianceCascades {
 		this.orientations = orientations;
 		this.adaptiveLOD = adaptiveLOD;
 		this.velocity = velocity;
+		this.useShadowMap = useShadowMap;
 
 		/**
 		 * The octaves added to the distances of the levels of detail. With `adaptiveLOD`, it rises while a cascade
@@ -236,6 +239,7 @@ class RealtimeRadianceCascades {
 		this._bufferKey = null;
 		this._kernelKey = null;
 		this._hitCapacity = 0;
+		this._shadowTexture = null;
 
 		this._parity = uniform( 0, 'uint' );
 		this._frameNode = uniform( 0, 'uint' );
@@ -249,6 +253,10 @@ class RealtimeRadianceCascades {
 		this._maxRadiance = uniform( maxRadiance );
 		this._sunDirection = uniform( new Vector3( 0, 1, 0 ) );
 		this._sunColor = uniform( new Vector3() );
+		this._shadowMatrix = uniform( new Matrix4() );
+		this._shadowSize = uniform( new Vector2() );
+		this._shadowOffset = uniform( 0 );
+		this._shadowSign = uniform( 1 );
 		this._lodBias = uniform( 0 );
 		this._readingCounts = false;
 		this._screenWidth = uniform( 1, 'uint' );
@@ -527,9 +535,6 @@ class RealtimeRadianceCascades {
 		this._blocksX.value = Math.ceil( width / stride );
 		this._blocks.value = blocks;
 
-		if ( this._kernels === null ) this._kernels = this._createKernels();
-		if ( this._frameKernels === null ) this._frameKernels = this._createFrameKernels();
-
 		// the G-buffer
 
 		const previousTarget = renderer.getRenderTarget();
@@ -559,7 +564,19 @@ class RealtimeRadianceCascades {
 		const random = pcg3d( this._frame, 29, 968 );
 		this._jitter.value.set( random[ 0 ] / 0xffffffff, random[ 1 ] / 0xffffffff );
 
-		this._updateSun( scene );
+		// the passes are built after the G-buffer, whose render creates the shadow map of the sun
+
+		const shadowTexture = this._updateSun( renderer, scene );
+
+		if ( shadowTexture !== this._shadowTexture ) {
+
+			this._shadowTexture = shadowTexture;
+			this._disposeKernels( false );
+
+		}
+
+		if ( this._kernels === null ) this._kernels = this._createKernels();
+		if ( this._frameKernels === null ) this._frameKernels = this._createFrameKernels();
 
 		this._lodBias.value = this.lodBias;
 
@@ -999,11 +1016,14 @@ class RealtimeRadianceCascades {
 	}
 
 	/**
-	 * Copies the first visible directional light into the sun uniforms.
+	 * Copies the first visible directional light into the sun uniforms, and its shadow map for `useShadowMap`.
 	 *
 	 * @private
+	 * @param {WebGPURenderer} renderer - The renderer.
+	 * @param {Scene} scene - The scene.
+	 * @return {?DepthTexture} The shadow map of the sun that the passes read, or null.
 	 */
-	_updateSun( scene ) {
+	_updateSun( renderer, scene ) {
 
 		let sun = null;
 
@@ -1016,7 +1036,7 @@ class RealtimeRadianceCascades {
 		if ( sun === null ) {
 
 			this._sunColor.value.set( 0, 0, 0 );
-			return;
+			return null;
 
 		}
 
@@ -1025,6 +1045,21 @@ class RealtimeRadianceCascades {
 
 		this._sunDirection.value.setFromMatrixPosition( sun.matrixWorld ).sub( _position.setFromMatrixPosition( sun.target.matrixWorld ) ).normalize();
 		this._sunColor.value.set( sun.color.r, sun.color.g, sun.color.b ).multiplyScalar( sun.intensity );
+
+		// the shadow map of the last render of the scene, see ShadowNode
+
+		const shadow = sun.shadow;
+		const camera = shadow.camera;
+		const map = this.useShadowMap && sun.castShadow && renderer.shadowMap.enabled ? shadow.map?.depthTexture ?? null : null;
+
+		if ( map === null || map.isArrayTexture === true || camera.isOrthographicCamera !== true ) return null;
+
+		this._shadowMatrix.value.copy( shadow.matrix );
+		this._shadowSize.value.set( map.image.width, map.image.height );
+		this._shadowOffset.value = Math.max( ( camera.right - camera.left ) / map.image.width, ( camera.top - camera.bottom ) / map.image.height ) / camera.zoom;
+		this._shadowSign.value = renderer.reversedDepthBuffer ? - 1 : 1;
+
+		return map;
 
 	}
 
@@ -2298,13 +2333,55 @@ class RealtimeRadianceCascades {
 
 		If( cosine.greaterThan( 0 ).and( this._sunColor.dot( vec3( 1 ) ).greaterThan( 0 ) ), () => {
 
-			radiance.addAssign( this._sunColor.mul( cosine.mul( radiosity._visibility( point.add( normal.mul( distance.mul( 1e-3 ).add( 1e-3 ) ) ), this._sunDirection, float( 0 ) ) ) ).div( Math.PI ) );
+			radiance.addAssign( this._sunColor.mul( cosine.mul( this._sunVisibility( point, normal, distance ) ) ).div( Math.PI ) );
 
 		} );
 
 		if ( this.secondary ) radiance.addAssign( this._sampleSecondary( point, normal ) );
 
 		return emission.add( albedo.mul( radiance ) ).mul( facing );
+
+	}
+
+	/**
+	 * The visibility of the sun from a hit: from the shadow map of the sun where it covers the hit, else by a
+	 * shadow ray.
+	 *
+	 * @private
+	 */
+	_sunVisibility( point, normal, distance ) {
+
+		const radiosity = this._radiosity;
+		const trace = () => radiosity._visibility( point.add( normal.mul( distance.mul( 1e-3 ).add( 1e-3 ) ) ), this._sunDirection, float( 0 ) );
+
+		if ( this._shadowTexture === null ) return trace();
+
+		// the hit moves off the surface by a texel, which matches the shadow rays within their noise without a
+		// depth bias, then the shadow map is filtered bilinearly by hand, since compute shaders cannot compare
+		// depths with a sampler
+
+		const map = texture( this._shadowTexture );
+		const coord = this._shadowMatrix.mul( vec4( point.add( normal.mul( this._shadowOffset ) ), 1 ) ).toVar();
+		const visibility = float( 1 ).toVar();
+
+		If( coord.x.greaterThanEqual( 0 ).and( coord.x.lessThanEqual( 1 ) ).and( coord.y.greaterThanEqual( 0 ) ).and( coord.y.lessThanEqual( 1 ) ).and( coord.z.greaterThanEqual( 0 ) ).and( coord.z.lessThanEqual( 1 ) ), () => {
+
+			const texel = vec2( coord.x, coord.y.oneMinus() ).mul( this._shadowSize ).sub( 0.5 ).toVar();
+			const corner = ivec2( floor( texel ) ).toVar();
+			const last = ivec2( this._shadowSize ).sub( 1 ).toVar();
+			const weight = fract( texel ).toVar();
+
+			const lit = ( x, y ) => select( map.load( clamp( corner.add( ivec2( x, y ) ), ivec2( 0 ), last ) ).x.sub( coord.z ).mul( this._shadowSign ).greaterThanEqual( 0 ), float( 1 ), float( 0 ) );
+
+			visibility.assign( mix( mix( lit( 0, 0 ), lit( 1, 0 ), weight.x ), mix( lit( 0, 1 ), lit( 1, 1 ), weight.x ), weight.y ) );
+
+		} ).Else( () => {
+
+			visibility.assign( trace() );
+
+		} );
+
+		return visibility;
 
 	}
 
