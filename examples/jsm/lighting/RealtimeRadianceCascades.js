@@ -152,8 +152,9 @@ class RealtimeRadianceCascades {
 		/**
 		 * The octaves added to the distances of the levels of detail. With `adaptiveLOD`, it rises while a cascade
 		 * wants more than 85% of its probes, by half of the octaves that would bring it to 75%, and falls by 0.01 while
-		 * all have less than 60%, after the probe counts of a frame are read back. A level of detail has about a
-		 * quarter of the probes of the one before, and the blending of the levels hides the fractional steps.
+		 * all have less than 70%, so that it returns after a spike of probes, after the probe counts of a frame are read
+		 * back. A level of detail has about a quarter of the probes of the one before, and the blending of the levels
+		 * hides the fractional steps.
 		 *
 		 * @type {number}
 		 * @default 0
@@ -670,11 +671,12 @@ class RealtimeRadianceCascades {
 
 			}
 
-			// a level of detail has about a quarter of the probes of the one before: half of the octaves that would
-			// bring the cascades to 75%, at least 0.05
+			// a level of detail has about a quarter of the probes of the one before: up by half of the octaves that
+			// would bring the cascades to 75%, at least 0.05, and down slowly until they are close to it, so that they
+			// do not stay coarse after a spike of probes
 
 			if ( fullness > 0.85 ) this.lodBias += Math.max( Math.log2( fullness / 0.75 ) / 4, 0.05 );
-			else if ( fullness < 0.6 ) this.lodBias = Math.max( this.lodBias - 0.01, 0 );
+			else if ( fullness < 0.7 ) this.lodBias = Math.max( this.lodBias - 0.01, 0 );
 
 		} ).catch( () => {
 
