@@ -1392,14 +1392,13 @@ class RealtimeRadianceCascades {
 
 	/**
 	 * The average radiance over the cosine lobe of a normal at a position: the octahedral irradiance maps of the
-	 * probes of the finest cascade around it, weighted by their trilinear weights, the levels of detail and their
-	 * ray counts (`shade_optimized_32()` in chandra).
+	 * probes of the finest cascade around it, weighted by their trilinear weights and their ray counts, within each
+	 * level of detail, then blended by the weights of the levels (`shade_optimized_32()` in chandra, which weights the
+	 * levels by their ray counts too).
 	 *
 	 * @private
 	 */
 	_gather( position, normal ) {
-
-		const sum = vec4( 0 ).toVar();
 
 		// the texels of the normal in the octahedral maps
 
@@ -1418,8 +1417,10 @@ class RealtimeRadianceCascades {
 		}
 
 		const group = this._groupOf( normal ).toVar();
+		const levels = this._levelsOf( position );
+		const sums = levels.map( () => vec4( 0 ).toVar() );
 
-		for ( const { level, weight: levelWeight } of this._levelsOf( position ) ) {
+		levels.forEach( ( { level, weight: levelWeight }, i ) => {
 
 			If( levelWeight.greaterThan( 0 ), () => {
 
@@ -1437,12 +1438,12 @@ class RealtimeRadianceCascades {
 
 						const w = select( offset.equal( ivec3( 1 ) ), f, f.oneMinus() );
 						const quality = this.useQualityWeight ? this._quality.element( slot ) : float( 1 );
-						const weight = w.x.mul( w.y ).mul( w.z ).mul( levelWeight ).mul( quality ).toVar();
+						const weight = w.x.mul( w.y ).mul( w.z ).mul( quality ).toVar();
 						const base = slot.mul( IRRADIANCE_TEXELS ).toVar();
 
 						for ( const { index, weight: texelWeight } of texels ) {
 
-							sum.addAssign( this._irradiance.element( base.add( index ) ).mul( texelWeight.mul( weight ) ) );
+							sums[ i ].addAssign( this._irradiance.element( base.add( index ) ).mul( texelWeight.mul( weight ) ) );
 
 						}
 
@@ -1452,7 +1453,22 @@ class RealtimeRadianceCascades {
 
 			} );
 
-		}
+		} );
+
+		// the probes of the finer level have about a quarter of the rays of the coarser ones, so weighting the levels
+		// by their ray counts too would hand most of the weight to the coarser level
+
+		const sum = vec4( 0 ).toVar();
+
+		levels.forEach( ( { weight }, i ) => {
+
+			If( sums[ i ].w.greaterThan( 0 ), () => {
+
+				sum.addAssign( vec4( sums[ i ].rgb.div( sums[ i ].w ), 1 ).mul( weight ) );
+
+			} );
+
+		} );
 
 		return sum.rgb.div( sum.w.max( 1e-5 ) );
 
