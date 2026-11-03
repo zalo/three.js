@@ -51,6 +51,7 @@
 			import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 			import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 			import { AdaptiveSubdivisionMesh } from 'three/addons/objects/AdaptiveSubdivisionMesh.js';
+			import { AdaptiveSubdivisionOcclusion } from 'three/addons/objects/AdaptiveSubdivisionOcclusion.js';
 
 			import WebGPU from 'three/addons/capabilities/WebGPU.js';
 
@@ -63,7 +64,7 @@
 			}
 
 			let camera, scene, renderer, controls;
-			let meshes, normalMappedMeshes, light, statsElement, telemetryElement;
+			let meshes, normalMappedMeshes, occlusion, light, statsElement, telemetryElement;
 
 			const params = {
 				adaptive: true,
@@ -77,16 +78,17 @@
 				debugColors: 'none',
 				frustumCulling: true,
 				backfaceCulling: true,
+				occlusionCulling: true,
 				freeze: false,
 				shadows: true,
 				pixelRatio: window.devicePixelRatio
 			};
 
 			// where the time of a frame goes: the CPU time of the updates and the render, averaged over frames, and the GPU
-			// time of the subdivision updates, the shadow maps and the scene from the inspector, where the browser supports
-			// GPU timestamps
+			// time of the subdivision updates, the occlusion, the shadow maps and the scene from the inspector, where the
+			// browser supports GPU timestamps
 
-			const telemetry = { cpu: { total: 0, subdivision: 0, render: 0 }, gpu: null };
+			const telemetry = { cpu: { total: 0, subdivision: 0, occlusion: 0, render: 0 }, gpu: null };
 
 			class TelemetryInspector extends Inspector {
 
@@ -94,13 +96,17 @@
 
 					super.resolveFrame( frame );
 
-					const gpu = { subdivision: 0, shadows: 0, scene: 0 };
+					const gpu = { subdivision: 0, occlusion: 0, shadows: 0, scene: 0 };
 
 					for ( const stats of frame.children ) {
 
 						const time = this.getStatsData( stats.cid ).gpu;
 
-						if ( stats.isComputeStats ) {
+						if ( stats.name.startsWith( 'AdaptiveSubdivisionOcclusion' ) ) {
+
+							gpu.occlusion += time;
+
+						} else if ( stats.isComputeStats ) {
 
 							gpu.subdivision += time;
 
@@ -273,6 +279,10 @@
 
 				scene.add( ...meshes, ...normalMappedMeshes );
 
+				// the meshes hide each other, like the terrain behind the ridge
+
+				occlusion = new AdaptiveSubdivisionOcclusion( meshes );
+
 				controls = new OrbitControls( camera, renderer.domElement );
 				controls.target.set( 0.5, 3.4, 0 );
 				controls.minDistance = 0.3;
@@ -292,6 +302,7 @@
 
 				await Promise.all( [
 					renderer.compileAsync( scene, camera ),
+					occlusion.compileAsync( renderer ),
 					terrain.compileAsync( renderer ),
 					ruins.compileAsync( renderer ).then( () => rocks.compileAsync( renderer ) )
 				] );
@@ -317,6 +328,7 @@
 				gui.add( params, 'morphing' ).name( 'Smooth Transitions' );
 				gui.add( params, 'frustumCulling' ).name( 'Frustum Culling' );
 				gui.add( params, 'backfaceCulling' ).name( 'Backface Culling' );
+				gui.add( params, 'occlusionCulling' ).name( 'Occlusion Culling' );
 				gui.add( params, 'freeze' ).name( 'Freeze Subdivision' );
 				gui.add( params, 'wireframe' ).name( 'Wireframe' ).onChange( v => wireframe.value = v ? 1 : 0 );
 				gui.add( params, 'debugColors', { 'None': 'none', 'Subdivision Depth': 'depth', 'Triangle Size': 'size' } ).name( 'Debug Colors' ).onChange( v => debugColors.value = [ 'none', 'depth', 'size' ].indexOf( v ) );
@@ -1219,7 +1231,7 @@
 				const ms = ( value ) => value.toFixed( 2 );
 				const { cpu, gpu } = telemetry;
 
-				let text = `${ Math.round( renderer.inspector.fps ) } fps, CPU ${ ms( cpu.total ) } ms (subdivision ${ ms( cpu.subdivision ) }, render ${ ms( cpu.render ) })`;
+				let text = `${ Math.round( renderer.inspector.fps ) } fps, CPU ${ ms( cpu.total ) } ms (subdivision ${ ms( cpu.subdivision ) }, occlusion ${ ms( cpu.occlusion ) }, render ${ ms( cpu.render ) })`;
 
 				if ( renderer.backend.hasTimestamp !== true ) {
 
@@ -1227,7 +1239,7 @@
 
 				} else if ( gpu !== null ) {
 
-					text += `, GPU ${ ms( gpu.subdivision + gpu.shadows + gpu.scene ) } ms (subdivision ${ ms( gpu.subdivision ) }, shadows ${ ms( gpu.shadows ) }, scene ${ ms( gpu.scene ) })`;
+					text += `, GPU ${ ms( gpu.subdivision + gpu.occlusion + gpu.shadows + gpu.scene ) } ms (subdivision ${ ms( gpu.subdivision ) }, occlusion ${ ms( gpu.occlusion ) }, shadows ${ ms( gpu.shadows ) }, scene ${ ms( gpu.scene ) })`;
 
 				}
 
@@ -1280,7 +1292,7 @@
 			function animate() {
 
 				const start = performance.now();
-				let subdivision = 0;
+				let subdivision = 0, occlusionTime = 0;
 
 				controls.update();
 
@@ -1291,9 +1303,17 @@
 
 				if ( params.adaptive && params.freeze === false ) {
 
+					const occlusionStart = performance.now();
+
+					if ( params.occlusionCulling ) occlusion.update( renderer, camera );
+
 					const updateStart = performance.now();
 
+					occlusionTime = updateStart - occlusionStart;
+
 					for ( const mesh of meshes ) {
+
+						mesh.occlusion = params.occlusionCulling ? occlusion : null;
 
 						mesh.targetEdgePixels = params.targetEdgePixels;
 						mesh.maxErrorPixels = params.maxErrorPixels;
@@ -1322,6 +1342,7 @@
 
 				average( 'total', end - start );
 				average( 'subdivision', subdivision );
+				average( 'occlusion', occlusionTime );
 				average( 'render', end - renderStart );
 
 			}

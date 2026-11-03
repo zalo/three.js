@@ -2,12 +2,15 @@ import {
 	BackSide,
 	BufferAttribute,
 	BufferGeometry,
+	DataTexture,
 	DoubleSide,
+	FloatType,
 	Frustum,
 	IndirectStorageBufferAttribute,
 	Matrix4,
 	Mesh,
 	Object3D,
+	RedFormat,
 	StorageBufferAttribute,
 	Vector2,
 	Vector3,
@@ -32,7 +35,9 @@ import {
 	float,
 	floatBitsToUint,
 	floor,
+	ivec2,
 	instanceIndex,
+	int,
 	log2,
 	max,
 	min,
@@ -43,6 +48,8 @@ import {
 	select,
 	smoothstep,
 	storage,
+	texture,
+	textureLoad,
 	transformNormalToView,
 	uint,
 	uniform,
@@ -75,6 +82,7 @@ const MORPH_END = 1.3; // the split ratio of a parent at which its children stop
 const PATCH_MORPH_END = 1.6; // the size of a leaf, relative to where its patch size doubled, at which its patch stops morphing
 const FULL_PATCH_MORPH_END = 1.16; // the same for the full patch, which ends before leaves morph, see _patchLevel()
 const MAX_SHADOW_SCALE = 1e6; // the scale of shadow triangles at a shadow detail of 0, large enough that nothing splits
+const MAX_OCCLUSION_LEVELS = 16; // the levels of the hierarchical depth of the occlusion, enough for 32768 texels
 const LEVEL_SCALE = 4096; // patch levels are multiples of 1 / LEVEL_SCALE below 16, packed as 16 bit fixed point, see _patchLevel()
 const POOL_STRIDE = 11; // the integers per block of the memory pool, see Subdivision
 const POOL_HEAP = 0; // the heap index of the leaf
@@ -97,6 +105,7 @@ const _inverse = /*@__PURE__*/ new Matrix4();
 const _cameraPosition = /*@__PURE__*/ new Vector3();
 const _size = /*@__PURE__*/ new Vector2();
 const _emptyGeometry = /*@__PURE__*/ new BufferGeometry();
+const _emptyDepth = /*@__PURE__*/ new DataTexture( new Float32Array( 1 ), 1, 1, RedFormat, FloatType );
 const _mesh = /*@__PURE__*/ new Mesh( _emptyGeometry );
 const _intersects = [];
 
@@ -124,7 +133,8 @@ const _intersects = [];
  *   root triangles, so root triangles that are small on screen draw a coarser patch, down to a
  *   single triangle. Edges between leaves of different patch sizes are drawn at the finer size by
  *   both, so they stay crack-free.
- * - Leaves outside the view frustum or facing away from the camera are culled and not refined.
+ * - Leaves outside the view frustum, facing away from the camera or hidden behind occluders (see
+ *   {@link AdaptiveSubdivisionOcclusion}) are culled and not refined.
  * - The patch is itself bisected, so the patches of two children are the patch of their parent with
  *   every triangle bisected once. New vertices morph in from the midpoints of the edges they split,
  *   so splits, merges and changes of the patch size do not pop (geomorphing).
@@ -305,6 +315,15 @@ class AdaptiveSubdivisionMesh extends Mesh {
 		this.backfaceCulling = true;
 
 		/**
+		 * Occluders that hide leaves from the camera, which are then culled and not refined, see
+		 * {@link AdaptiveSubdivisionOcclusion}. It must be updated with the camera before this mesh.
+		 *
+		 * @type {?AdaptiveSubdivisionOcclusion}
+		 * @default null
+		 */
+		this.occlusion = null;
+
+		/**
 		 * The source geometry.
 		 *
 		 * @type {BufferGeometry}
@@ -403,6 +422,19 @@ class AdaptiveSubdivisionMesh extends Mesh {
 
 		this._rootCount = uniform( rootCount, 'uint' );
 		this._maxDisplacement = uniform( maxDisplacement );
+
+		// the hierarchical depth of the occlusion, see _occluded()
+
+		this._occlusionMatrix = uniform( new Matrix4() );
+		this._occlusionTextures = [ texture( _emptyDepth ), texture( _emptyDepth ) ];
+
+		// both start with the same texture, which would bind them once in shaders built before the occlusion is set
+
+		for ( const node of this._occlusionTextures ) node.mergeable = false;
+
+		this._occlusionRects = uniformArray( Array.from( { length: MAX_OCCLUSION_LEVELS }, () => new Vector4( 0, 0, 1, 1 ) ), 'vec4' );
+		this._occlusionLevels = uniform( 1, 'int' );
+		this._occlusionReversed = uniform( 0 );
 
 		// whether the current render object is drawn by a shadow pass with the shadow subdivision, a uniform per render object
 
@@ -731,6 +763,23 @@ class AdaptiveSubdivisionMesh extends Mesh {
 		subdivision.patchLevel.value = Math.log2( this.patchSize );
 		subdivision.frustumCulling.value = frustumCulling;
 
+		// occlusion, if it was updated for this camera
+
+		const occlusion = this.occlusion;
+
+		subdivision.occlusion.value = culling && occlusion !== null && occlusion.camera === camera && occlusion.levels.length > 0 && occlusion.levels.length <= MAX_OCCLUSION_LEVELS ? 1 : 0;
+
+		if ( subdivision.occlusion.value === 1 ) {
+
+			this._occlusionMatrix.value.multiplyMatrices( occlusion.viewProjectionMatrix, this.matrixWorld );
+			this._occlusionTextures[ 0 ].value = occlusion.textures[ 0 ];
+			this._occlusionTextures[ 1 ].value = occlusion.textures[ 1 ];
+			occlusion.levels.forEach( ( { x, y, width, height }, i ) => this._occlusionRects.array[ i ].set( x, y, width, height ) );
+			this._occlusionLevels.value = occlusion.levels.length;
+			this._occlusionReversed.value = camera.reversedDepth === true ? 1 : 0;
+
+		}
+
 		subdivision.facing.value = culling && this.backfaceCulling && side !== DoubleSide ? ( side === BackSide ? - 1 : 1 ) : 0;
 
 		// the shadow subdivision, with triangles 1 / shadowDetail times larger: leaves of the same size drawn with a
@@ -928,6 +977,7 @@ class AdaptiveSubdivisionMesh extends Mesh {
 		this.morphTime = source.morphTime;
 		this.frustumCulling = source.frustumCulling;
 		this.backfaceCulling = source.backfaceCulling;
+		this.occlusion = source.occlusion;
 
 		return this;
 
@@ -1323,9 +1373,10 @@ class AdaptiveSubdivisionMesh extends Mesh {
 	 * @param {Object} node - A node returned by `_decodeBisector()`.
 	 * @param {Subdivision} subdivision - The subdivision, with the thresholds and culling parameters.
 	 * @param {boolean} [error=false] - Whether to evaluate the deviation, else the ratio only covers the size.
+	 * @param {boolean} [occlusion=true] - Whether to test the occlusion.
 	 * @return {{visible: Node<bool>, pixels: Node<float>, ratio: Node<float>}} The visibility, the size in pixels and the split ratio.
 	 */
-	_evaluate( node, subdivision, error = false ) {
+	_evaluate( node, subdivision, error = false, occlusion = true ) {
 
 		const { positions, normals } = this._rootTriangle( node.root );
 
@@ -1377,6 +1428,22 @@ class AdaptiveSubdivisionMesh extends Mesh {
 
 		} );
 
+		// only the camera subdivision is culled by the occlusion
+
+		if ( occlusion && subdivision.shadow === false ) {
+
+			If( subdivision.occlusion.equal( 1 ).and( visible.equal( 1 ) ), () => {
+
+				If( this._occluded( center, radius ), () => {
+
+					visible.assign( 0 );
+
+				} );
+
+			} );
+
+		}
+
 		// screen space size, at the distance of the center as the displacement averages out
 
 		const distance = max( this._cameraPosition.distance( center ), 1e-4 );
@@ -1412,6 +1479,82 @@ class AdaptiveSubdivisionMesh extends Mesh {
 			pixels,
 			ratio
 		};
+
+	}
+
+	/**
+	 * Returns whether a sphere is hidden behind the occluders, see {@link AdaptiveSubdivisionOcclusion}:
+	 * whether the nearest depth of its bounding box is behind the farthest depth of the occluders in the
+	 * texels it covers, at the mip level where it covers at most two by two texels. Spheres reaching
+	 * behind the camera are not hidden.
+	 *
+	 * @private
+	 * @param {Node<vec3>} center - The local space center.
+	 * @param {Node<float>} radius - The radius.
+	 * @return {Node<bool>} Whether the sphere is hidden.
+	 */
+	_occluded( center, radius ) {
+
+		const reversed = this._occlusionReversed.equal( 1 );
+		const low = vec2( 1 ).toVar();
+		const high = vec2( 0 ).toVar();
+		const nearest = select( reversed, float( 0 ), float( 1 ) ).toVar();
+		const behind = uint( 0 ).toVar();
+
+		for ( let i = 0; i < 8; i ++ ) {
+
+			const corner = center.add( vec3( i & 1 ? 1 : - 1, i & 2 ? 1 : - 1, i & 4 ? 1 : - 1 ).mul( radius ) );
+			const clip = this._occlusionMatrix.mul( vec4( corner, 1 ) ).toVar();
+
+			If( clip.w.lessThanEqual( 1e-6 ), () => {
+
+				behind.assign( 1 );
+
+			} );
+
+			const ndc = clip.xyz.div( clip.w ).toVar();
+			const uv = vec2( ndc.x.mul( 0.5 ).add( 0.5 ), ndc.y.mul( - 0.5 ).add( 0.5 ) );
+
+			low.assign( min( low, uv ) );
+			high.assign( max( high, uv ) );
+			nearest.assign( select( reversed, max( nearest, ndc.z ), min( nearest, ndc.z ) ) );
+
+		}
+
+		const hidden = uint( 0 ).toVar();
+
+		If( behind.equal( 0 ), () => {
+
+			const size = this._occlusionRects.element( 0 ).zw;
+			const extent = high.clamp( 0, 1 ).sub( low.clamp( 0, 1 ) ).mul( size );
+			const level = int( ceil( log2( max( extent.x, extent.y, 1 ) ) ) ).clamp( 0, this._occlusionLevels.sub( 1 ) ).toVar();
+
+			// the texels of the level covering the corners of the box, level texels cover 2^level texels of level 0. the
+			// even levels are in the first texture, the odd ones in the second
+
+			const rect = this._occlusionRects.element( level ).toVar();
+			const scale = size.div( float( uint( 1 ).shiftLeft( uint( level ) ) ) );
+			const levelSize = ivec2( rect.zw ).sub( 1 );
+			const first = ivec2( low.clamp( 0, 1 ).mul( scale ) ).clamp( ivec2( 0 ), levelSize ).toVar();
+			const last = ivec2( high.clamp( 0, 1 ).mul( scale ) ).clamp( ivec2( 0 ), levelSize ).toVar();
+			const odd = level.bitAnd( 1 ).equal( 1 );
+
+			const depth = ( x, y ) => {
+
+				const texel = ivec2( rect.xy ).add( ivec2( x, y ) );
+
+				return select( odd, textureLoad( this._occlusionTextures[ 1 ], texel ).x, textureLoad( this._occlusionTextures[ 0 ], texel ).x );
+
+			};
+
+			const a = depth( first.x, first.y ), b = depth( last.x, first.y ), c = depth( first.x, last.y ), d = depth( last.x, last.y );
+			const farthest = select( reversed, min( a, b, c, d ), max( a, b, c, d ) );
+
+			hidden.assign( select( reversed, nearest.lessThan( farthest ), nearest.greaterThan( farthest ) ) );
+
+		} );
+
+		return hidden.equal( 1 );
 
 	}
 
@@ -2548,7 +2691,7 @@ class AdaptiveSubdivisionMesh extends Mesh {
 			If( instanceIndex.lessThan( this._rootCount ), () => {
 
 				const node = this._decodeBisector( instanceIndex.add( 2 ** this.rootDepth ), uint( this.rootDepth ) );
-				const { pixels } = this._evaluate( node, subdivision );
+				const { pixels } = this._evaluate( node, subdivision, false, false );
 
 				this._slots.element( instanceIndex.add( this._levelBase( shadow ) ) ).assign( floatBitsToUint( this._patchLevel( pixels, subdivision ) ) );
 
@@ -3007,6 +3150,7 @@ class Subdivision {
 		this.patchSize = uniform( 1 ); // the size of the patch drawn for the leaves larger than the target
 		this.patchLevel = uniform( 0 ); // its log2
 		this.frustumCulling = uniform( 1 );
+		this.occlusion = uniform( 0 ); // whether leaves hidden behind the occluders are culled
 		this.facing = uniform( 0 ); // 1: cull leaves facing away from the camera, -1: cull leaves facing it, 0: no culling
 
 		this.splitNodes = [];
