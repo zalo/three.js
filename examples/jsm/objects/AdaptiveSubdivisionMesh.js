@@ -1,15 +1,18 @@
 import {
 	BackSide,
 	BufferAttribute,
+	Box3,
 	BufferGeometry,
 	DataTexture,
 	DoubleSide,
 	FloatType,
+	FrontSide,
 	Frustum,
 	IndirectStorageBufferAttribute,
 	Matrix4,
 	Mesh,
 	Object3D,
+	Ray,
 	RedFormat,
 	StorageBufferAttribute,
 	Vector2,
@@ -108,6 +111,13 @@ const _emptyGeometry = /*@__PURE__*/ new BufferGeometry();
 const _emptyDepth = /*@__PURE__*/ new DataTexture( new Float32Array( 1 ), 1, 1, RedFormat, FloatType );
 const _mesh = /*@__PURE__*/ new Mesh( _emptyGeometry );
 const _intersects = [];
+const _ray = /*@__PURE__*/ new Ray();
+const _box = /*@__PURE__*/ new Box3();
+const _hit = /*@__PURE__*/ new Vector3();
+const _a = /*@__PURE__*/ new Vector3();
+const _b = /*@__PURE__*/ new Vector3();
+const _c = /*@__PURE__*/ new Vector3();
+const _surface = { position: /*@__PURE__*/ new Vector3(), normal: /*@__PURE__*/ new Vector3(), uv: /*@__PURE__*/ new Vector2() };
 
 /**
  * A mesh that is adaptively subdivided on the GPU every frame, so displacement can add real
@@ -155,7 +165,7 @@ const _intersects = [];
  * By default, the shading normals are those of the displaced triangles, with a normal map computed
  * from the displacement blended in for the detail the triangles are too coarse to show, so the
  * normal map fades out as the subdivision gets finer. Raycasting uses the source geometry without
- * displacement.
+ * displacement, or the displaced surface with a `cpuDisplacement` callback.
  *
  * Call {@link AdaptiveSubdivisionMesh#update} every frame, before rendering, with the camera that
  * drives the level of detail. That camera only draws the leaves it can see. Shadow passes draw a
@@ -192,6 +202,7 @@ class AdaptiveSubdivisionMesh extends Mesh {
 	 * @param {?Function} [options.displacement=null] - A callback returning a `Node<float>` with the displacement along the normal in local space. It receives the local space `position`, the normalized `normal`, the `uv` and the `footprint`: the approximate local space size of a rendered triangle at the given position, useful to pick a texture mip level.
 	 * @param {?Function} [options.displacementGradient=null] - An optional callback returning a `Node<vec3>` with the gradient of the displacement in local space, used for the normals instead of finite differences of `displacement`, which take three evaluations per gradient. It receives the same inputs as `displacement`, only the component of the gradient along the surface is used. Displacement maps can be baked once into a texture holding the height and its gradient, see the example.
 	 * @param {?Function} [options.displacementError=null] - An optional callback returning a `Node<float>` with how far triangles of a given size deviate from the displaced surface, in local space: the root mean square difference between the displacement and its linear interpolation over the triangles of a leaf. It receives the local space `position`, the normalized `normal` and the `uv` at the center of the leaf, the local space `size` of its triangles (see {@link AdaptiveSubdivisionMesh#targetEdgePixels}) and the `footprint` the displacement is sampled with. Leaves larger than the target size are then only split while they deviate more than {@link AdaptiveSubdivisionMesh#maxErrorPixels}, which saves triangles where the displacement is smooth. It runs in compute shaders, so textures must be sampled with an explicit level.
+	 * @param {?Function} [options.cpuDisplacement=null] - An optional callback returning the same displacement as `displacement` as a number, evaluated on the CPU by {@link AdaptiveSubdivisionMesh#raycast}, so rays hit the displaced surface. It receives the local space `position`, the normalized `normal` and the `uv` (`null` without UVs) as `Vector3` and `Vector2` objects that are reused between calls.
 	 * @param {number} [options.maxDisplacement=0] - An upper bound for the absolute displacement, used for culling.
 	 * @param {?number} [options.maxDepth=null] - The maximum number of bisections of a root triangle, every two levels halve the edge length. Defaults to as many as 32-bit heap indices allow, `31 - ceil( log2( rootCount ) )`.
 	 * @param {number} [options.patchSize=8] - The number of segments per edge of the pre-tessellated patch drawn for each leaf. Must be a power of two.
@@ -206,6 +217,7 @@ class AdaptiveSubdivisionMesh extends Mesh {
 			displacement = null,
 			displacementGradient = null,
 			displacementError = null,
+			cpuDisplacement = null,
 			maxDisplacement = 0,
 			maxDepth = null,
 			patchSize = 8,
@@ -534,6 +546,21 @@ class AdaptiveSubdivisionMesh extends Mesh {
 		this._displacement = displacement;
 		this._displacementGradient = displacementGradient;
 		this._displacementError = displacementError;
+		this._cpuDisplacement = cpuDisplacement;
+
+		/**
+		 * The number of segments per edge source triangles near the ray are tessellated with by
+		 * {@link AdaptiveSubdivisionMesh#raycast} with a `cpuDisplacement` callback.
+		 *
+		 * @type {number}
+		 * @default 16
+		 */
+		this.raycastSegments = 16;
+
+		// the welded source mesh and the bounds of its triangles, for raycasting
+
+		this._sourceMesh = mesh;
+		this._triangleBounds = null;
 
 		// the longest edge of the source mesh, which bounds the footprint of the coarsest shadow triangles
 
@@ -874,13 +901,23 @@ class AdaptiveSubdivisionMesh extends Mesh {
 	}
 
 	/**
-	 * Computes intersection points between a casted ray and the source geometry, without
-	 * displacement.
+	 * Computes intersection points between a casted ray and the displaced surface, with a
+	 * `cpuDisplacement` callback, else the source geometry. The source triangles whose bounds,
+	 * enlarged by the maximum displacement, the ray passes are tessellated with
+	 * {@link AdaptiveSubdivisionMesh#raycastSegments} segments per edge and displaced on the CPU.
 	 *
 	 * @param {Raycaster} raycaster - The raycaster.
 	 * @param {Array<Object>} intersects - The target array that holds the intersection points.
 	 */
 	raycast( raycaster, intersects ) {
+
+		if ( this._cpuDisplacement !== null ) {
+
+			this._raycastDisplaced( raycaster, intersects );
+
+			return;
+
+		}
 
 		_mesh.geometry = this.sourceGeometry;
 		_mesh.material = this.material;
@@ -899,6 +936,138 @@ class AdaptiveSubdivisionMesh extends Mesh {
 
 		_mesh.geometry = _emptyGeometry;
 		_mesh.material = null;
+
+	}
+
+	/**
+	 * Intersects a ray with the displaced surface, see {@link AdaptiveSubdivisionMesh#raycast}.
+	 *
+	 * @private
+	 * @param {Raycaster} raycaster - The raycaster.
+	 * @param {Array<Object>} intersects - The target array that holds the intersection points.
+	 */
+	_raycastDisplaced( raycaster, intersects ) {
+
+		_inverse.copy( this.matrixWorld ).invert();
+		_ray.copy( raycaster.ray ).applyMatrix4( _inverse );
+
+		if ( _ray.intersectsBox( this.geometry.boundingBox ) === false ) return;
+
+		const { faceCount, faces, vertices, corners, uvs } = this._sourceMesh;
+
+		if ( this._triangleBounds === null ) {
+
+			// the bounds of the source triangles, enlarged by the maximum displacement
+
+			const bounds = new Float32Array( faceCount * 6 );
+
+			for ( let f = 0; f < faceCount; f ++ ) {
+
+				_box.makeEmpty();
+
+				for ( let k = 0; k < 3; k ++ ) _box.expandByPoint( _a.fromArray( vertices, faces[ 4 * f + k ] * 8 ) );
+
+				_box.expandByScalar( this.maxDisplacement );
+				_box.min.toArray( bounds, 6 * f );
+				_box.max.toArray( bounds, 6 * f + 3 );
+
+			}
+
+			this._triangleBounds = bounds;
+
+		}
+
+		const bounds = this._triangleBounds;
+		const segments = Math.max( Math.round( this.raycastSegments ), 1 );
+		const points = new Float32Array( ( segments + 1 ) * ( segments + 2 ) / 2 * 3 );
+		const side = this.material.side;
+		const point = ( i, j ) => ( j * ( 2 * segments + 3 - j ) / 2 + i ) * 3;
+		const { position, normal, uv } = _surface;
+
+		for ( let f = 0; f < faceCount; f ++ ) {
+
+			_box.min.fromArray( bounds, 6 * f );
+			_box.max.fromArray( bounds, 6 * f + 3 );
+
+			if ( _ray.intersectsBox( _box ) === false ) continue;
+
+			// the displaced grid of the triangle, interpolated like the subdivision does
+
+			const a = faces[ 4 * f ] * 8, b = faces[ 4 * f + 1 ] * 8, c = faces[ 4 * f + 2 ] * 8;
+
+			for ( let j = 0; j <= segments; j ++ ) {
+
+				for ( let i = 0; i <= segments - j; i ++ ) {
+
+					const u = i / segments, v = j / segments, w = 1 - u - v;
+
+					for ( let k = 0; k < 3; k ++ ) {
+
+						position.setComponent( k, vertices[ a + k ] * w + vertices[ b + k ] * u + vertices[ c + k ] * v );
+						normal.setComponent( k, vertices[ a + 4 + k ] * w + vertices[ b + 4 + k ] * u + vertices[ c + 4 + k ] * v );
+
+					}
+
+					normal.normalize();
+
+					if ( uvs !== null ) {
+
+						const ua = corners[ 4 * f ] * 2, ub = corners[ 4 * f + 1 ] * 2, uc = corners[ 4 * f + 2 ] * 2;
+
+						uv.set( uvs[ ua ] * w + uvs[ ub ] * u + uvs[ uc ] * v, uvs[ ua + 1 ] * w + uvs[ ub + 1 ] * u + uvs[ uc + 1 ] * v );
+
+					}
+
+					const height = this._cpuDisplacement( { position, normal, uv: uvs !== null ? uv : null } );
+
+					_a.copy( normal ).multiplyScalar( height ).add( position ).toArray( points, point( i, j ) );
+
+				}
+
+			}
+
+			for ( let j = 0; j < segments; j ++ ) {
+
+				for ( let i = 0; i < segments - j; i ++ ) {
+
+					// two triangles per cell, one at the hypotenuse
+
+					for ( let t = 0; t < ( i + j < segments - 1 ? 2 : 1 ); t ++ ) {
+
+						if ( t === 0 ) {
+
+							_a.fromArray( points, point( i, j ) );
+							_b.fromArray( points, point( i + 1, j ) );
+							_c.fromArray( points, point( i, j + 1 ) );
+
+						} else {
+
+							_a.fromArray( points, point( i + 1, j ) );
+							_b.fromArray( points, point( i + 1, j + 1 ) );
+							_c.fromArray( points, point( i, j + 1 ) );
+
+						}
+
+						const hit = side === FrontSide ? _ray.intersectTriangle( _a, _b, _c, true, _hit ) : side === BackSide ? _ray.intersectTriangle( _c, _b, _a, true, _hit ) : _ray.intersectTriangle( _a, _b, _c, false, _hit );
+
+						if ( hit === null ) continue;
+
+						const worldPoint = _hit.clone().applyMatrix4( this.matrixWorld );
+						const distance = raycaster.ray.origin.distanceTo( worldPoint );
+
+						if ( distance < raycaster.near || distance > raycaster.far ) continue;
+
+						const faceNormal = _b.sub( _a ).cross( _c.sub( _a ) ).normalize().transformDirection( this.matrixWorld );
+
+						intersects.push( { distance, point: worldPoint, object: this, faceIndex: f, normal: faceNormal.clone() } );
+
+					}
+
+				}
+
+			}
+
+		}
 
 	}
 
@@ -978,6 +1147,7 @@ class AdaptiveSubdivisionMesh extends Mesh {
 		this.frustumCulling = source.frustumCulling;
 		this.backfaceCulling = source.backfaceCulling;
 		this.occlusion = source.occlusion;
+		this.raycastSegments = source.raycastSegments;
 
 		return this;
 

@@ -239,13 +239,21 @@
 				// ruins, painted into a mask texture. grass and cobblestones are projected from the top, rock with triplanar
 				// mapping
 
-				const terrainMaskTexture = createTerrainMask();
+				const terrainMaskData = createTerrainMask();
 
 				const terrainMask = ( position ) => {
 
-					const { x: cobble, y: rock } = texture( terrainMaskTexture, position.xz.div( TERRAIN_SIZE ).add( 0.5 ) ).level( 0 );
+					const { x: cobble, y: rock } = texture( terrainMaskData.texture, position.xz.div( TERRAIN_SIZE ).add( 0.5 ) ).level( 0 );
 
 					return vec3( float( 1 ).sub( cobble ).sub( rock ), rock, cobble );
+
+				};
+
+				terrainMask.cpu = ( position ) => {
+
+					const [ cobble, rock ] = terrainMaskData.sample( position.x / TERRAIN_SIZE + 0.5, position.z / TERRAIN_SIZE + 0.5 );
+
+					return [ 1 - cobble - rock, rock, cobble ];
 
 				};
 
@@ -385,7 +393,19 @@
 
 				const { reliefMap, bake } = createReliefMap( heightMap, patchSize );
 
-				return { colorMap, reliefMap, bake, patchSize, size: heightMap.image.width, scale: 1 / size, depth, tint };
+				// the heights on the CPU as well, so rays hit the displaced surface, see createSurface()
+
+				const { width, height } = heightMap.image;
+				const context = new OffscreenCanvas( width, height ).getContext( '2d', { willReadFrequently: true } );
+
+				context.drawImage( heightMap.image, 0, 0 );
+
+				const pixels = context.getImageData( 0, 0, width, height ).data;
+				const heights = new Float32Array( width * height );
+
+				for ( let i = 0; i < heights.length; i ++ ) heights[ i ] = pixels[ 4 * i ] / 255;
+
+				return { colorMap, reliefMap, bake, heights, patchSize, size: width, scale: 1 / size, depth, tint };
 
 			}
 
@@ -667,9 +687,43 @@
 
 				};
 
+				// the displacement on the CPU, for raycasts: the same layers and blend, from the full resolution heights
+
+				const cpuRelief = ( layer, position, normal ) => {
+
+					const sample = ( u, v ) => sampleHeights( layer.heights, layer.size, u * layer.scale, v * layer.scale );
+
+					if ( layer.triplanar === false ) return sample( position.x, position.z );
+
+					const wx = Math.abs( normal.x ) ** 8, wy = Math.abs( normal.y ) ** 8, wz = Math.abs( normal.z ) ** 8;
+
+					return ( sample( position.z, position.y ) * wx + sample( position.x, position.z ) * wy + sample( position.x, position.y ) * wz ) / ( wx + wy + wz );
+
+				};
+
+				const cpuDisplacement = ( { position, normal } ) => {
+
+					const heights = layers.map( ( layer ) => cpuRelief( layer, position, normal ) );
+
+					let weights = [ 1 ];
+
+					if ( layers.length > 1 ) {
+
+						const s = mask.cpu( position ).map( ( weight, i ) => heights[ i ] + weight * ( 1 + BLEND_SHARPNESS ) );
+						const b = s.map( ( value ) => Math.max( value - Math.max( ...s ) + BLEND_SHARPNESS, 0 ) );
+						const sum = b.reduce( ( x, y ) => x + y );
+
+						weights = b.map( ( value ) => value / sum );
+
+					}
+
+					return layers.reduce( ( sum, layer, i ) => sum + ( heights[ i ] - 0.5 ) * weights[ i ] * layer.depth, 0 ) * params.displacement;
+
+				};
+
 				const maxDisplacement = Math.max( ...layers.map( ( layer ) => layer.depth ) ) * 1.5; // half the depth at the largest displacement scale of 3
 
-				return { displacement, displacementGradient, displacementError, maxDisplacement, patchSize, fragment };
+				return { displacement, displacementGradient, displacementError, cpuDisplacement, maxDisplacement, patchSize, fragment };
 
 			}
 
@@ -681,6 +735,7 @@
 					displacement: surface.displacement,
 					displacementGradient: surface.displacementGradient,
 					displacementError: surface.displacementError,
+					cpuDisplacement: surface.cpuDisplacement,
 					maxDisplacement: surface.maxDisplacement,
 					patchSize: surface.patchSize,
 					maxLeafCount: 65536, // the leaf budget sizes the buffers, see the stats
@@ -690,6 +745,7 @@
 
 				mesh.castShadow = true;
 				mesh.receiveShadow = true;
+				mesh.raycastSegments = 8;
 
 				// color: optionally tinted by subdivision depth, with the wireframe on top
 
@@ -751,6 +807,19 @@
 				const power = pow( abs( normal ), vec3( 8 ) );
 
 				return power.div( power.x.add( power.y ).add( power.z ) );
+
+			}
+
+			// bilinear height on the CPU, with the rows flipped like the texture and repeated
+
+			function sampleHeights( heights, size, u, v ) {
+
+				const x = u * size - 0.5, y = v * size - 0.5;
+				const x0 = Math.floor( x ), y0 = Math.floor( y );
+				const fx = x - x0, fy = y - y0;
+				const at = ( i, j ) => heights[ ( size - 1 - ( ( ( j % size ) + size ) % size ) ) * size + ( ( i % size ) + size ) % size ];
+
+				return ( at( x0, y0 ) * ( 1 - fx ) + at( x0 + 1, y0 ) * fx ) * ( 1 - fy ) + ( at( x0, y0 + 1 ) * ( 1 - fx ) + at( x0 + 1, y0 + 1 ) * fx ) * fy;
 
 			}
 
@@ -894,7 +963,25 @@
 				mask.magFilter = mask.minFilter = THREE.LinearFilter;
 				mask.needsUpdate = true;
 
-				return mask;
+				// bilinear on the CPU, like the texture
+
+				const sample = ( u, v ) => {
+
+					const x = THREE.MathUtils.clamp( u * size - 0.5, 0, size - 1 ), y = THREE.MathUtils.clamp( v * size - 0.5, 0, size - 1 );
+					const x0 = Math.floor( x ), y0 = Math.floor( y ), x1 = Math.min( x0 + 1, size - 1 ), y1 = Math.min( y0 + 1, size - 1 );
+					const fx = x - x0, fy = y - y0;
+
+					return [ 0, 1 ].map( ( c ) => {
+
+						const at = ( i, j ) => data[ 4 * ( j * size + i ) + c ] / 255;
+
+						return ( at( x0, y0 ) * ( 1 - fx ) + at( x1, y0 ) * fx ) * ( 1 - fy ) + ( at( x0, y1 ) * ( 1 - fx ) + at( x1, y1 ) * fx ) * fy;
+
+					} );
+
+				};
+
+				return { texture: mask, sample };
 
 			}
 
