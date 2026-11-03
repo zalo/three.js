@@ -22,56 +22,6 @@
 			<small>Progressively bake and denoise ray traced radiosity (<a href="https://github.com/gkjohnson/three-mesh-bvh" target="_blank" rel="noopener">three-mesh-bvh</a>) diffuse irradiance into a UV atlas by <a href="https://ben3d.ca" target="_blank" rel="noopener">Ben Houston</a>.<br/><span id="status"></span></small>
 		</div>
 
-		<script>
-
-			// debug (demo branch only): warnings and errors show on the page, with their objects as JSON
-
-			( () => {
-
-				const box = document.createElement( 'pre' );
-				box.style.cssText = 'position:fixed;left:0;bottom:0;max-height:45%;max-width:100%;overflow:auto;margin:0;padding:6px;background:#000d;color:#f99;font:11px monospace;z-index:9999;white-space:pre-wrap;word-break:break-all;';
-				const text = ( a ) => {
-
-					if ( typeof a !== 'object' || a === null ) return String( a );
-					if ( a instanceof Error ) return a.message + ' ' + ( a.stack ?? '' ).split( '\n' ).slice( 0, 3 ).join( ' | ' );
-					try {
-
-			return JSON.stringify( a );
-
-		} catch ( e ) {
-
-			return String( a );
-
-		}
-
-				};
-
-				const show = ( kind, args ) => {
-
-					if ( ! box.isConnected && document.body ) document.body.appendChild( box );
-					box.textContent += kind + ': ' + args.map( text ).join( ' ' ) + '\n';
-
-				};
-
-				for ( const k of [ 'warn', 'error' ] ) {
-
-					const f = console[ k ];
-					console[ k ] = ( ...a ) => {
-
-			show( k, a ); f.apply( console, a );
-
-		};
-
-				}
-
-				addEventListener( 'error', ( e ) => show( 'onerror', [ e.message ] ) );
-				addEventListener( 'unhandledrejection', ( e ) => show( 'reject', [ e.reason ] ) );
-				navigator.gpu?.requestAdapter().then( ( a ) => show( 'adapter', [ a?.info?.vendor, a?.info?.architecture, [ ...( a?.features ?? [] ) ].join( ',' ) ] ) );
-
-			} )();
-
-		</script>
-
 		<script type="importmap">
 			{
 				"imports": {
