@@ -104,7 +104,8 @@
 
 			async function init() {
 
-				// the cascades bind more storage buffers than the default limit, and large ones
+				// the passes that trace rays bind 9 storage buffers, one more than the default limit (Chrome on macOS
+				// supports 10), and the cascades larger ones than the default 128 MB
 
 				const adapter = await navigator.gpu?.requestAdapter();
 				const requiredLimits = adapter ? { maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage, maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize, maxBufferSize: adapter.limits.maxBufferSize } : {};

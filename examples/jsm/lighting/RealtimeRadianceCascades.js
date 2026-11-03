@@ -1,5 +1,5 @@
 import { DepthTexture, FloatType, HalfFloatType, Matrix4, NodeMaterial, QuadMesh, RenderTarget, StorageBufferAttribute, Vector2, Vector3 } from 'three/webgpu';
-import { Break, Fn, If, Loop, abs, atan, atomicAdd, atomicLoad, atomicMax, atomicMin, atomicStore, cameraPosition, ceil, clamp, cos, cross, diffuseColor, dot, equirectUV, exp2, float, floor, fract, getViewPosition, hash, instanceIndex, int, ivec2, ivec3, ivec4, log2, max, min, mix, mrt, normalWorldGeometry, normalize, output, positionWorld, screenUV, select, sin, sqrt, storage, texture, uint, uniform, uv, uvec3, vec2, vec3, vec4, velocity } from 'three/tsl';
+import { Break, Fn, If, Loop, abs, atan, atomicAdd, atomicLoad, atomicMax, atomicMin, atomicStore, cameraPosition, ceil, clamp, cos, cross, diffuseColor, dot, equirectUV, exp2, float, floatBitsToUint, floor, fract, getViewPosition, hash, instanceIndex, int, ivec2, ivec3, ivec4, log2, max, min, mix, mrt, normalWorldGeometry, normalize, output, positionWorld, screenUV, select, sin, sqrt, storage, texture, uint, uintBitsToFloat, uniform, uv, uvec3, vec2, vec3, vec4, velocity } from 'three/tsl';
 
 import { RayTracedRadiosity } from './RayTracedRadiosity.js';
 
@@ -648,15 +648,15 @@ class RealtimeRadianceCascades {
 
 		const base = ( this._frame & 1 ) * this._layout.counters;
 		const previous = ( ( this._frame + 1 ) & 1 ) * this._layout.counters;
-		const counters = this._counters;
+		const counters = this._atomics;
 		const capacities = this.capacities;
 		const cascades = this.cascades;
 
-		renderer.getArrayBufferAsync( counters.value ).then( ( buffer ) => {
+		renderer.getArrayBufferAsync( counters.value, null, 0, this._layout.counters * 8 ).then( ( buffer ) => {
 
 			this._readingCounts = false;
 
-			if ( this._counters !== counters ) return;
+			if ( this._atomics !== counters ) return;
 
 			// the probes a cascade wanted: the ones it has, and the new ones beyond the free slots of the last frame
 
@@ -695,7 +695,7 @@ class RealtimeRadianceCascades {
 	 */
 	async readStats( renderer ) {
 
-		const counters = new Uint32Array( await renderer.getArrayBufferAsync( this._counters.value ) );
+		const counters = new Uint32Array( await renderer.getArrayBufferAsync( this._atomics.value, null, 0, this._layout.counters * 8 ) );
 		const base = ( this._frame & 1 ) * this._layout.counters;
 
 		this.probes = Array.from( { length: this.cascades }, ( _, n ) => counters[ base + PROBES * this.cascades + n ] );
@@ -879,64 +879,138 @@ class RealtimeRadianceCascades {
 	 * Creates the storage buffers. The probes keep their slots while they live, the hash tables alternate
 	 * between the current frame's and the last frame's.
 	 *
+	 * WebGPU limits the storage buffers of a shader stage, to 8 by default and at most 10 in Chrome on macOS, so
+	 * they are three pools, the atomic words, the words and the vectors, and each buffer is a view of a range of
+	 * its pool. The keys, qualities and weights are stored as the bits of words.
+	 *
 	 * @private
 	 */
 	_createBuffers() {
 
 		const { cascades, tables, slots, bins, merged, counters } = this._layout;
 
-		const make = ( array, type, itemSize, atomic = false ) => {
+		const rangesOf = ( sizes ) => {
 
-			const node = storage( new StorageBufferAttribute( array, itemSize ), type, array.length / itemSize );
+			const ranges = { length: 0 };
 
-			return atomic ? node.toAtomic() : node;
+			for ( const name in sizes ) {
+
+				ranges[ name ] = ranges.length;
+				ranges.length += sizes[ name ];
+
+			}
+
+			return ranges;
 
 		};
 
-		// the free lists start with all slots, and the counts of free slots of both frames with the capacities
+		// the counters come first, so that they are read back alone
 
-		const freeList = new Uint32Array( slots );
-		const counterArray = new Uint32Array( counters * 2 );
+		const atomics = rangesOf( { counters: counters * 2, table: tables * 2, expiry: slots, deposited: slots, rayCount: slots, rayIndex: cascades[ 0 ].capacity, deposits: bins * WORDS } );
+		const words = rangesOf( { slotOf: tables * 2, freeList: slots, born: slots, alive: slots, rayOffset: slots, keys: slots * 4, quality: slots, weights: bins } );
+		const vectors = rangesOf( { fluence: bins, merged, irradiance: cascades[ 0 ].capacity * IRRADIANCE_TEXELS } );
+
+		const atomicArray = new Uint32Array( atomics.length );
+		const wordArray = new Uint32Array( words.length );
+
+		// the tables start empty, and the free lists with all slots, and the counts of free slots of both frames
+		// with the capacities
+
+		atomicArray.fill( EMPTY, atomics.table, atomics.table + tables * 2 );
+		wordArray.fill( NONE, words.slotOf, words.slotOf + tables * 2 );
 
 		for ( let n = 0; n < this.cascades; n ++ ) {
 
 			const { capacity, slotOffset } = cascades[ n ];
 
-			for ( let i = 0; i < capacity; i ++ ) freeList[ slotOffset + i ] = i;
+			for ( let i = 0; i < capacity; i ++ ) wordArray[ words.freeList + slotOffset + i ] = i;
 
-			counterArray[ FREED * this.cascades + n ] = capacity;
-			counterArray[ counters + FREED * this.cascades + n ] = capacity;
+			atomicArray[ atomics.counters + FREED * this.cascades + n ] = capacity;
+			atomicArray[ atomics.counters + counters + FREED * this.cascades + n ] = capacity;
 
 		}
 
-		this._table = make( new Uint32Array( tables * 2 ).fill( EMPTY ), 'uint', 1, true );
-		this._slotOf = make( new Uint32Array( tables * 2 ).fill( NONE ), 'uint', 1 );
-		this._counters = make( counterArray, 'uint', 1, true );
-		this._freeList = make( freeList, 'uint', 1 );
+		this._atomics = storage( new StorageBufferAttribute( atomicArray, 1 ), 'uint', atomics.length ).toAtomic();
+		this._words = storage( new StorageBufferAttribute( wordArray, 1 ), 'uint', words.length );
+		this._vectors = storage( new StorageBufferAttribute( new Float32Array( vectors.length * 4 ), 4 ), 'vec4', vectors.length );
 
-		// per slot: its cell and level, the frames it was allocated and last alive, the frame it lives until,
-		// its ray count, the rays deposited this frame, and the rays of the R2 sequence of the probe
+		const view = ( pool, offset ) => ( { element: ( index ) => pool.element( offset === 0 ? index : ( typeof index === 'number' ? index + offset : index.add( offset ) ) ) } );
 
-		this._keys = make( new Int32Array( slots * 4 ), 'ivec4', 4 );
-		this._born = make( new Uint32Array( slots ), 'uint', 1 );
-		this._alive = make( new Uint32Array( slots ), 'uint', 1 );
-		this._expiry = make( new Uint32Array( slots ), 'uint', 1, true );
-		this._quality = make( new Float32Array( slots ), 'float', 1 );
-		this._deposited = make( new Uint32Array( slots ), 'uint', 1, true );
-		this._rayCount = make( new Uint32Array( slots ), 'uint', 1, true );
-		this._rayOffset = make( new Uint32Array( slots ), 'uint', 1 );
-		this._rayIndex = make( new Uint32Array( cascades[ 0 ].capacity ), 'uint', 1, true );
+		this._counters = view( this._atomics, atomics.counters );
+		this._table = view( this._atomics, atomics.table );
+		this._expiry = view( this._atomics, atomics.expiry );
+		this._deposited = view( this._atomics, atomics.deposited );
+		this._rayCount = view( this._atomics, atomics.rayCount );
+		this._rayIndex = view( this._atomics, atomics.rayIndex );
+		this._deposits = view( this._atomics, atomics.deposits );
 
-		// per bin: the deposits of the frame, the weighted fluence and the weights
+		// per slot: its free list entry, the frames it was allocated and last alive, its first ray in the R2
+		// sequence of the probe, its cell and level, and its quality. Per bin: the weights of the fluence
 
-		this._deposits = make( new Uint32Array( bins * WORDS ), 'uint', 1, true );
-		this._fluence = make( new Float32Array( bins * 4 ), 'vec4', 4 );
-		this._weights = make( new Float32Array( bins ), 'float', 1 );
-		this._merged = make( new Float32Array( merged * 4 ), 'vec4', 4 );
-		this._irradiance = make( new Float32Array( cascades[ 0 ].capacity * IRRADIANCE_TEXELS * 4 ), 'vec4', 4 );
+		this._slotOf = view( this._words, words.slotOf );
+		this._freeList = view( this._words, words.freeList );
+		this._born = view( this._words, words.born );
+		this._alive = view( this._words, words.alive );
+		this._rayOffset = view( this._words, words.rayOffset );
+		this._ranges = words;
 
-		this._buffers = [ this._table, this._slotOf, this._counters, this._freeList, this._keys, this._born, this._alive, this._expiry, this._quality, this._deposited, this._rayCount, this._rayOffset, this._rayIndex, this._deposits, this._fluence, this._weights, this._merged, this._irradiance ];
+		// per bin: the weighted fluence, and the merged radiance; per texel of the finest probes: the irradiance
+
+		this._fluence = view( this._vectors, vectors.fluence );
+		this._merged = view( this._vectors, vectors.merged );
+		this._irradiance = view( this._vectors, vectors.irradiance );
+
+		this._buffers = [ this._atomics, this._words, this._vectors ];
 		this.memory = this._buffers.reduce( ( total, buffer ) => total + buffer.value.array.byteLength, 0 );
+
+	}
+
+	/**
+	 * The cell and level of the probe in a slot.
+	 *
+	 * @private
+	 */
+	_key( slot ) {
+
+		const base = uint( slot ).mul( 4 ).add( this._ranges.keys ).toVar();
+
+		return ivec4( ...[ 0, 1, 2, 3 ].map( ( k ) => int( this._words.element( base.add( k ) ) ) ) );
+
+	}
+
+	/**
+	 * Stores the cell and level of the probe in a slot.
+	 *
+	 * @private
+	 */
+	_setKey( slot, key ) {
+
+		const base = uint( slot ).mul( 4 ).add( this._ranges.keys ).toVar();
+		const value = ivec4( key ).toVar();
+
+		for ( const [ k, c ] of [ 'x', 'y', 'z', 'w' ].entries() ) this._words.element( base.add( k ) ).assign( uint( value[ c ] ) );
+
+	}
+
+	/**
+	 * The quality of the probe in a slot, or the weight of the fluence of a bin.
+	 *
+	 * @private
+	 */
+	_float( name, index ) {
+
+		return uintBitsToFloat( this._words.element( uint( index ).add( this._ranges[ name ] ) ) );
+
+	}
+
+	/**
+	 * Stores the quality of the probe in a slot, or the weight of the fluence of a bin.
+	 *
+	 * @private
+	 */
+	_setFloat( name, index, value ) {
+
+		this._words.element( uint( index ).add( this._ranges[ name ] ) ).assign( floatBitsToUint( float( value ) ) );
 
 	}
 
@@ -1439,7 +1513,7 @@ class RealtimeRadianceCascades {
 					If( slot.notEqual( NONE ), () => {
 
 						const w = select( offset.equal( ivec3( 1 ) ), f, f.oneMinus() );
-						const quality = this.useQualityWeight ? this._quality.element( slot ) : float( 1 );
+						const quality = this.useQualityWeight ? this._float( 'quality', slot ) : float( 1 );
 						const weight = w.x.mul( w.y ).mul( w.z ).mul( quality ).toVar();
 						const base = slot.mul( IRRADIANCE_TEXELS ).toVar();
 
@@ -1556,7 +1630,7 @@ class RealtimeRadianceCascades {
 
 			If( this._alive.element( slot ).equal( this._frameNode.sub( 1 ) ).and( atomicLoad( this._expiry.element( slot ) ).greaterThanEqual( this._frameNode ) ), () => {
 
-				const key = this._keys.element( slot ).toVar();
+				const key = this._key( slot ).toVar();
 
 				this._insert( 0, this._keyOf( key.xyz, key.w.bitAnd( 15 ) ), uint( key.w.shiftRight( 4 ) ) );
 
@@ -1651,7 +1725,7 @@ class RealtimeRadianceCascades {
 							const global = slot.add( cascade.slotOffset );
 
 							this._born.element( global ).assign( this._frameNode );
-							this._quality.element( global ).assign( 0 );
+							this._setFloat( 'quality', global, 0 );
 							atomicStore( this._expiry.element( global ), uint( 0 ) );
 
 							if ( n === 0 ) atomicAdd( this._counter( 3 * this.cascades ), uint( 1 ) );
@@ -1666,7 +1740,7 @@ class RealtimeRadianceCascades {
 						const decoded = this._decodeKey( key, n );
 
 						this._slotOf.element( index ).assign( slot );
-						this._keys.element( global ).assign( ivec4( decoded.cell, decoded.level.bitOr( int( group ).shiftLeft( 4 ) ) ) );
+						this._setKey( global, ivec4( decoded.cell, decoded.level.bitOr( int( group ).shiftLeft( 4 ) ) ) );
 						this._alive.element( global ).assign( this._frameNode );
 
 						atomicAdd( this._counter( PROBES * this.cascades + n ), uint( 1 ) );
@@ -1696,7 +1770,7 @@ class RealtimeRadianceCascades {
 
 			If( this._isAlive( n - 1, slot ), () => {
 
-				const key = this._keys.element( slot.add( finer.slotOffset ) ).toVar();
+				const key = this._key( slot.add( finer.slotOffset ) ).toVar();
 
 				this._insert( n, this._keyOf( ivec3( floor( vec3( key.xyz ).mul( 0.5 ) ) ), key.w.bitAnd( 15 ) ), uint( key.w.shiftRight( 4 ) ) );
 
@@ -1758,7 +1832,7 @@ class RealtimeRadianceCascades {
 
 				If( rays.greaterThan( 0 ), () => {
 
-					const key = this._keys.element( global ).toVar();
+					const key = this._key( global ).toVar();
 					const parent = this._lookup( n, this._keyOf( ivec3( floor( vec3( key.xyz ).mul( 0.5 ) ) ), key.w.bitAnd( 15 ) ), uint( key.w.shiftRight( 4 ) ) ).toVar();
 
 					If( parent.notEqual( NONE ), () => {
@@ -1810,7 +1884,7 @@ class RealtimeRadianceCascades {
 				If( this._isAlive( n + 1, slot ), () => {
 
 					const global = slot.add( cascade.slotOffset ).toVar();
-					const key = this._keys.element( global ).toVar();
+					const key = this._key( global ).toVar();
 					const offset = this._rayOffset.element( global ).toVar();
 
 					Loop( 8, ( { i } ) => {
@@ -1867,7 +1941,7 @@ class RealtimeRadianceCascades {
 				If( born.not(), () => {
 
 					fluence.assign( this._fluence.element( index ) );
-					weight.assign( this._weights.element( index ) );
+					weight.assign( this._float( 'weights', index ) );
 
 					If( weight.greaterThan( this._minDirectionWeight ), () => {
 
@@ -1892,13 +1966,13 @@ class RealtimeRadianceCascades {
 				} );
 
 				this._fluence.element( index ).assign( fluence );
-				this._weights.element( index ).assign( weight );
+				this._setFloat( 'weights', index, weight );
 
 				If( bin.equal( 0 ), () => {
 
-					const quality = select( born, float( 0 ), this._quality.element( global ).mul( this._qualityDecay ) );
+					const quality = select( born, float( 0 ), this._float( 'quality', global ).mul( this._qualityDecay ) );
 
-					this._quality.element( global ).assign( quality.add( float( atomicLoad( this._deposited.element( global ) ) ) ) );
+					this._setFloat( 'quality', global, quality.add( float( atomicLoad( this._deposited.element( global ) ) ) ) );
 					atomicStore( this._deposited.element( global ), uint( 0 ) );
 
 				} );
@@ -1932,7 +2006,7 @@ class RealtimeRadianceCascades {
 
 			If( this._isAlive( n, slot ), () => {
 
-				const key = this._keys.element( slot.add( cascade.slotOffset ) ).toVar();
+				const key = this._key( slot.add( cascade.slotOffset ) ).toVar();
 				const corners = [];
 
 				if ( coarser !== null ) {
@@ -1956,7 +2030,7 @@ class RealtimeRadianceCascades {
 
 							If( probe.notEqual( NONE ), () => {
 
-								weight.mulAssign( this._quality.element( probe.add( coarser.slotOffset ) ) );
+								weight.mulAssign( this._float( 'quality', probe.add( coarser.slotOffset ) ) );
 
 							} );
 
@@ -1971,7 +2045,7 @@ class RealtimeRadianceCascades {
 				const lightOf = ( bin ) => {
 
 					const index = slot.mul( cascade.bins ).add( bin ).add( cascade.binOffset ).toVar();
-					const weight = this._weights.element( index ).toVar();
+					const weight = this._float( 'weights', index ).toVar();
 					const fluence = this._fluence.element( index ).div( weight.max( 1e-4 ) ).toVar();
 					const radiance = fluence.rgb.toVar();
 
