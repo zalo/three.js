@@ -3,76 +3,1142 @@
  * Copyright 2010-2026 Three.js Authors
  * SPDX-License-Identifier: MIT
  */
-import { Color, Vector2, Vector3, Vector4, Matrix2, Matrix3, Matrix4, error, UnsignedIntType, IntType, RedFormat, RedIntegerFormat, DepthFormat, DepthStencilFormat, AlphaFormat, RGFormat, RGIntegerFormat, RGBFormat, RGBIntegerFormat, EventDispatcher, generateUUID, warn, WebGLCoordinateSystem, WebGPUCoordinateSystem, ColorManagement, SRGBTransfer, NoToneMapping, StaticDrawUsage, InterleavedBufferAttribute, InterleavedBuffer, DynamicDrawUsage, NoColorSpace, log as log$1, warnOnce, NormalBlending, SrcAlphaFactor, OneMinusSrcAlphaFactor, AddEquation, MaterialBlending, NoBlending, Sphere, BackSide, DoubleSide, Texture, Compatibility, LessCompare, LessEqualCompare, GreaterCompare, GreaterEqualCompare, NearestFilter, FramebufferTexture, LinearMipmapLinearFilter, DepthTexture, RenderTarget, Object3D, HalfFloatType, LinearMipMapLinearFilter, Plane, CubeTexture, CubeReflectionMapping, CubeRefractionMapping, TangentSpaceNormalMap, NoNormalPacking, NormalRGPacking, NormalGAPacking, ObjectSpaceNormalMap, RED_GREEN_RGTC2_Format, RG11_EAC_Format, DataTexture, RGBAFormat, FloatType, InstancedBufferAttribute, DataArrayTexture, RenderObjectRefreshType, Material, Mesh, OrthographicCamera, BufferGeometry, Float32BufferAttribute, BufferAttribute, UVMapping, LinearSRGBColorSpace, UnsignedInt248Type, VSMShadowMap, PCFShadowMap, LinearFilter, BasicShadowMap, CubeDepthTexture, BoxGeometry, Scene, CubeCamera, floorPowerOfTwo, ClampToEdgeWrapping } from './three.core.js';
+import { DynamicDrawUsage, RenderObjectRefreshType, Color, Vector2, Vector3, Vector4, Matrix2, Matrix3, Matrix4, error, UnsignedIntType, IntType, RedFormat, RedIntegerFormat, DepthFormat, DepthStencilFormat, AlphaFormat, RGFormat, RGIntegerFormat, RGBFormat, RGBIntegerFormat, EventDispatcher, generateUUID, warn, WebGLCoordinateSystem, WebGPUCoordinateSystem, ColorManagement, SRGBTransfer, NoToneMapping, StaticDrawUsage, InterleavedBufferAttribute, InterleavedBuffer, NoColorSpace, log as log$1, warnOnce, Texture, Compatibility, LessCompare, LessEqualCompare, GreaterCompare, GreaterEqualCompare, NearestFilter, Sphere, BackSide, DoubleSide, CubeTexture, CubeReflectionMapping, CubeRefractionMapping, TangentSpaceNormalMap, NoNormalPacking, NormalRGPacking, NormalGAPacking, ObjectSpaceNormalMap, RED_GREEN_RGTC2_Format, RG11_EAC_Format, DataTexture, RGBAFormat, FloatType, InstancedBufferAttribute, DataArrayTexture, FramebufferTexture, LinearMipmapLinearFilter, DepthTexture, Material, RenderTarget, BoxGeometry, NoBlending, Mesh, Scene, LinearFilter, CubeCamera, HalfFloatType, ClampToEdgeWrapping, floorPowerOfTwo, LinearSRGBColorSpace, NormalBlending, SrcAlphaFactor, OneMinusSrcAlphaFactor, AddEquation, MaterialBlending, Object3D, LinearMipMapLinearFilter, Plane, OrthographicCamera, BufferGeometry, Float32BufferAttribute, BufferAttribute, UVMapping, UnsignedInt248Type, VSMShadowMap, PCFShadowMap, BasicShadowMap, CubeDepthTexture } from './three.core.js';
+
+const refreshUniforms = [
+	'alphaMap',
+	'alphaTest',
+	'anisotropy',
+	'anisotropyMap',
+	'anisotropyRotation',
+	'aoMap',
+	'aoMapIntensity',
+	'attenuationColor',
+	'attenuationDistance',
+	'bumpMap',
+	'bumpScale',
+	'clearcoat',
+	'clearcoatMap',
+	'clearcoatNormalMap',
+	'clearcoatNormalScale',
+	'clearcoatRoughness',
+	'clearcoatRoughnessMap',
+	'color',
+	'dashOffset',
+	'dashSize',
+	'diffuseRoughness',
+	'diffuseRoughnessMap',
+	'dispersion',
+	'displacementBias',
+	'displacementMap',
+	'displacementScale',
+	'emissive',
+	'emissiveIntensity',
+	'emissiveMap',
+	'envMap',
+	'envMapIntensity',
+	'envMapRotation',
+	'gapSize',
+	'gradientMap',
+	'ior',
+	'iridescence',
+	'iridescenceIOR',
+	'iridescenceMap',
+	'iridescenceThicknessMap',
+	'iridescenceThicknessMaximum',
+	'iridescenceThicknessMinimum',
+	'lightMap',
+	'lightMapIntensity',
+	'linewidth',
+	'map',
+	'matcap',
+	'metalness',
+	'metalnessMap',
+	'normalMap',
+	'normalScale',
+	'opacity',
+	'reflectivity',
+	'refractionRatio',
+	'retroreflectivity',
+	'rotation',
+	'roughness',
+	'roughnessMap',
+	'scale',
+	'sheen',
+	'sheenColor',
+	'sheenColorMap',
+	'sheenRoughness',
+	'sheenRoughnessMap',
+	'shininess',
+	'size',
+	'specular',
+	'specularColor',
+	'specularColorMap',
+	'specularIntensity',
+	'specularIntensityMap',
+	'specularMap',
+	'steps',
+	'thickness',
+	'thicknessMap',
+	'transmission',
+	'transmissionMap',
+	'wireframe'
+];
+
 
 /**
- * Possible shader stages.
+ * A WeakMap to cache lights data for node materials.
+ * Cache lights data by render ID to avoid unnecessary recalculations.
  *
- * @property {string} VERTEX The vertex shader stage.
- * @property {string} FRAGMENT The fragment shader stage.
+ * @private
+ * @type {WeakMap<LightsNode,Object>}
  */
-const NodeShaderStage = {
-	VERTEX: 'vertex',
-	FRAGMENT: 'fragment'
-};
+const _lightsCache = new WeakMap();
 
 /**
- * Update types of a node.
+ * Holds the material data for comparison.
  *
- * @property {string} NONE The update method is not executed.
- * @property {string} FRAME The update method is executed per frame.
- * @property {string} RENDER The update method is executed per render. A frame might be produced by multiple render calls so this value allows more detailed updates than FRAME.
- * @property {string} OBJECT The update method is executed per {@link Object3D} that uses the node for rendering.
+ * @private
+ * @type {WeakMap<Material,Object>}
  */
-const NodeUpdateType = {
-	NONE: 'none',
-	FRAME: 'frame',
-	RENDER: 'render',
-	OBJECT: 'object'
-};
+const _materialCache = new WeakMap();
 
 /**
- * Data types of a node.
+ * Holds the geometry data for comparison.
  *
- * @property {string} BOOLEAN Boolean type.
- * @property {string} INTEGER Integer type.
- * @property {string} FLOAT Float type.
- * @property {string} VECTOR2 Two-dimensional vector type.
- * @property {string} VECTOR3 Three-dimensional vector type.
- * @property {string} VECTOR4 Four-dimensional vector type.
- * @property {string} MATRIX2 2x2 matrix type.
- * @property {string} MATRIX3 3x3 matrix type.
- * @property {string} MATRIX4 4x4 matrix type.
+ * @private
+ * @type {WeakMap<BufferGeometry,Object>}
  */
-const NodeType = {
-	BOOLEAN: 'bool',
-	INTEGER: 'int',
-	FLOAT: 'float',
-	VECTOR2: 'vec2',
-	VECTOR3: 'vec3',
-	VECTOR4: 'vec4',
-	MATRIX2: 'mat2',
-	MATRIX3: 'mat3',
-	MATRIX4: 'mat4'
-};
+const _geometryCache = new WeakMap();
 
 /**
- * Access types of a node. These are relevant for compute and storage usage.
+ * Holds the texture data for comparison.
  *
- * @property {string} READ_ONLY Read-only access
- * @property {string} WRITE_ONLY Write-only access.
- * @property {string} READ_WRITE Read and write access.
+ * @private
+ * @type {WeakMap<Texture,Object>}
  */
-const NodeAccess = {
-	READ_ONLY: 'readOnly',
-	WRITE_ONLY: 'writeOnly',
-	READ_WRITE: 'readWrite',
-};
+const _textureCache = new WeakMap();
 
-const defaultShaderStages = [ 'fragment', 'vertex' ];
-const defaultBuildStages = [ 'setup', 'analyze', 'generate' ];
-const shaderStages = [ ...defaultShaderStages, 'compute' ];
-const vectorComponents = [ 'x', 'y', 'z', 'w' ];
+/**
+ * Holds the output target data for comparison.
+ *
+ * @private
+ * @type {WeakMap<RenderTarget|CanvasTarget,Object>}
+ */
+const _outputTargetCache = new WeakMap();
+
+/**
+ * This class is used by {@link WebGPURenderer} as management component.
+ * It's primary purpose is to determine whether render objects require a
+ * refresh right before they are going to be rendered or not.
+ */
+class NodeMaterialObserver {
+
+	/**
+	 * Constructs a new node material observer.
+	 *
+	 * @param {NodeBuilder} builder - The node builder.
+	 */
+	constructor( builder ) {
+
+		/**
+		 * A node material can be used by more than one render object so the
+		 * monitor must maintain a list of render objects.
+		 *
+		 * @type {WeakMap<RenderObject,Object>}
+		 */
+		this.renderObjects = new WeakMap();
+
+		/**
+		 * Whether the builder's context uses node objects or not.
+		 *
+		 * @type {boolean}
+		 */
+		this.hasNode = this.containsNode( builder );
+
+		/**
+		 * Whether the node builder's 3D object is animated or not.
+		 *
+		 * @type {boolean}
+		 */
+		this.hasAnimation = builder.object.isSkinnedMesh === true;
+
+		/**
+		 * A list of all possible material uniforms
+		 *
+		 * @type {Array<string>}
+		 */
+		this.refreshUniforms = refreshUniforms;
+
+		/**
+		 * Holds the current render ID from the node frame.
+		 *
+		 * @type {number}
+		 * @default 0
+		 */
+		this.renderId = 0;
+
+	}
+
+	/**
+	 * Returns `true` if the given render object is verified for the first time of this observer.
+	 *
+	 * @param {RenderObject} renderObject - The render object.
+	 * @return {boolean} Whether the given render object is verified for the first time of this observer.
+	 */
+	firstInitialization( renderObject ) {
+
+		const hasInitialized = this.renderObjects.has( renderObject );
+
+		if ( hasInitialized === false ) {
+
+			this.getRenderObjectData( renderObject );
+
+			return true;
+
+		}
+
+		return false;
+
+	}
+
+	/**
+	 * Returns `true` if the given 3D object uses instance buffers with dynamic draw usage.
+	 * Such buffers must be uploaded once per render so the render object requires a full refresh.
+	 *
+	 * @param {Object3D} object - The 3D object.
+	 * @return {boolean} Whether the given 3D object uses instance buffers with dynamic draw usage or not.
+	 */
+	hasDynamicInstancing( object ) {
+
+		return object.isInstancedMesh === true && ( object.instanceMatrix.usage === DynamicDrawUsage ||
+			( object.instanceColor !== null && object.instanceColor.usage === DynamicDrawUsage ) );
+
+	}
+
+	/**
+	 * Returns `true` if the current rendering produces motion vectors.
+	 *
+	 * @param {Renderer} renderer - The renderer.
+	 * @return {boolean} Whether the current rendering produces motion vectors or not.
+	 */
+	needsVelocity( renderer ) {
+
+		const mrt = renderer.getMRT();
+
+		return ( mrt !== null && mrt.has( 'velocity' ) );
+
+	}
+
+	/**
+	 * Returns monitoring data for the given render object.
+	 *
+	 * @param {RenderObject} renderObject - The render object.
+	 * @return {Object} The monitoring data.
+	 */
+	getRenderObjectData( renderObject ) {
+
+		let data = this.renderObjects.get( renderObject );
+
+		if ( data === undefined ) {
+
+			const { geometry, object } = renderObject;
+
+			data = {
+				geometryId: geometry.id,
+				geometryVersion: this.getGeometryData( geometry )._version,
+				materialVersion: this.getMaterialData( renderObject.material )._version,
+				attributesDisposeVersion: renderObject._geometries.attributes.disposeVersion,
+				worldMatrix: object.matrixWorld.clone()
+			};
+
+			if ( object.center ) {
+
+				data.center = object.center.clone();
+
+			}
+
+			if ( object.morphTargetInfluences ) {
+
+				data.morphTargetInfluences = object.morphTargetInfluences.slice();
+
+			}
+
+			if ( object.isInstancedMesh === true ) {
+
+				data.instanceMatrix = object.instanceMatrix;
+				data.instanceMatrixVersion = object.instanceMatrix.version;
+				data.instanceColor = object.instanceColor;
+				data.instanceColorVersion = object.instanceColor !== null ? object.instanceColor.version : null;
+				data.morphTextureVersion = object.morphTexture !== null ? object.morphTexture.version : null;
+
+			}
+
+			if ( object.isBatchedMesh === true ) {
+
+				data.matricesTextureVersion = object._matricesTexture.version;
+				data.colorsTextureVersion = object._colorsTexture !== null ? object._colorsTexture.version : null;
+				data.indirectTextureVersion = object._indirectTexture.version;
+
+			}
+
+			if ( renderObject.bundle !== null ) {
+
+				data.version = renderObject.bundle.version;
+
+			}
+
+			// global data
+
+			data.outputTarget = this.getOutputTarget( renderObject.renderer );
+			data.outputTargetVersion = this.getOutputTargetData( data.outputTarget, renderObject.context )._version;
+
+			const { environment, environmentIntensity, environmentRotation } = renderObject.scene;
+
+			data.environmentIntensity = environmentIntensity;
+			data.environmentRotation = environmentRotation.clone();
+			data.environmentVersion = environment !== null ? this.getTextureData( environment )._version : null;
+
+			data.lights = this.getLightsData( renderObject.lightsNode.getBuiltinLights(), [] );
+
+			this.renderObjects.set( renderObject, data );
+
+		}
+
+		return data;
+
+	}
+
+	/**
+	 * Returns the current output target of the given renderer. That is the active
+	 * render target or, if none is set, the output render target or the canvas target.
+	 *
+	 * @param {Renderer} renderer - The renderer.
+	 * @return {RenderTarget|CanvasTarget} The output target.
+	 */
+	getOutputTarget( renderer ) {
+
+		const renderTarget = renderer.getRenderTarget();
+
+		return renderTarget !== null ? renderTarget : ( renderer.getOutputRenderTarget() || renderer.getCanvasTarget() );
+
+	}
+
+	/**
+	 * Returns an output target data structure holding the size of the given output
+	 * target for monitoring. Its version is incremented whenever a size change is observed.
+	 *
+	 * @param {RenderTarget|CanvasTarget} outputTarget - The output target.
+	 * @param {RenderContext} renderContext - The render context.
+	 * @return {Object} An object for monitoring the output target size.
+	 */
+	getOutputTargetData( outputTarget, renderContext ) {
+
+		const { width, height } = renderContext;
+
+		let data = _outputTargetCache.get( outputTarget );
+
+		if ( data === undefined ) {
+
+			data = { _version: 0, width, height };
+
+			_outputTargetCache.set( outputTarget, data );
+
+		} else if ( data.width !== width || data.height !== height ) {
+
+			data.width = width;
+			data.height = height;
+			data._version ++;
+
+		}
+
+		return data;
+
+	}
+
+	/**
+	 * Returns an attribute data structure holding the attributes versions for
+	 * monitoring.
+	 *
+	 * @param {Object} attributes - The geometry attributes.
+	 * @return {Object} An object for monitoring the versions of attributes.
+	 */
+	getAttributesData( attributes ) {
+
+		const attributesData = {};
+
+		for ( const name in attributes ) {
+
+			const attribute = attributes[ name ];
+
+			attributesData[ name ] = {
+				id: attribute.isInterleavedBufferAttribute ? attribute.data.uuid : attribute.id,
+				version: attribute.isInterleavedBufferAttribute ? attribute.data.version : attribute.version,
+			};
+
+		}
+
+		return attributesData;
+
+	}
+
+	/**
+	 * Returns `true` if the node builder's context (e.g. material) uses node properties.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {boolean} Whether the node builder's context uses node properties or not.
+	 */
+	containsNode( builder ) {
+
+		// material
+
+		const material = builder.material;
+
+		for ( const property in material ) {
+
+			if ( material[ property ] && material[ property ].isNode )
+				return true;
+
+		}
+
+		// context
+
+		if ( builder.context.modelViewMatrix || builder.context.modelNormalViewMatrix || builder.context.getAO || builder.context.getShadow || builder.context.getGI )
+			return true;
+
+		return false;
+
+	}
+
+	/**
+	 * Returns a geometry data structure holding the geometry property values for
+	 * monitoring.
+	 *
+	 * @param {BufferGeometry} geometry - The geometry.
+	 * @return {Object} An object for monitoring geometry properties.
+	 */
+	getGeometryData( geometry ) {
+
+		let data = _geometryCache.get( geometry );
+
+		if ( data === undefined ) {
+
+			data = {
+				_renderId: -1,
+				_version: 0,
+
+				attributes: this.getAttributesData( geometry.attributes ),
+				indexId: geometry.index ? geometry.index.id : null,
+				indexVersion: geometry.index ? geometry.index.version : null,
+				drawRange: { start: geometry.drawRange.start, count: geometry.drawRange.count }
+			};
+
+			// force refresh on dispose
+
+			geometry.addEventListener( 'dispose', () => {
+
+				data._version ++;
+
+			} );
+
+			_geometryCache.set( geometry, data );
+
+		}
+
+		return data;
+
+	}
+
+	/**
+	 * Returns a texture data structure holding the texture state for
+	 * monitoring.
+	 *
+	 * @param {Texture} texture - The texture.
+	 * @return {Object} An object for monitoring the texture.
+	 */
+	getTextureData( texture ) {
+
+		let data = _textureCache.get( texture );
+
+		if ( data === undefined ) {
+
+			data = { _version: 0 };
+
+			// force refresh on dispose
+
+			const onDispose = () => {
+
+				data._version ++;
+
+			};
+
+			if ( texture.renderTarget !== null ) {
+
+				texture.renderTarget.addEventListener( 'dispose', onDispose );
+
+			} else {
+
+				texture.addEventListener( 'dispose', onDispose );
+
+			}
+
+			_textureCache.set( texture, data );
+
+		}
+
+		return data;
+
+	}
+
+	/**
+	 * Returns a data structure holding the uv transformation of the given
+	 * texture for monitoring.
+	 *
+	 * @param {Texture} texture - The texture.
+	 * @return {Object} An object for monitoring the uv transformation.
+	 */
+	getTextureTransformData( texture ) {
+
+		return {
+			offset: texture.offset.clone(),
+			repeat: texture.repeat.clone(),
+			center: texture.center.clone(),
+			rotation: texture.rotation,
+			matrix: texture.matrix.clone()
+		};
+
+	}
+
+	/**
+	 * Returns `true` if the uv transformation of the given texture has not changed.
+	 *
+	 * @param {Object} transformData - The monitored uv transformation.
+	 * @param {Texture} texture - The texture.
+	 * @return {boolean} Whether the uv transformation has not changed or not.
+	 */
+	equalsTextureTransform( transformData, texture ) {
+
+		if ( texture.matrixAutoUpdate === true ) {
+
+			return transformData.rotation === texture.rotation && transformData.offset.equals( texture.offset ) && transformData.repeat.equals( texture.repeat ) && transformData.center.equals( texture.center );
+
+		}
+
+		return transformData.matrix.equals( texture.matrix );
+
+	}
+
+	/**
+	 * Returns a material data structure holding the material property values for
+	 * monitoring.
+	 *
+	 * @param {Material} material - The material.
+	 * @return {Object} An object for monitoring material properties.
+	 */
+	getMaterialData( material ) {
+
+		let data = _materialCache.get( material );
+
+		if ( data === undefined ) {
+
+			data = { _renderId: -1, _version: 0 };
+
+			for ( const property of this.refreshUniforms ) {
+
+				const value = material[ property ];
+
+				if ( value === undefined ) continue;
+
+				if ( value === null ) {
+
+					data[ property ] = null; // track unset properties
+
+				} else if ( typeof value === 'object' && value.clone !== undefined ) {
+
+					if ( value.isTexture === true ) {
+
+						data[ property ] = { id: value.id, version: 0, cacheVersion: this.getTextureData( value )._version, transform: this.getTextureTransformData( value ) };
+
+					} else {
+
+						data[ property ] = value.clone();
+
+					}
+
+				} else {
+
+					data[ property ] = value;
+
+				}
+
+			}
+
+			_materialCache.set( material, data );
+
+		}
+
+		return data;
+
+	}
+
+	/**
+	 * Returns `true` if the given render object has not changed its state.
+	 *
+	 * @param {RenderObject} renderObject - The render object.
+	 * @param {Array<Light>} lightsData - The current material lights.
+	 * @param {number} renderId - The current render ID.
+	 * @return {boolean} Whether the given render object is equal to its cached state or not.
+	 */
+	equals( renderObject, lightsData, renderId ) {
+
+		const { object, material, geometry } = renderObject;
+
+		const renderObjectData = this.getRenderObjectData( renderObject );
+
+		// world matrix
+
+		if ( renderObjectData.worldMatrix.equals( object.matrixWorld ) !== true ) {
+
+			renderObjectData.worldMatrix.copy( object.matrixWorld );
+
+			return false;
+
+		}
+
+		// material
+
+		const materialData = this.getMaterialData( renderObject.material );
+
+		// check the material properties just once per render for all render objects
+
+		if ( materialData._renderId !== renderId ) {
+
+			materialData._renderId = renderId;
+
+			let changed = false;
+
+			for ( const property in materialData ) {
+
+				const value = materialData[ property ];
+				const mtlValue = material[ property ];
+
+				if ( property === '_renderId' ) continue;
+				if ( property === '_version' ) continue;
+
+				if ( value === null || mtlValue === null || mtlValue === undefined ) {
+
+					// a property was assigned or removed since the last observation so a new snapshot is required
+
+					if ( value !== ( mtlValue === undefined ? null : mtlValue ) ) {
+
+						if ( mtlValue === null || mtlValue === undefined ) {
+
+							materialData[ property ] = null;
+
+						} else if ( mtlValue.isTexture === true ) {
+
+							materialData[ property ] = { id: mtlValue.id, version: mtlValue.version, cacheVersion: this.getTextureData( mtlValue )._version, transform: this.getTextureTransformData( mtlValue ) };
+
+						} else if ( typeof mtlValue === 'object' && mtlValue.clone !== undefined ) {
+
+							materialData[ property ] = mtlValue.clone();
+
+						} else {
+
+							materialData[ property ] = mtlValue;
+
+						}
+
+						changed = true;
+
+					}
+
+				} else if ( value.equals !== undefined ) {
+
+					if ( value.equals( mtlValue ) === false ) {
+
+						value.copy( mtlValue );
+
+						changed = true;
+
+					}
+
+				} else if ( mtlValue.isTexture === true ) {
+
+					const textureData = this.getTextureData( mtlValue );
+
+					if ( value.id !== mtlValue.id || value.version !== mtlValue.version || value.cacheVersion !== textureData._version || this.equalsTextureTransform( value.transform, mtlValue ) === false ) {
+
+						value.id = mtlValue.id;
+						value.version = mtlValue.version;
+						value.cacheVersion = textureData._version;
+						value.transform.offset.copy( mtlValue.offset );
+						value.transform.repeat.copy( mtlValue.repeat );
+						value.transform.center.copy( mtlValue.center );
+						value.transform.rotation = mtlValue.rotation;
+						value.transform.matrix.copy( mtlValue.matrix );
+
+						changed = true;
+
+					}
+
+				} else if ( value !== mtlValue ) {
+
+					materialData[ property ] = mtlValue;
+
+					changed = true;
+
+				}
+
+			}
+
+			if ( changed === true ) materialData._version ++;
+
+		}
+
+		// a version mismatch means the material has changed since this render object was last refreshed
+
+		if ( renderObjectData.materialVersion !== materialData._version ) {
+
+			renderObjectData.materialVersion = materialData._version;
+
+			return false;
+
+		}
+
+		const outputTargetData = this.getOutputTargetData( renderObjectData.outputTarget, renderObject.context );
+
+		// a version mismatch means the output target has been resized since this render object was last refreshed
+
+		if ( renderObjectData.outputTargetVersion !== outputTargetData._version ) {
+
+			renderObjectData.outputTargetVersion = outputTargetData._version;
+
+			return false;
+
+		}
+
+		// geometry
+
+		if ( renderObjectData.geometryId !== geometry.id ) {
+
+			renderObjectData.geometryId = geometry.id;
+			renderObjectData.geometryVersion = this.getGeometryData( geometry )._version;
+
+			return false;
+
+		}
+
+		const geometryData = this.getGeometryData( renderObject.geometry );
+
+		// check the geometry properties just once per render for all render objects
+
+		if ( geometryData._renderId !== renderId ) {
+
+			geometryData._renderId = renderId;
+
+			let changed = false;
+
+			// attributes
+
+			const attributes = geometry.attributes;
+			const storedAttributes = geometryData.attributes;
+
+			let currentAttributeCount = 0;
+			let storedAttributeCount = 0;
+
+			for ( const _ in attributes ) currentAttributeCount ++; // eslint-disable-line no-unused-vars
+
+			for ( const name in storedAttributes ) {
+
+				storedAttributeCount ++;
+
+				const storedAttributeData = storedAttributes[ name ];
+				const attribute = attributes[ name ];
+
+				if ( attribute === undefined ) {
+
+					// attribute was removed
+					delete storedAttributes[ name ];
+
+					changed = true;
+					continue;
+
+				}
+
+				const id = attribute.isInterleavedBufferAttribute ? attribute.data.uuid : attribute.id;
+				const version = attribute.isInterleavedBufferAttribute ? attribute.data.version : attribute.version;
+
+				if ( storedAttributeData.id !== id || storedAttributeData.version !== version ) {
+
+					storedAttributeData.id = id;
+					storedAttributeData.version = version;
+
+					changed = true;
+
+				}
+
+			}
+
+			if ( storedAttributeCount !== currentAttributeCount ) {
+
+				geometryData.attributes = this.getAttributesData( attributes );
+
+				changed = true;
+
+			}
+
+			// check index
+
+			const index = geometry.index;
+			const currentIndexId = index ? index.id : null;
+			const currentIndexVersion = index ? index.version : null;
+
+			if ( geometryData.indexId !== currentIndexId || geometryData.indexVersion !== currentIndexVersion ) {
+
+				geometryData.indexId = currentIndexId;
+				geometryData.indexVersion = currentIndexVersion;
+
+				changed = true;
+
+			}
+
+			// check drawRange
+
+			if ( geometryData.drawRange.start !== geometry.drawRange.start || geometryData.drawRange.count !== geometry.drawRange.count ) {
+
+				geometryData.drawRange.start = geometry.drawRange.start;
+				geometryData.drawRange.count = geometry.drawRange.count;
+
+				changed = true;
+
+			}
+
+			if ( changed === true ) geometryData._version ++;
+
+		}
+
+		// a version mismatch means the geometry has changed since this render object was last refreshed
+
+		if ( renderObjectData.geometryVersion !== geometryData._version ) {
+
+			renderObjectData.geometryVersion = geometryData._version;
+
+			return false;
+
+		}
+
+		// morph targets
+
+		if ( renderObjectData.morphTargetInfluences ) {
+
+			let morphChanged = false;
+
+			for ( let i = 0; i < renderObjectData.morphTargetInfluences.length; i ++ ) {
+
+				if ( renderObjectData.morphTargetInfluences[ i ] !== object.morphTargetInfluences[ i ] ) {
+
+					renderObjectData.morphTargetInfluences[ i ] = object.morphTargetInfluences[ i ];
+					morphChanged = true;
+
+				}
+
+			}
+
+			if ( morphChanged ) return false;
+
+		}
+
+		// instancing
+
+		if ( object.isInstancedMesh === true ) {
+
+			const instanceColorVersion = object.instanceColor !== null ? object.instanceColor.version : null;
+			const morphTextureVersion = object.morphTexture !== null ? object.morphTexture.version : null;
+
+			if ( renderObjectData.instanceMatrix !== object.instanceMatrix ||
+				renderObjectData.instanceMatrixVersion !== object.instanceMatrix.version ||
+				renderObjectData.instanceColor !== object.instanceColor ||
+				renderObjectData.instanceColorVersion !== instanceColorVersion ||
+				renderObjectData.morphTextureVersion !== morphTextureVersion ) {
+
+				renderObjectData.instanceMatrix = object.instanceMatrix;
+				renderObjectData.instanceMatrixVersion = object.instanceMatrix.version;
+				renderObjectData.instanceColor = object.instanceColor;
+				renderObjectData.instanceColorVersion = instanceColorVersion;
+				renderObjectData.morphTextureVersion = morphTextureVersion;
+
+				return false;
+
+			}
+
+		}
+
+		// batching
+
+		if ( object.isBatchedMesh === true ) {
+
+			const colorsTextureVersion = object._colorsTexture !== null ? object._colorsTexture.version : null;
+
+			if ( renderObjectData.matricesTextureVersion !== object._matricesTexture.version ||
+				renderObjectData.colorsTextureVersion !== colorsTextureVersion ||
+				renderObjectData.indirectTextureVersion !== object._indirectTexture.version ) {
+
+				renderObjectData.matricesTextureVersion = object._matricesTexture.version;
+				renderObjectData.colorsTextureVersion = colorsTextureVersion;
+				renderObjectData.indirectTextureVersion = object._indirectTexture.version;
+
+				return false;
+
+			}
+
+		}
+
+		// lights
+
+		if ( renderObjectData.lights ) {
+
+			for ( let i = 0; i < lightsData.length; i ++ ) {
+
+				const lightData = renderObjectData.lights[ i ];
+				const currentLightData = lightsData[ i ];
+
+				if ( lightData.map !== currentLightData.map || lightData.cacheVersion !== currentLightData.cacheVersion ||
+					lightData.shadowMapWidth !== currentLightData.shadowMapWidth || lightData.shadowMapHeight !== currentLightData.shadowMapHeight ) {
+
+					lightData.map = currentLightData.map;
+					lightData.cacheVersion = currentLightData.cacheVersion;
+					lightData.shadowMapWidth = currentLightData.shadowMapWidth;
+					lightData.shadowMapHeight = currentLightData.shadowMapHeight;
+
+					return false;
+
+				}
+
+			}
+
+		}
+
+		// scene
+
+		const scene = renderObject.scene;
+
+		if ( scene.environment !== null && material.envMap === null ) {
+
+			const environmentVersion = this.getTextureData( scene.environment )._version;
+
+			if ( renderObjectData.environmentIntensity !== scene.environmentIntensity ||
+					renderObjectData.environmentRotation.equals( scene.environmentRotation ) === false ||
+					renderObjectData.environmentVersion !== environmentVersion ) {
+
+				renderObjectData.environmentIntensity = scene.environmentIntensity;
+				renderObjectData.environmentRotation.copy( scene.environmentRotation );
+				renderObjectData.environmentVersion = environmentVersion;
+
+				return false;
+
+			}
+
+		}
+
+		// center
+
+		if ( renderObjectData.center ) {
+
+			if ( renderObjectData.center.equals( object.center ) === false ) {
+
+				renderObjectData.center.copy( object.center );
+
+				return false;
+
+			}
+
+		}
+
+		// bundle
+
+		if ( renderObject.bundle !== null ) {
+
+			renderObjectData.version = renderObject.bundle.version;
+
+		}
+
+		return true;
+
+	}
+
+	/**
+	 * Returns the lights data for the given material lights.
+	 *
+	 * @param {Array<Light>} materialLights - The material lights.
+	 * @return {Array<Object>} The lights data for the given material lights.
+	 */
+	getLightsData( materialLights, lights ) {
+
+		lights.length = 0;
+
+		for ( const light of materialLights ) {
+
+			let data = null;
+
+			if ( light.isSpotLight === true && light.map !== null ) {
+
+				// only add lights that have a map
+
+				data = { map: light.map.version, cacheVersion: this.getTextureData( light.map )._version };
+
+			}
+
+			if ( light.castShadow === true && light.shadow !== undefined ) {
+
+				// resizing a shadow map recreates its textures so the bindings
+				// of all related render objects must be updated
+
+				if ( data === null ) data = {};
+
+				data.shadowMapWidth = light.shadow.mapSize.width;
+				data.shadowMapHeight = light.shadow.mapSize.height;
+
+			}
+
+			if ( data !== null ) lights.push( data );
+
+		}
+
+		return lights;
+
+	}
+
+	/**
+	 * Returns the lights for the given lights node and render ID.
+	 *
+	 * @param {LightsNode} lightsNode - The lights node.
+	 * @param {number} renderId - The render ID.
+	 * @return {Array<Object>} The lights for the given lights node and render ID.
+	 */
+	getLights( lightsNode, renderId ) {
+
+		let cached = _lightsCache.get( lightsNode );
+
+		if ( cached === undefined ) {
+
+			cached = { renderId: -1, lightsData: [] };
+			_lightsCache.set( lightsNode, cached );
+
+		}
+
+		if ( cached.renderId === renderId ) {
+
+			return cached.lightsData;
+
+		}
+
+		cached.renderId = renderId;
+		this.getLightsData( lightsNode.getBuiltinLights(), cached.lightsData );
+
+		return cached.lightsData;
+
+	}
+
+	/**
+	 * Returns `true` if a vertex buffer or the index of the given render object
+	 * has been disposed since the last check.
+	 *
+	 * @param {RenderObject} renderObject - The render object.
+	 * @param {Object} renderObjectData - The cached render object data.
+	 * @return {boolean} Whether attributes of the render object have been disposed or not.
+	 */
+	hasDisposedAttributes( renderObject, renderObjectData ) {
+
+		const attributes = renderObject._geometries.attributes;
+
+		for ( const vertexBuffer of renderObject.getVertexBuffers() ) {
+
+			if ( attributes.has( vertexBuffer ) === false ) return true;
+
+		}
+
+		const index = renderObject.getIndex();
+
+		if ( index !== null && attributes.has( index ) === false ) return true;
+
+		renderObjectData.attributesDisposeVersion = attributes.disposeVersion;
+
+		return false;
+
+	}
+
+	/**
+	 * Checks if the given render object requires a refresh.
+	 *
+	 * @param {RenderObject} renderObject - The render object.
+	 * @param {NodeFrame} nodeFrame - The current node frame.
+	 * @return {number} The refresh type, see {@link RenderObjectRefreshType}.
+	 */
+	needsRefresh( renderObject, nodeFrame ) {
+
+		if ( this.hasNode || this.hasAnimation || this.hasDynamicInstancing( renderObject.object ) || this.firstInitialization( renderObject ) || this.needsVelocity( nodeFrame.renderer ) )
+			return RenderObjectRefreshType.FULL;
+
+		const { renderId } = nodeFrame;
+
+		let refreshType = RenderObjectRefreshType.NONE;
+
+		// shared UBOs are potentially never updated when objects don't change. Below block
+		// make sure these UBOs are updated at least once.
+
+		if ( this.renderId !== renderId ) {
+
+			this.renderId = renderId;
+
+			// no early out here. instead, use the equals() code path below so the internal cache state gets synched
+
+			refreshType = RenderObjectRefreshType.SHARED;
+
+		}
+
+		// bindings might refer to per-target resources so a target switch needs a full refresh
+
+		const renderObjectData = this.getRenderObjectData( renderObject );
+		const outputTarget = this.getOutputTarget( nodeFrame.renderer );
+
+		if ( renderObjectData.outputTarget !== outputTarget ) {
+
+			renderObjectData.outputTarget = outputTarget;
+
+			refreshType = RenderObjectRefreshType.FULL;
+
+		}
+
+		const attributes = renderObject._geometries.attributes;
+
+		// re-upload disposed attributes. checked before the static early out since other geometries can destroy shared buffers
+
+		if ( renderObjectData.attributesDisposeVersion !== attributes.disposeVersion ) {
+
+			if ( this.hasDisposedAttributes( renderObject, renderObjectData ) ) refreshType = RenderObjectRefreshType.FULL;
+
+		}
+
+		const isStatic = renderObject.object.static === true;
+		const isBundle = renderObject.bundle !== null && renderObject.bundle.static === true && renderObjectData.version === renderObject.bundle.version;
+
+		if ( isStatic || isBundle )
+			return refreshType;
+
+		const lightsData = this.getLights( renderObject.lightsNode, renderId );
+
+		if ( this.equals( renderObject, lightsData, renderId ) === false ) {
+
+			refreshType = RenderObjectRefreshType.FULL;
+
+		}
+
+		return refreshType;
+
+	}
+
+}
 
 // Pre-compiled RegExp patterns for ignored files
 const IGNORED_FILES = [
@@ -728,6 +1794,75 @@ var NodeUtils = /*#__PURE__*/Object.freeze({
 	isArrayAsParameter: isArrayAsParameter,
 	mergeContext: mergeContext
 });
+
+/**
+ * Possible shader stages.
+ *
+ * @property {string} VERTEX The vertex shader stage.
+ * @property {string} FRAGMENT The fragment shader stage.
+ */
+const NodeShaderStage = {
+	VERTEX: 'vertex',
+	FRAGMENT: 'fragment'
+};
+
+/**
+ * Update types of a node.
+ *
+ * @property {string} NONE The update method is not executed.
+ * @property {string} FRAME The update method is executed per frame.
+ * @property {string} RENDER The update method is executed per render. A frame might be produced by multiple render calls so this value allows more detailed updates than FRAME.
+ * @property {string} OBJECT The update method is executed per {@link Object3D} that uses the node for rendering.
+ */
+const NodeUpdateType = {
+	NONE: 'none',
+	FRAME: 'frame',
+	RENDER: 'render',
+	OBJECT: 'object'
+};
+
+/**
+ * Data types of a node.
+ *
+ * @property {string} BOOLEAN Boolean type.
+ * @property {string} INTEGER Integer type.
+ * @property {string} FLOAT Float type.
+ * @property {string} VECTOR2 Two-dimensional vector type.
+ * @property {string} VECTOR3 Three-dimensional vector type.
+ * @property {string} VECTOR4 Four-dimensional vector type.
+ * @property {string} MATRIX2 2x2 matrix type.
+ * @property {string} MATRIX3 3x3 matrix type.
+ * @property {string} MATRIX4 4x4 matrix type.
+ */
+const NodeType = {
+	BOOLEAN: 'bool',
+	INTEGER: 'int',
+	FLOAT: 'float',
+	VECTOR2: 'vec2',
+	VECTOR3: 'vec3',
+	VECTOR4: 'vec4',
+	MATRIX2: 'mat2',
+	MATRIX3: 'mat3',
+	MATRIX4: 'mat4'
+};
+
+/**
+ * Access types of a node. These are relevant for compute and storage usage.
+ *
+ * @property {string} READ_ONLY Read-only access
+ * @property {string} WRITE_ONLY Write-only access.
+ * @property {string} READ_WRITE Read and write access.
+ */
+const NodeAccess = {
+	READ_ONLY: 'readOnly',
+	WRITE_ONLY: 'writeOnly',
+	READ_WRITE: 'readWrite',
+};
+
+const defaultShaderStages = [ 'fragment', 'vertex' ];
+const defaultBuildStages = [ 'setup', 'analyze', 'generate' ];
+const shaderStages = [ ...defaultShaderStages, 'compute' ];
+const vectorComponents = [ 'x', 'y', 'z', 'w' ];
 
 const _parentBuildStage = {
 	analyze: 'setup',
@@ -4679,42 +5814,61 @@ addMethodChaining( 'element', element );
 addMethodChaining( 'convert', convert );
 
 /**
- * These node represents an assign operation. Meaning a node is assigned
- * to another node.
+ * This class represents a shader property. It can be used
+ * to explicitly define a property and assign a value to it.
+ *
+ * ```js
+ * const threshold = property( 'float', 'threshold' ).assign( THRESHOLD );
+ *```
+ * `PropertyNode` is used by the engine to predefined common material properties
+ * for TSL code.
  *
  * @augments Node
  */
-class AssignNode extends Node {
+class PropertyNode extends Node {
 
 	static get type() {
 
-		return 'AssignNode';
+		return 'PropertyNode';
 
 	}
 
 	/**
-	 * Constructs a new assign node.
+	 * Constructs a new property node.
 	 *
-	 * @param {Node} targetNode - The target node.
-	 * @param {Node} sourceNode - The source type.
+	 * @param {string} nodeType - The type of the node.
+	 * @param {?string} [name=null] - The name of the property in the shader.
+	 * @param {boolean} [varying=false] - Whether this property is a varying or not.
+	 * @param {?Node} [placeholderNode=null] - The placeholder node if not assigned.
 	 */
-	constructor( targetNode, sourceNode ) {
+	constructor( nodeType, name = null, varying = false, placeholderNode = null ) {
 
-		super();
-
-		/**
-		 * The target node.
-		 *
-		 * @type {Node}
-		 */
-		this.targetNode = targetNode;
+		super( nodeType );
 
 		/**
-		 * The source node.
+		 * The name of the property in the shader. If no name is defined,
+		 * the node system auto-generates one.
 		 *
-		 * @type {Node}
+		 * @type {?string}
+		 * @default null
 		 */
-		this.sourceNode = sourceNode;
+		this.name = name;
+
+		/**
+		 * Whether this property is a varying or not.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.varying = varying;
+
+		/**
+		 * The placeholder node of the property if it is not assigned.
+		 *
+		 * @type {?Node}
+		 * @default null
+		 */
+		this.placeholderNode = nodeObject( placeholderNode );
 
 		/**
 		 * This flag can be used for type testing.
@@ -4723,130 +5877,70 @@ class AssignNode extends Node {
 		 * @readonly
 		 * @default true
 		 */
-		this.isAssignNode = true;
+		this.isPropertyNode = true;
+
+		/**
+		 * This flag is used for global cache.
+		 *
+		 * @type {boolean}
+		 * @default true
+		 */
+		this.global = true;
 
 	}
 
-	/**
-	 * Assignments must not be cached in temporary variables.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {boolean} Always `false`.
-	 */
 	isCacheable( /*builder*/ ) {
 
 		return false;
 
 	}
 
-	generateNodeType( builder, output ) {
+	getNodeType( builder ) {
 
-		return output !== 'void' ? this.targetNode.getNodeType( builder ) : 'void';
+		const nodeType = super.getNodeType( builder );
 
-	}
+		if ( nodeType === 'output' ) {
 
-	/**
-	 * Whether a split is required when assigning source to target. This can happen when the component length of
-	 * target and source data type does not match.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {boolean} Whether a split is required when assigning source to target.
-	 */
-	needsSplitAssign( builder ) {
-
-		const { targetNode } = this;
-
-		if ( builder.isAvailable( 'swizzleAssign' ) === false && targetNode.isSplitNode && targetNode.components.length > 1 ) {
-
-			const targetLength = builder.getTypeLength( targetNode.node.getNodeType( builder ) );
-			const assignDifferentVector = vectorComponents.join( '' ).slice( 0, targetLength ) !== targetNode.components;
-
-			return assignDifferentVector;
+			return builder.getOutputType();
 
 		}
 
-		return false;
+		return nodeType;
 
 	}
 
-	setup( builder ) {
+	customCacheKey() {
 
-		const { targetNode, sourceNode } = this;
-
-		const scope = targetNode.getScope();
-
-		const scopeData = builder.getDataFromNode( scope );
-		scopeData.assign = true;
-
-		const properties = builder.getNodeProperties( this );
-		properties.sourceNode = sourceNode;
-		properties.targetNode = targetNode.context( { assign: true } );
+		return hashString( this.type + ':' + ( this.name || '' ) + ':' + ( this.varying ? '1' : '0' ) );
 
 	}
 
-	generate( builder, output ) {
+	getHash( builder ) {
 
-		const { targetNode, sourceNode } = builder.getNodeProperties( this );
+		return this.name || super.getHash( builder );
 
-		const needsSplitAssign = this.needsSplitAssign( builder );
+	}
 
-		const target = targetNode.build( builder );
-		const targetType = targetNode.getNodeType( builder );
+	generate( builder ) {
 
-		const source = sourceNode.build( builder, targetType );
-		const sourceType = sourceNode.getNodeType( builder );
+		let nodeVar;
 
-		const nodeData = builder.getDataFromNode( this );
+		if ( this.varying === true ) {
 
-		//
-
-		let snippet;
-
-		if ( nodeData.propertyName !== undefined ) {
-
-			if ( output !== 'void' ) {
-
-				snippet = target;
-
-			}
-
-		} else if ( needsSplitAssign ) {
-
-			const sourceVar = builder.getVarFromNode( this, null, targetType );
-			const sourceProperty = builder.getPropertyName( sourceVar );
-
-			builder.addLineFlowCode( `${ sourceProperty } = ${ source }`, this );
-
-			const splitNode = targetNode.node;
-			const splitTargetNode = splitNode.node.context( { assign: true } );
-
-			const targetRoot = splitTargetNode.build( builder );
-
-			for ( let i = 0; i < splitNode.components.length; i ++ ) {
-
-				const component = splitNode.components[ i ];
-
-				builder.addLineFlowCode( `${ targetRoot }.${ component } = ${ sourceProperty }[ ${ i } ]`, this );
-
-			}
-
-			if ( output !== 'void' ) {
-
-				snippet = target;
-
-			}
+			nodeVar = builder.getVaryingFromNode( this, this.name );
+			nodeVar.needsInterpolation = true;
 
 		} else {
 
-			snippet = `${ target } = ${ source }`;
+			nodeVar = builder.getVarFromNode( this, this.name );
 
-			if ( output === 'void' || sourceType === 'void' ) {
+			if ( this.placeholderNode !== null ) {
 
-				builder.addLineFlowCode( snippet, this );
+				if ( builder.hasWriteUsage( this ) === false ) {
 
-				if ( output !== 'void' ) {
+					const snippet = this.placeholderNode.build( builder, this.getNodeType( builder ) );
 
-					snippet = target;
+					builder.addLineFlowCode( `${ builder.getPropertyName( nodeVar ) } = ${ snippet }`, this );
 
 				}
 
@@ -4854,197 +5948,300 @@ class AssignNode extends Node {
 
 		}
 
-		// The value of an assignment is its target.
-		nodeData.propertyName = target;
-
-		return builder.format( snippet, targetType, output );
+		return builder.getPropertyName( nodeVar );
 
 	}
 
 }
 
 /**
- * TSL function for creating an assign node.
+ * TSL function for creating a property node.
  *
  * @tsl
  * @function
- * @param {Node} targetNode - The target node.
- * @param {Node} sourceNode - The source type.
- * @returns {AssignNode}
+ * @param {string} type - The type of the node.
+ * @param {?string} [name=null] - The name of the property in the shader.
+ * @param {?Node} [placeholderNode=null] - The placeholder node if not assigned.
+ * @returns {PropertyNode}
  */
-const assign = /*@__PURE__*/ nodeProxy( AssignNode ).setParameterLength( 2 );
-
-addMethodChaining( 'assign', assign );
+const property = ( type, name, placeholderNode = null ) => new PropertyNode( type, name, false, placeholderNode );
 
 /**
- * ArrayNode represents a collection of nodes, typically created using the {@link array} function.
- * ```js
- * const colors = array( [
- * 	vec3( 1, 0, 0 ),
- * 	vec3( 0, 1, 0 ),
- * 	vec3( 0, 0, 1 )
- * ] );
- *
- * const redColor = tintColors.element( 0 );
- * ```
- *
- * @augments Node
- */
-class ArrayNode extends Node {
-
-	static get type() {
-
-		return 'ArrayNode';
-
-	}
-
-	/**
-	 * Constructs a new array node.
-	 *
-	 * @param {?string} nodeType - The data type of the elements.
-	 * @param {number} count - Size of the array.
-	 * @param {?Array<Node>} [values=null] - Array default values.
-	 */
-	constructor( nodeType, count, values = null ) {
-
-		super( nodeType );
-
-		/**
-		 * Array size.
-		 *
-		 * @type {number}
-		 */
-		this.count = count;
-
-		/**
-		 * Array default values.
-		 *
-		 * @type {?Array<Node>}
-		 */
-		this.values = values;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isArrayNode = true;
-
-	}
-
-	/**
-	 * Returns the number of elements in the node array.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {number} The number of elements in the node array.
-	 */
-	getArrayCount( /*builder*/ ) {
-
-		return this.count;
-
-	}
-
-	/**
-	 * Returns the node's type.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The type of the node.
-	 */
-	generateNodeType( builder ) {
-
-		if ( this.nodeType === null ) {
-
-			return this.values[ 0 ].getNodeType( builder );
-
-		}
-
-		return this.nodeType;
-
-	}
-
-	/**
-	 * Returns the node's type.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The type of the node.
-	 */
-	getElementType( builder ) {
-
-		return this.getNodeType( builder );
-
-	}
-
-	/**
-	 * Returns the type of a member variable.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {string} name - The name of the member variable.
-	 * @return {string} The type of the member variable.
-	 */
-	getMemberType( builder, name ) {
-
-		if ( this.nodeType === null ) {
-
-			return this.values[ 0 ].getMemberType( builder, name );
-
-		}
-
-		return super.getMemberType( builder, name );
-
-	}
-
-	/**
-	 * This method builds the output node and returns the resulting array as a shader string.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The generated shader string.
-	 */
-	generate( builder ) {
-
-		const type = this.getNodeType( builder );
-
-		return builder.generateArray( type, this.count, this.values );
-
-	}
-
-}
-
-/**
- * TSL function for creating an array node.
+ * TSL function for creating a varying property node.
  *
  * @tsl
  * @function
- * @param {string|Array<Node>} nodeTypeOrValues - A string representing the element type (e.g., 'vec3')
- * or an array containing the default values (e.g., [ vec3() ]).
- * @param {?number} [count] - Size of the array.
- * @returns {ArrayNode}
+ * @param {string} type - The type of the node.
+ * @param {?string} [name=null] - The name of the varying in the shader.
+ * @param {?Node} [placeholderNode=null] - The placeholder node if not assigned.
+ * @returns {PropertyNode}
  */
-const array = ( ...params ) => {
+const varyingProperty = ( type, name, placeholderNode = null ) => new PropertyNode( type, name, true, placeholderNode );
 
-	let node;
+/**
+ * TSL object that represents the shader variable `DiffuseColor`.
+ *
+ * @tsl
+ * @type {PropertyNode<vec4>}
+ */
+const diffuseColor = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec4', 'DiffuseColor' );
 
-	if ( params.length === 1 ) {
+/**
+ * TSL object that represents the shader variable `DiffuseContribution`.
+ *
+ * @tsl
+ * @type {PropertyNode<vec3>}
+ */
+const diffuseContribution = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'DiffuseContribution' );
 
-		const values = params[ 0 ].map( ( value ) => nodeObject( value ) );
+/**
+ * TSL object that represents the shader variable `DiffuseRoughness`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const diffuseRoughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'DiffuseRoughness' );
 
-		node = new ArrayNode( null, values.length, values );
+/**
+ * TSL object that represents the shader variable `EmissiveColor`.
+ *
+ * @tsl
+ * @type {PropertyNode<vec3>}
+ */
+const emissive = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'EmissiveColor' );
 
-	} else {
+/**
+ * TSL object that represents the shader variable `Roughness`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const roughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Roughness' );
 
-		const nodeType = params[ 0 ];
-		const count = params[ 1 ];
+/**
+ * TSL object that represents the shader variable `Metalness`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const metalness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Metalness' );
 
-		node = new ArrayNode( nodeType, count );
+/**
+ * TSL object that represents the shader variable `Clearcoat`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const clearcoat = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Clearcoat' );
 
-	}
+/**
+ * TSL object that represents the shader variable `ClearcoatRoughness`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const clearcoatRoughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'ClearcoatRoughness' );
 
-	return node;
+/**
+ * TSL object that represents the shader variable `Sheen`.
+ *
+ * @tsl
+ * @type {PropertyNode<vec3>}
+ */
+const sheen = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'Sheen' );
 
-};
+/**
+ * TSL object that represents the shader variable `SheenRoughness`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const sheenRoughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'SheenRoughness' );
 
-addMethodChaining( 'toArray', ( node, count ) => array( Array( count ).fill( node ) ) );
+/**
+ * TSL object that represents the shader variable `Iridescence`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const iridescence = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Iridescence' );
+
+/**
+ * TSL object that represents the shader variable `IridescenceIOR`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const iridescenceIOR = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'IridescenceIOR' );
+
+/**
+ * TSL object that represents the shader variable `IridescenceThickness`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const iridescenceThickness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'IridescenceThickness' );
+
+/**
+ * TSL object that represents the shader variable `AlphaT`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const alphaT = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'AlphaT' );
+
+/**
+ * TSL object that represents the shader variable `Anisotropy`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const anisotropy = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Anisotropy' );
+
+/**
+ * TSL object that represents the shader variable `AnisotropyT`.
+ *
+ * @tsl
+ * @type {PropertyNode<vec3>}
+ */
+const anisotropyT = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'AnisotropyT' );
+
+/**
+ * TSL object that represents the shader variable `AnisotropyB`.
+ *
+ * @tsl
+ * @type {PropertyNode<vec3>}
+ */
+const anisotropyB = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'AnisotropyB' );
+
+/**
+ * TSL object that represents the shader variable `SpecularColor`.
+ *
+ * @tsl
+ * @type {PropertyNode<color>}
+ */
+const specularColor = /*@__PURE__*/ nodeImmutable( PropertyNode, 'color', 'SpecularColor' );
+
+/**
+ * TSL object that represents the shader variable `SpecularColorBlended`.
+ *
+ * @tsl
+ * @type {PropertyNode<color>}
+ */
+const specularColorBlended = /*@__PURE__*/ nodeImmutable( PropertyNode, 'color', 'SpecularColorBlended' );
+
+/**
+ * TSL object that represents the shader variable `SpecularF90`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const specularF90 = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'SpecularF90' );
+
+/**
+ * TSL object that represents the shader variable `Shininess`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const shininess = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Shininess' );
+
+/**
+ * TSL object that represents the shader variable `Output`.
+ *
+ * @tsl
+ * @type {PropertyNode<vec4>}
+ */
+const output = /*@__PURE__*/ nodeImmutable( PropertyNode, 'output', 'Output' );
+
+/**
+ * TSL object that represents the shader variable `dashSize`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const dashSize = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'dashSize' );
+
+/**
+ * TSL object that represents the shader variable `gapSize`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const gapSize = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'gapSize' );
+
+/**
+ * TSL object that represents the shader variable `pointWidth`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const pointWidth = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'pointWidth' );
+
+/**
+ * TSL object that represents the shader variable `IOR`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const ior = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'IOR' );
+
+/**
+ * TSL object that represents the shader variable `Transmission`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const transmission = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Transmission' );
+
+/**
+ * TSL object that represents the shader variable `Thickness`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const thickness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Thickness' );
+
+/**
+ * TSL object that represents the shader variable `AttenuationDistance`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const attenuationDistance = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'AttenuationDistance' );
+
+/**
+ * TSL object that represents the shader variable `AttenuationColor`.
+ *
+ * @tsl
+ * @type {PropertyNode<color>}
+ */
+const attenuationColor = /*@__PURE__*/ nodeImmutable( PropertyNode, 'color', 'AttenuationColor' );
+
+/**
+ * TSL object that represents the shader variable `Dispersion`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const dispersion = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Dispersion' );
+
+/**
+ * TSL object that represents the shader variable `Retroreflectivity`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const retroreflectivity = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Retroreflectivity' );
+
+/**
+ * TSL object that represents the shader variable `AmbientOcclusion`.
+ * If no value is assigned to this property, it defaults to a placeholder value of `1.0`.
+ *
+ * @tsl
+ * @type {PropertyNode<float>}
+ */
+const ambientOcclusion = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'AmbientOcclusion', false, 1 );
 
 /**
  * This node can be used to group single instances of {@link UniformNode}
@@ -5482,61 +6679,51 @@ const uniform = ( value, type ) => {
 };
 
 /**
- * This class represents a shader property. It can be used
- * to explicitly define a property and assign a value to it.
- *
+ * ArrayNode represents a collection of nodes, typically created using the {@link array} function.
  * ```js
- * const threshold = property( 'float', 'threshold' ).assign( THRESHOLD );
- *```
- * `PropertyNode` is used by the engine to predefined common material properties
- * for TSL code.
+ * const colors = array( [
+ * 	vec3( 1, 0, 0 ),
+ * 	vec3( 0, 1, 0 ),
+ * 	vec3( 0, 0, 1 )
+ * ] );
+ *
+ * const redColor = tintColors.element( 0 );
+ * ```
  *
  * @augments Node
  */
-class PropertyNode extends Node {
+class ArrayNode extends Node {
 
 	static get type() {
 
-		return 'PropertyNode';
+		return 'ArrayNode';
 
 	}
 
 	/**
-	 * Constructs a new property node.
+	 * Constructs a new array node.
 	 *
-	 * @param {string} nodeType - The type of the node.
-	 * @param {?string} [name=null] - The name of the property in the shader.
-	 * @param {boolean} [varying=false] - Whether this property is a varying or not.
-	 * @param {?Node} [placeholderNode=null] - The placeholder node if not assigned.
+	 * @param {?string} nodeType - The data type of the elements.
+	 * @param {number} count - Size of the array.
+	 * @param {?Array<Node>} [values=null] - Array default values.
 	 */
-	constructor( nodeType, name = null, varying = false, placeholderNode = null ) {
+	constructor( nodeType, count, values = null ) {
 
 		super( nodeType );
 
 		/**
-		 * The name of the property in the shader. If no name is defined,
-		 * the node system auto-generates one.
+		 * Array size.
 		 *
-		 * @type {?string}
-		 * @default null
+		 * @type {number}
 		 */
-		this.name = name;
+		this.count = count;
 
 		/**
-		 * Whether this property is a varying or not.
+		 * Array default values.
 		 *
-		 * @type {boolean}
-		 * @default false
+		 * @type {?Array<Node>}
 		 */
-		this.varying = varying;
-
-		/**
-		 * The placeholder node of the property if it is not assigned.
-		 *
-		 * @type {?Node}
-		 * @default null
-		 */
-		this.placeholderNode = nodeObject( placeholderNode );
+		this.values = values;
 
 		/**
 		 * This flag can be used for type testing.
@@ -5545,70 +6732,291 @@ class PropertyNode extends Node {
 		 * @readonly
 		 * @default true
 		 */
-		this.isPropertyNode = true;
-
-		/**
-		 * This flag is used for global cache.
-		 *
-		 * @type {boolean}
-		 * @default true
-		 */
-		this.global = true;
+		this.isArrayNode = true;
 
 	}
 
+	/**
+	 * Returns the number of elements in the node array.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {number} The number of elements in the node array.
+	 */
+	getArrayCount( /*builder*/ ) {
+
+		return this.count;
+
+	}
+
+	/**
+	 * Returns the node's type.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The type of the node.
+	 */
+	generateNodeType( builder ) {
+
+		if ( this.nodeType === null ) {
+
+			return this.values[ 0 ].getNodeType( builder );
+
+		}
+
+		return this.nodeType;
+
+	}
+
+	/**
+	 * Returns the node's type.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The type of the node.
+	 */
+	getElementType( builder ) {
+
+		return this.getNodeType( builder );
+
+	}
+
+	/**
+	 * Returns the type of a member variable.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {string} name - The name of the member variable.
+	 * @return {string} The type of the member variable.
+	 */
+	getMemberType( builder, name ) {
+
+		if ( this.nodeType === null ) {
+
+			return this.values[ 0 ].getMemberType( builder, name );
+
+		}
+
+		return super.getMemberType( builder, name );
+
+	}
+
+	/**
+	 * This method builds the output node and returns the resulting array as a shader string.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The generated shader string.
+	 */
+	generate( builder ) {
+
+		const type = this.getNodeType( builder );
+
+		return builder.generateArray( type, this.count, this.values );
+
+	}
+
+}
+
+/**
+ * TSL function for creating an array node.
+ *
+ * @tsl
+ * @function
+ * @param {string|Array<Node>} nodeTypeOrValues - A string representing the element type (e.g., 'vec3')
+ * or an array containing the default values (e.g., [ vec3() ]).
+ * @param {?number} [count] - Size of the array.
+ * @returns {ArrayNode}
+ */
+const array = ( ...params ) => {
+
+	let node;
+
+	if ( params.length === 1 ) {
+
+		const values = params[ 0 ].map( ( value ) => nodeObject( value ) );
+
+		node = new ArrayNode( null, values.length, values );
+
+	} else {
+
+		const nodeType = params[ 0 ];
+		const count = params[ 1 ];
+
+		node = new ArrayNode( nodeType, count );
+
+	}
+
+	return node;
+
+};
+
+addMethodChaining( 'toArray', ( node, count ) => array( Array( count ).fill( node ) ) );
+
+/**
+ * These node represents an assign operation. Meaning a node is assigned
+ * to another node.
+ *
+ * @augments Node
+ */
+class AssignNode extends Node {
+
+	static get type() {
+
+		return 'AssignNode';
+
+	}
+
+	/**
+	 * Constructs a new assign node.
+	 *
+	 * @param {Node} targetNode - The target node.
+	 * @param {Node} sourceNode - The source type.
+	 */
+	constructor( targetNode, sourceNode ) {
+
+		super();
+
+		/**
+		 * The target node.
+		 *
+		 * @type {Node}
+		 */
+		this.targetNode = targetNode;
+
+		/**
+		 * The source node.
+		 *
+		 * @type {Node}
+		 */
+		this.sourceNode = sourceNode;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isAssignNode = true;
+
+	}
+
+	/**
+	 * Assignments must not be cached in temporary variables.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {boolean} Always `false`.
+	 */
 	isCacheable( /*builder*/ ) {
 
 		return false;
 
 	}
 
-	getNodeType( builder ) {
+	generateNodeType( builder, output ) {
 
-		const nodeType = super.getNodeType( builder );
+		return output !== 'void' ? this.targetNode.getNodeType( builder ) : 'void';
 
-		if ( nodeType === 'output' ) {
+	}
 
-			return builder.getOutputType();
+	/**
+	 * Whether a split is required when assigning source to target. This can happen when the component length of
+	 * target and source data type does not match.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {boolean} Whether a split is required when assigning source to target.
+	 */
+	needsSplitAssign( builder ) {
+
+		const { targetNode } = this;
+
+		if ( builder.isAvailable( 'swizzleAssign' ) === false && targetNode.isSplitNode && targetNode.components.length > 1 ) {
+
+			const targetLength = builder.getTypeLength( targetNode.node.getNodeType( builder ) );
+			const assignDifferentVector = vectorComponents.join( '' ).slice( 0, targetLength ) !== targetNode.components;
+
+			return assignDifferentVector;
 
 		}
 
-		return nodeType;
+		return false;
 
 	}
 
-	customCacheKey() {
+	setup( builder ) {
 
-		return hashString( this.type + ':' + ( this.name || '' ) + ':' + ( this.varying ? '1' : '0' ) );
+		const { targetNode, sourceNode } = this;
+
+		const scope = targetNode.getScope();
+
+		const scopeData = builder.getDataFromNode( scope );
+		scopeData.assign = true;
+
+		const properties = builder.getNodeProperties( this );
+		properties.sourceNode = sourceNode;
+		properties.targetNode = targetNode.context( { assign: true } );
 
 	}
 
-	getHash( builder ) {
+	generate( builder, output ) {
 
-		return this.name || super.getHash( builder );
+		const { targetNode, sourceNode } = builder.getNodeProperties( this );
 
-	}
+		const needsSplitAssign = this.needsSplitAssign( builder );
 
-	generate( builder ) {
+		const target = targetNode.build( builder );
+		const targetType = targetNode.getNodeType( builder );
 
-		let nodeVar;
+		const source = sourceNode.build( builder, targetType );
+		const sourceType = sourceNode.getNodeType( builder );
 
-		if ( this.varying === true ) {
+		const nodeData = builder.getDataFromNode( this );
 
-			nodeVar = builder.getVaryingFromNode( this, this.name );
-			nodeVar.needsInterpolation = true;
+		//
+
+		let snippet;
+
+		if ( nodeData.propertyName !== undefined ) {
+
+			if ( output !== 'void' ) {
+
+				snippet = target;
+
+			}
+
+		} else if ( needsSplitAssign ) {
+
+			const sourceVar = builder.getVarFromNode( this, null, targetType );
+			const sourceProperty = builder.getPropertyName( sourceVar );
+
+			builder.addLineFlowCode( `${ sourceProperty } = ${ source }`, this );
+
+			const splitNode = targetNode.node;
+			const splitTargetNode = splitNode.node.context( { assign: true } );
+
+			const targetRoot = splitTargetNode.build( builder );
+
+			for ( let i = 0; i < splitNode.components.length; i ++ ) {
+
+				const component = splitNode.components[ i ];
+
+				builder.addLineFlowCode( `${ targetRoot }.${ component } = ${ sourceProperty }[ ${ i } ]`, this );
+
+			}
+
+			if ( output !== 'void' ) {
+
+				snippet = target;
+
+			}
 
 		} else {
 
-			nodeVar = builder.getVarFromNode( this, this.name );
+			snippet = `${ target } = ${ source }`;
 
-			if ( this.placeholderNode !== null ) {
+			if ( output === 'void' || sourceType === 'void' ) {
 
-				if ( builder.hasWriteUsage( this ) === false ) {
+				builder.addLineFlowCode( snippet, this );
 
-					const snippet = this.placeholderNode.build( builder, this.getNodeType( builder ) );
+				if ( output !== 'void' ) {
 
-					builder.addLineFlowCode( `${ builder.getPropertyName( nodeVar ) } = ${ snippet }`, this );
+					snippet = target;
 
 				}
 
@@ -5616,300 +7024,27 @@ class PropertyNode extends Node {
 
 		}
 
-		return builder.getPropertyName( nodeVar );
+		// The value of an assignment is its target.
+		nodeData.propertyName = target;
+
+		return builder.format( snippet, targetType, output );
 
 	}
 
 }
 
 /**
- * TSL function for creating a property node.
+ * TSL function for creating an assign node.
  *
  * @tsl
  * @function
- * @param {string} type - The type of the node.
- * @param {?string} [name=null] - The name of the property in the shader.
- * @param {?Node} [placeholderNode=null] - The placeholder node if not assigned.
- * @returns {PropertyNode}
+ * @param {Node} targetNode - The target node.
+ * @param {Node} sourceNode - The source type.
+ * @returns {AssignNode}
  */
-const property = ( type, name, placeholderNode = null ) => new PropertyNode( type, name, false, placeholderNode );
+const assign = /*@__PURE__*/ nodeProxy( AssignNode ).setParameterLength( 2 );
 
-/**
- * TSL function for creating a varying property node.
- *
- * @tsl
- * @function
- * @param {string} type - The type of the node.
- * @param {?string} [name=null] - The name of the varying in the shader.
- * @param {?Node} [placeholderNode=null] - The placeholder node if not assigned.
- * @returns {PropertyNode}
- */
-const varyingProperty = ( type, name, placeholderNode = null ) => new PropertyNode( type, name, true, placeholderNode );
-
-/**
- * TSL object that represents the shader variable `DiffuseColor`.
- *
- * @tsl
- * @type {PropertyNode<vec4>}
- */
-const diffuseColor = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec4', 'DiffuseColor' );
-
-/**
- * TSL object that represents the shader variable `DiffuseContribution`.
- *
- * @tsl
- * @type {PropertyNode<vec3>}
- */
-const diffuseContribution = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'DiffuseContribution' );
-
-/**
- * TSL object that represents the shader variable `DiffuseRoughness`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const diffuseRoughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'DiffuseRoughness' );
-
-/**
- * TSL object that represents the shader variable `EmissiveColor`.
- *
- * @tsl
- * @type {PropertyNode<vec3>}
- */
-const emissive = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'EmissiveColor' );
-
-/**
- * TSL object that represents the shader variable `Roughness`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const roughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Roughness' );
-
-/**
- * TSL object that represents the shader variable `Metalness`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const metalness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Metalness' );
-
-/**
- * TSL object that represents the shader variable `Clearcoat`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const clearcoat = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Clearcoat' );
-
-/**
- * TSL object that represents the shader variable `ClearcoatRoughness`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const clearcoatRoughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'ClearcoatRoughness' );
-
-/**
- * TSL object that represents the shader variable `Sheen`.
- *
- * @tsl
- * @type {PropertyNode<vec3>}
- */
-const sheen = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'Sheen' );
-
-/**
- * TSL object that represents the shader variable `SheenRoughness`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const sheenRoughness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'SheenRoughness' );
-
-/**
- * TSL object that represents the shader variable `Iridescence`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const iridescence = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Iridescence' );
-
-/**
- * TSL object that represents the shader variable `IridescenceIOR`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const iridescenceIOR = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'IridescenceIOR' );
-
-/**
- * TSL object that represents the shader variable `IridescenceThickness`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const iridescenceThickness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'IridescenceThickness' );
-
-/**
- * TSL object that represents the shader variable `AlphaT`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const alphaT = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'AlphaT' );
-
-/**
- * TSL object that represents the shader variable `Anisotropy`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const anisotropy = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Anisotropy' );
-
-/**
- * TSL object that represents the shader variable `AnisotropyT`.
- *
- * @tsl
- * @type {PropertyNode<vec3>}
- */
-const anisotropyT = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'AnisotropyT' );
-
-/**
- * TSL object that represents the shader variable `AnisotropyB`.
- *
- * @tsl
- * @type {PropertyNode<vec3>}
- */
-const anisotropyB = /*@__PURE__*/ nodeImmutable( PropertyNode, 'vec3', 'AnisotropyB' );
-
-/**
- * TSL object that represents the shader variable `SpecularColor`.
- *
- * @tsl
- * @type {PropertyNode<color>}
- */
-const specularColor = /*@__PURE__*/ nodeImmutable( PropertyNode, 'color', 'SpecularColor' );
-
-/**
- * TSL object that represents the shader variable `SpecularColorBlended`.
- *
- * @tsl
- * @type {PropertyNode<color>}
- */
-const specularColorBlended = /*@__PURE__*/ nodeImmutable( PropertyNode, 'color', 'SpecularColorBlended' );
-
-/**
- * TSL object that represents the shader variable `SpecularF90`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const specularF90 = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'SpecularF90' );
-
-/**
- * TSL object that represents the shader variable `Shininess`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const shininess = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Shininess' );
-
-/**
- * TSL object that represents the shader variable `Output`.
- *
- * @tsl
- * @type {PropertyNode<vec4>}
- */
-const output = /*@__PURE__*/ nodeImmutable( PropertyNode, 'output', 'Output' );
-
-/**
- * TSL object that represents the shader variable `dashSize`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const dashSize = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'dashSize' );
-
-/**
- * TSL object that represents the shader variable `gapSize`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const gapSize = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'gapSize' );
-
-/**
- * TSL object that represents the shader variable `pointWidth`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const pointWidth = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'pointWidth' );
-
-/**
- * TSL object that represents the shader variable `IOR`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const ior = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'IOR' );
-
-/**
- * TSL object that represents the shader variable `Transmission`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const transmission = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Transmission' );
-
-/**
- * TSL object that represents the shader variable `Thickness`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const thickness = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Thickness' );
-
-/**
- * TSL object that represents the shader variable `AttenuationDistance`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const attenuationDistance = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'AttenuationDistance' );
-
-/**
- * TSL object that represents the shader variable `AttenuationColor`.
- *
- * @tsl
- * @type {PropertyNode<color>}
- */
-const attenuationColor = /*@__PURE__*/ nodeImmutable( PropertyNode, 'color', 'AttenuationColor' );
-
-/**
- * TSL object that represents the shader variable `Dispersion`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const dispersion = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Dispersion' );
-
-/**
- * TSL object that represents the shader variable `Retroreflectivity`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const retroreflectivity = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'Retroreflectivity' );
-
-/**
- * TSL object that represents the shader variable `AmbientOcclusion`.
- * If no value is assigned to this property, it defaults to a placeholder value of `1.0`.
- *
- * @tsl
- * @type {PropertyNode<float>}
- */
-const ambientOcclusion = /*@__PURE__*/ nodeImmutable( PropertyNode, 'float', 'AmbientOcclusion', false, 1 );
+addMethodChaining( 'assign', assign );
 
 /**
  * This module represents the call of a {@link FunctionNode}. Developers are usually not confronted
@@ -12239,6 +13374,13226 @@ class AttributeNode extends Node {
 const attribute = ( name, nodeType = null ) => new AttributeNode( name, nodeType );
 
 /**
+ * TSL function for creating an uv attribute node with the given index.
+ *
+ * @tsl
+ * @function
+ * @param {number} [index=0] - The uv index.
+ * @return {AttributeNode<vec2>} The uv attribute node.
+ */
+const uv$1 = ( index = 0 ) => attribute( 'uv' + ( index > 0 ? index : '' ), 'vec2' );
+
+/**
+ * A node that represents the dimensions of a texture. The texture size is
+ * retrieved in the shader via built-in shader functions like `textureDimensions()`
+ * or `textureSize()`.
+ *
+ * @augments Node
+ */
+class TextureSizeNode extends Node {
+
+	static get type() {
+
+		return 'TextureSizeNode';
+
+	}
+
+	/**
+	 * Constructs a new texture size node.
+	 *
+	 * @param {TextureNode} textureNode - A texture node which size should be retrieved.
+	 * @param {?Node<int>} [levelNode=null] - A level node which defines the requested mip.
+	 */
+	constructor( textureNode, levelNode = null ) {
+
+		super( 'uvec2' );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isTextureSizeNode = true;
+
+		/**
+		 * A texture node which size should be retrieved.
+		 *
+		 * @type {TextureNode}
+		 */
+		this.textureNode = textureNode;
+
+		/**
+		 * A level node which defines the requested mip.
+		 *
+		 * @type {Node<int>}
+		 * @default null
+		 */
+		this.levelNode = levelNode;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	generate( builder ) {
+
+		const textureProperty = this.textureNode.build( builder, 'property' );
+		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
+
+		const snippet = builder.generateTextureSize( this.textureNode.value, textureProperty, level );
+
+		return builder.format( snippet, this.getNodeType( builder ) );
+
+	}
+
+}
+
+/**
+ * TSL function for creating a texture size node.
+ *
+ * @tsl
+ * @function
+ * @param {TextureNode} textureNode - A texture node which size should be retrieved.
+ * @param {?Node<int>} [levelNode=null] - A level node which defines the requested mip.
+ * @returns {TextureSizeNode}
+ */
+const textureSize = /*@__PURE__*/ nodeProxy( TextureSizeNode ).setParameterLength( 1, 2 );
+
+/**
+ * A special type of uniform node that computes the
+ * maximum mipmap level for a given texture node.
+ *
+ * ```js
+ * const level = maxMipLevel( textureNode );
+ * ```
+ *
+ * @augments UniformNode
+ */
+class MaxMipLevelNode extends UniformNode {
+
+	static get type() {
+
+		return 'MaxMipLevelNode';
+
+	}
+
+	/**
+	 * Constructs a new max mip level node.
+	 *
+	 * @param {TextureNode} textureNode - The texture node to compute the max mip level for.
+	 */
+	constructor( textureNode ) {
+
+		super( 0 );
+
+		/**
+		 * The texture node to compute the max mip level for.
+		 *
+		 * @private
+		 * @type {TextureNode}
+		 */
+		this._textureNode = textureNode;
+
+		/**
+		 * The `updateType` is set to `NodeUpdateType.FRAME` since the node updates
+		 * the texture once per frame in its {@link MaxMipLevelNode#update} method.
+		 *
+		 * @type {string}
+		 * @default 'frame'
+		 */
+		this.updateType = NodeUpdateType.FRAME;
+
+	}
+
+	/**
+	 * The texture node to compute the max mip level for.
+	 *
+	 * @readonly
+	 * @type {TextureNode}
+	 */
+	get textureNode() {
+
+		return this._textureNode;
+
+	}
+
+	/**
+	 * The texture.
+	 *
+	 * @readonly
+	 * @type {Texture}
+	 */
+	get texture() {
+
+		return this._textureNode.value;
+
+	}
+
+	update() {
+
+		const texture = this.texture;
+		const images = texture.images;
+		const image = ( images && images.length > 0 ) ? ( ( images[ 0 ] && images[ 0 ].image ) || images[ 0 ] ) : texture.image;
+
+		if ( image && image.width !== undefined ) {
+
+			const { width, height } = image;
+
+			this.value = Math.log2( Math.max( width, height ) );
+
+		}
+
+	}
+
+}
+
+/**
+ * TSL function for creating a max mip level node.
+ *
+ * @tsl
+ * @function
+ * @param {TextureNode} textureNode - The texture node to compute the max mip level for.
+ * @returns {MaxMipLevelNode}
+ */
+const maxMipLevel = /*@__PURE__*/ nodeProxy( MaxMipLevelNode ).setParameterLength( 1 );
+
+const EmptyTexture$1 = /*@__PURE__*/ new Texture();
+
+/**
+ * This type of uniform node represents a 2D texture.
+ *
+ * @augments UniformNode
+ */
+class TextureNode extends UniformNode {
+
+	static get type() {
+
+		return 'TextureNode';
+
+	}
+
+	/**
+	 * Constructs a new texture node.
+	 *
+	 * @param {Texture} [value=EmptyTexture] - The texture.
+	 * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
+	 * @param {?Node<int>} [levelNode=null] - The level node.
+	 * @param {?Node<float>} [biasNode=null] - The bias node.
+	 */
+	constructor( value = EmptyTexture$1, uvNode = null, levelNode = null, biasNode = null ) {
+
+		super( value );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isTextureNode = true;
+
+		/**
+		 * Represents the texture coordinates.
+		 *
+		 * @type {?Node<vec2|vec3>}
+		 * @default null
+		 */
+		this.uvNode = uvNode;
+
+		/**
+		 * Represents the mip level that should be selected.
+		 *
+		 * @type {?Node<int>}
+		 * @default null
+		 */
+		this.levelNode = levelNode;
+
+		/**
+		 * Represents the bias to be applied during level-of-detail computation.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.biasNode = biasNode;
+
+		/**
+		 * Represents a reference value a texture sample is compared to.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.compareNode = null;
+
+		/**
+		 * When using texture arrays, the depth node defines the layer to select.
+		 *
+		 * @type {?Node<int>}
+		 * @default null
+		 */
+		this.depthNode = null;
+
+		/**
+		 * When defined, a texture is sampled using explicit gradients.
+		 *
+		 * @type {?Array<Node<vec2>>}
+		 * @default null
+		 */
+		this.gradNode = null;
+
+		/**
+		 * Represents the optional index constant of the channel to gather.
+		 * This must be in range [0, 3] and a compile-time constant.
+		 *
+		 * @type {?Node<int>}
+		 * @default null
+		 */
+		this.gatherNode = null;
+
+		/**
+		 * Represents the optional texel offset applied to the unnormalized texture
+		 * coordinate before sampling the texture.
+		 *
+		 * @type {?Node<ivec2|ivec3>}
+		 * @default null
+		 */
+		this.offsetNode = null;
+
+		/**
+		 * Whether texture values should be sampled or fetched.
+		 *
+		 * @type {boolean}
+		 * @default true
+		 */
+		this.sampler = true;
+
+		/**
+		 * Whether the uv transformation matrix should be
+		 * automatically updated or not. Use `setUpdateMatrix()`
+		 * if you want to change the value of the property.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.updateMatrix = false;
+
+		/**
+		 * The reference node.
+		 *
+		 * @type {?Node}
+		 * @default null
+		 */
+		this.referenceNode = null;
+
+		/**
+		 * The mergeable value is stored in a private property.
+		 *
+		 * @private
+		 * @type {boolean}
+		 * @default true
+		 */
+		this._mergeable = true;
+
+		/**
+		 * The texture value is stored in a private property.
+		 *
+		 * @private
+		 * @type {Texture}
+		 */
+		this._value = value;
+
+		/**
+		 * The uniform node that represents the uv transformation matrix.
+		 *
+		 * @private
+		 * @type {?UniformNode<mat3>}
+		 * @default null
+		 */
+		this._matrixUniform = null;
+
+		/**
+		 * The uniform node that represents the y-flip. Only required for WebGL.
+		 *
+		 * @private
+		 * @type {?UniformNode<bool>}
+		 * @default null
+		 */
+		this._flipYUniform = null;
+
+		/**
+		 * Whether the node is used as a comparison sampler, e.g. via `samplerComparison()`.
+		 *
+		 * @private
+		 * @type {boolean}
+		 * @default false
+		 */
+		this._samplerComparison = false;
+
+		this.setUpdateMatrix( uvNode === null );
+
+	}
+
+	set mergeable( value ) {
+
+		if ( this.referenceNode ) {
+
+			this.referenceNode.mergeable = value;
+
+		} else {
+
+			this._mergeable = value;
+
+		}
+
+	}
+
+	/**
+	 * Whether the uniform may be merged with other uniforms at compile-time.
+	 *
+	 * @type {boolean}
+	 * @default true
+	 */
+	get mergeable() {
+
+		return this.referenceNode ? this.referenceNode.mergeable : this._mergeable;
+
+	}
+
+	set value( value ) {
+
+		if ( this.referenceNode ) {
+
+			this.referenceNode.value = value;
+
+		} else {
+
+			this._value = value;
+
+		}
+
+	}
+
+	/**
+	 * The texture value.
+	 *
+	 * @type {Texture}
+	 */
+	get value() {
+
+		return this.referenceNode ? this.referenceNode.value : this._value;
+
+	}
+
+	/**
+	 * Overwritten since the uniform hash is defined by the texture's UUID - if mergeable - and the hash of its reference node otherwise.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The uniform hash.
+	 */
+	getUniformHash( builder ) {
+
+		if ( this.referenceNode && ! this.referenceNode.mergeable ) {
+
+			return this.referenceNode.getHash( builder );
+
+		}
+
+		if ( ! this._mergeable ) {
+
+			return this.getHash( builder );
+
+		}
+
+		return this.value.uuid;
+
+	}
+
+	/**
+	 * Overwritten since the texture's type and filters influence the generated shader code.
+	 *
+	 * @return {number} The custom cache key.
+	 */
+	customCacheKey() {
+
+		const { type, minFilter, magFilter } = this.value;
+
+		return hash$1( this.id, type, minFilter, magFilter );
+
+	}
+
+	/**
+	 * Overwritten since the node type is inferred from the texture type.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The node type.
+	 */
+	generateNodeType( /*builder*/ ) {
+
+		if ( this.gatherNode !== null ) {
+
+			return 'vec4';
+
+		}
+
+		return getTextureType( this.value );
+
+	}
+
+	/**
+	 * Overwrites the default implementation to return a fixed value `'texture'`.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The input type.
+	 */
+	getInputType( /*builder*/ ) {
+
+		return 'texture';
+
+	}
+
+	/**
+	 * Returns a default uvs based on the current texture's channel.
+	 *
+	 * @return {AttributeNode<vec2>} The default uvs.
+	 */
+	getDefaultUV() {
+
+		return uv$1( this.value.channel );
+
+	}
+
+	/**
+	 * Overwritten to always return the texture reference of the node.
+	 *
+	 * @param {any} state - This method can be invocated in different contexts so `state` can refer to any object type.
+	 * @return {Texture} The texture reference.
+	 */
+	updateReference( /*state*/ ) {
+
+		return this.value;
+
+	}
+
+	/**
+	 * Transforms the given uv node with the texture transformation matrix.
+	 *
+	 * @param {Node} uvNode - The uv node to transform.
+	 * @return {Node} The transformed uv node.
+	 */
+	getTransformedUV( uvNode ) {
+
+		return this._getMatrixUniform().mul( vec3( uvNode, 1 ) ).xy;
+
+	}
+
+	/**
+	 * Transforms the given uv gradient with the linear part of the texture matrix.
+	 *
+	 * @private
+	 * @param {Node<vec2>} gradientNode - The uv gradient.
+	 * @return {Node<vec2>} The transformed gradient.
+	 */
+	_getTransformedGradient( gradientNode ) {
+
+		return this._getMatrixUniform().mul( vec3( gradientNode, 0 ) ).xy;
+
+	}
+
+	/**
+	 * Returns the uniform of the texture matrix shared by all nodes of the same base texture node.
+	 *
+	 * @private
+	 * @return {UniformNode<mat3>} The texture matrix uniform.
+	 */
+	_getMatrixUniform() {
+
+		const baseNode = this.getBase();
+
+		if ( baseNode._matrixUniform === null ) {
+
+			baseNode._matrixUniform = uniform( baseNode.value.matrix ).onObjectUpdate( () => {
+
+				const texture = baseNode.value;
+
+				if ( texture.matrixAutoUpdate === true ) texture.updateMatrix();
+
+				return texture.matrix;
+
+			} );
+
+		}
+
+		return baseNode._matrixUniform;
+
+	}
+
+	/**
+	 * Defines whether the uv transformation matrix should automatically be updated or not.
+	 *
+	 * @param {boolean} value - The update toggle.
+	 * @return {TextureNode} A reference to this node.
+	 */
+	setUpdateMatrix( value ) {
+
+		this.updateMatrix = value;
+
+		return this;
+
+	}
+
+	/**
+	 * Setups the uv node. Depending on the backend as well as texture's image and type, it might be necessary
+	 * to modify the uv node for correct sampling.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node} uvNode - The uv node to setup.
+	 * @return {Node} The updated uv node.
+	 */
+	setupUV( builder, uvNode ) {
+
+		if ( builder.isFlipY() ) {
+
+			const baseNode = this.getBase();
+
+			if ( baseNode._flipYUniform === null ) {
+
+				baseNode._flipYUniform = uniform( false ).onObjectUpdate( () => {
+
+					const texture = baseNode.value;
+
+					return ( texture.image instanceof ImageBitmap && texture.flipY === true ) || texture.isRenderTargetTexture === true || texture.isFramebufferTexture === true || texture.isDepthTexture === true;
+
+				} );
+
+			}
+
+			uvNode = uvNode.toVar();
+
+			if ( this.sampler ) {
+
+				uvNode = baseNode._flipYUniform.select( uvNode.flipY(), uvNode );
+
+			} else {
+
+				uvNode = baseNode._flipYUniform.select( uvNode.setY( int( textureSize( this, this.levelNode ).y ).sub( int( uvNode.y ) ).sub( 1 ) ), uvNode );
+
+			}
+
+		}
+
+		return uvNode;
+
+	}
+
+	/**
+	 * Setups texture node by preparing the internal nodes for code generation.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	setup( builder ) {
+
+		const properties = builder.getNodeProperties( this );
+		properties.referenceNode = this.referenceNode;
+
+		//
+
+		const texture = this.value;
+
+		if ( ! texture || texture.isTexture !== true ) {
+
+			throw new NodeError( 'THREE.TSL: `texture( value )` function expects a valid instance of THREE.Texture().', this.stackTrace );
+
+		}
+
+		//
+
+		const uvNode = Fn( () => {
+
+			let uvNode = this.uvNode;
+
+			if ( ( uvNode === null || builder.context.forceUVContext === true ) && builder.context.getUV ) {
+
+				uvNode = builder.context.getUV( this, builder );
+
+			}
+
+			if ( ! uvNode ) uvNode = this.getDefaultUV();
+
+			if ( this.updateMatrix === true ) {
+
+				uvNode = this.getTransformedUV( uvNode );
+
+			}
+
+			uvNode = this.setupUV( builder, uvNode );
+
+			return uvNode;
+
+		} )();
+
+		//
+
+		let levelNode = this.levelNode;
+
+		if ( levelNode === null && builder.context.getTextureLevel ) {
+
+			levelNode = builder.context.getTextureLevel( this );
+
+		}
+
+		//
+
+		let compareNode = null;
+		let compareStepNode = null;
+
+		if ( this.compareNode !== null ) {
+
+			if ( builder.renderer.hasCompatibility( Compatibility.TEXTURE_COMPARE ) ) {
+
+				compareNode = this.compareNode;
+
+			} else {
+
+				const compareFunction = texture.compareFunction;
+
+				if ( compareFunction === null || compareFunction === LessCompare || compareFunction === LessEqualCompare || compareFunction === GreaterCompare || compareFunction === GreaterEqualCompare ) {
+
+					compareStepNode = this.compareNode;
+
+				} else {
+
+					compareNode = this.compareNode;
+
+					warnOnce( 'TSL: Only "LessCompare", "LessEqualCompare", "GreaterCompare" and "GreaterEqualCompare" are supported for depth texture comparison fallback.' );
+
+				}
+
+			}
+
+		}
+
+		// the context can provide analytic gradients of the default uv, e.g. if the uv is reconstructed per fragment
+
+		let gradNode = this.gradNode;
+
+		if ( gradNode === null && this.uvNode === null && levelNode === null && this.biasNode === null && this.sampler === true && builder.context.getTextureGradient ) {
+
+			const gradient = builder.context.getTextureGradient( this, builder );
+
+			if ( gradient ) {
+
+				gradNode = this.updateMatrix === true ? gradient.map( ( node ) => this._getTransformedGradient( node ) ) : gradient;
+
+			}
+
+		}
+
+		properties.uvNode = uvNode;
+		properties.levelNode = levelNode;
+		properties.biasNode = this.biasNode;
+		properties.compareNode = compareNode;
+		properties.compareStepNode = compareStepNode;
+		properties.gradNode = gradNode;
+		properties.gatherNode = this.gatherNode;
+		properties.depthNode = this.depthNode;
+		properties.offsetNode = this.offsetNode;
+
+	}
+
+	/**
+	 * Generates the uv code snippet.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node} uvNode - The uv node to generate code for.
+	 * @return {string} The generated code snippet.
+	 */
+	generateUV( builder, uvNode ) {
+
+		return uvNode.build( builder, this.sampler === true ? 'vec2' : 'ivec2' );
+
+	}
+
+	/**
+	 * Generates the offset code snippet.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node} offsetNode - The offset node to generate code for.
+	 * @return {string} The generated code snippet.
+	 */
+	generateOffset( builder, offsetNode ) {
+
+		return offsetNode.build( builder, 'ivec2' );
+
+	}
+
+	/**
+	 * Generates the snippet for the texture sampling.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {string} textureProperty - The texture property.
+	 * @param {string} uvSnippet - The uv snippet.
+	 * @param {?string} levelSnippet - The level snippet.
+	 * @param {?string} biasSnippet - The bias snippet.
+	 * @param {?string} depthSnippet - The depth snippet.
+	 * @param {?string} compareSnippet - The compare snippet.
+	 * @param {?Array<string>} gradSnippet - The grad snippet.
+	 * @param {?string} gatherSnippet - The gather snippet.
+	 * @param {?string} offsetSnippet - The offset snippet.
+	 * @param {?string} flipYSnippet - The y-flip snippet. Only used for WebGL.
+	 * @return {string} The generated code snippet.
+	 */
+	generateSnippet( builder, textureProperty, uvSnippet, levelSnippet, biasSnippet, depthSnippet, compareSnippet, gradSnippet, gatherSnippet, offsetSnippet, flipYSnippet ) {
+
+		const texture = this.value;
+
+		let snippet;
+
+		if ( biasSnippet ) {
+
+			snippet = builder.generateTextureBias( texture, textureProperty, uvSnippet, biasSnippet, depthSnippet, offsetSnippet );
+
+		} else if ( gradSnippet ) {
+
+			snippet = builder.generateTextureGrad( texture, textureProperty, uvSnippet, gradSnippet, depthSnippet, offsetSnippet );
+
+		} else if ( gatherSnippet ) {
+
+			if ( compareSnippet ) {
+
+				snippet = builder.generateTextureGatherCompare( texture, textureProperty, uvSnippet, compareSnippet, depthSnippet, offsetSnippet, flipYSnippet );
+
+			} else {
+
+				snippet = builder.generateTextureGather( texture, textureProperty, uvSnippet, gatherSnippet, depthSnippet, offsetSnippet, flipYSnippet );
+
+			}
+
+		} else if ( compareSnippet ) {
+
+			snippet = builder.generateTextureCompare( texture, textureProperty, uvSnippet, compareSnippet, depthSnippet, offsetSnippet );
+
+		} else if ( this.sampler === false ) {
+
+			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
+
+		} else if ( levelSnippet ) {
+
+			snippet = builder.generateTextureLevel( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
+
+		} else {
+
+			snippet = builder.generateTexture( texture, textureProperty, uvSnippet, depthSnippet, offsetSnippet );
+
+		}
+
+		return snippet;
+
+	}
+
+	/**
+	 * Generates the code snippet of the texture node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {string} output - The current output.
+	 * @return {string} The generated code snippet.
+	 */
+	generate( builder, output ) {
+
+		const texture = this.value;
+
+		const properties = builder.getNodeProperties( this );
+		const textureProperty = super.generate( builder, 'property' );
+
+		if ( output === 'samplerComparison' || properties.compareNode !== null ) {
+
+			// make sure the texture node creates a binding with a comparison sampler if necessary
+
+			this.getSharedNode( builder )._samplerComparison = true;
+
+		}
+
+		if ( /^sampler/.test( output ) ) {
+
+			return textureProperty + '_sampler';
+
+		} else if ( builder.isReference( output ) ) {
+
+			return textureProperty;
+
+		} else {
+
+			const nodeData = builder.getDataFromNode( this );
+
+			const nodeType = this.getNodeType( builder );
+
+			let propertyName = nodeData.propertyName;
+
+			if ( propertyName === undefined ) {
+
+				const { uvNode, levelNode, biasNode, compareNode, compareStepNode, depthNode, gradNode, gatherNode, offsetNode } = properties;
+
+				const uvSnippet = this.generateUV( builder, uvNode );
+				const levelSnippet = levelNode ? levelNode.build( builder, 'float' ) : null;
+				const biasSnippet = biasNode ? biasNode.build( builder, 'float' ) : null;
+				const depthSnippet = depthNode ? depthNode.build( builder, 'int' ) : null;
+				const compareSnippet = compareNode ? compareNode.build( builder, 'float' ) : null;
+				const compareStepSnippet = compareStepNode ? compareStepNode.build( builder, 'float' ) : null;
+				const gradSnippet = gradNode ? [ gradNode[ 0 ].build( builder, 'vec2' ), gradNode[ 1 ].build( builder, 'vec2' ) ] : null;
+				const gatherSnippet = gatherNode ? gatherNode.build( builder, 'int' ) : null;
+				const offsetSnippet = offsetNode ? this.generateOffset( builder, offsetNode ) : null;
+
+				const flipYUniform = this.getBase()._flipYUniform;
+				const flipYSnippet = flipYUniform ? flipYUniform.build( builder, 'bool' ) : null;
+
+				let finalDepthSnippet = depthSnippet;
+
+				if ( finalDepthSnippet === null && texture.isArrayTexture && this.isTexture3DNode !== true ) {
+
+					finalDepthSnippet = '0';
+
+				}
+
+				const nodeVar = builder.getVarFromNode( this );
+
+				propertyName = builder.getPropertyName( nodeVar );
+
+				let snippet = this.generateSnippet( builder, textureProperty, uvSnippet, levelSnippet, biasSnippet, finalDepthSnippet, compareSnippet, gradSnippet, gatherSnippet, offsetSnippet, flipYSnippet );
+
+				let snippetType;
+
+				if ( texture.isDepthTexture === true && gatherSnippet === null ) {
+
+					snippetType = 'float';
+
+				} else {
+
+					snippetType = texture.type === UnsignedIntType ? 'uvec4' : ( texture.type === IntType ? 'ivec4' : 'vec4' );
+
+				}
+
+				snippet = builder.format( snippet, snippetType, nodeType );
+
+				if ( compareStepSnippet !== null ) {
+
+					const compareFunction = texture.compareFunction;
+
+					if ( compareFunction === GreaterCompare || compareFunction === GreaterEqualCompare ) {
+
+						snippet = step( expression( snippet, nodeType ), expression( compareStepSnippet, 'float' ) ).build( builder, nodeType );
+
+					} else {
+
+						snippet = step( expression( compareStepSnippet, 'float' ), expression( snippet, nodeType ) ).build( builder, nodeType );
+
+					}
+
+				}
+
+				builder.addLineFlowCode( `${propertyName} = ${snippet}`, this );
+
+				nodeData.snippet = snippet;
+				nodeData.propertyName = propertyName;
+
+			}
+
+			let snippet = propertyName;
+
+			if ( builder.needsToWorkingColorSpace( texture ) ) {
+
+				snippet = colorSpaceToWorking( expression( snippet, nodeType ), texture.colorSpace ).setup( builder ).build( builder, nodeType );
+
+			}
+
+			return builder.format( snippet, nodeType, output );
+
+		}
+
+	}
+
+	/**
+	 * Sets the sampler value.
+	 *
+	 * @param {boolean} value - The sampler value to set.
+	 * @return {TextureNode} A reference to this texture node.
+	 */
+	setSampler( value ) {
+
+		this.sampler = value;
+
+		return this;
+
+	}
+
+	/**
+	 * Returns the sampler value.
+	 *
+	 * @return {boolean} The sampler value.
+	 */
+	getSampler() {
+
+		return this.sampler;
+
+	}
+
+	// @TODO: Move to TSL
+
+	/**
+	 * Samples the texture with the given uv node.
+	 *
+	 * @param {Node} uvNode - The uv node.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	sample( uvNode ) {
+
+		const textureNode = this.clone();
+		textureNode.uvNode = nodeObject( uvNode );
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	/**
+	 * TSL function for creating a texture node that fetches/loads texels without interpolation.
+	 *
+	 * @param {Node<uvec2>} uvNode - The uv node.
+	 * @returns {TextureNode} A texture node representing the texture load.
+	 */
+	load( uvNode ) {
+
+		return this.sample( uvNode ).setSampler( false );
+
+	}
+
+	/**
+	 * Samples a blurred version of the texture by defining an internal bias.
+	 *
+	 * @param {Node<float>} amountNode - How blurred the texture should be.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	blur( amountNode ) {
+
+		const textureNode = this.clone();
+		textureNode.biasNode = nodeObject( amountNode ).mul( maxMipLevel( textureNode ) );
+		textureNode.referenceNode = this.getBase();
+
+		const map = textureNode.value;
+
+		if ( textureNode.generateMipmaps === false && ( map && map.generateMipmaps === false || map.minFilter === NearestFilter || map.magFilter === NearestFilter ) ) {
+
+			warn( 'TSL: texture().blur() requires mipmaps and sampling. Use .generateMipmaps=true and .minFilter/.magFilter=THREE.LinearFilter in the Texture.' );
+
+			textureNode.biasNode = null;
+
+		}
+
+		return textureNode;
+
+	}
+
+	/**
+	 * Samples a specific mip of the texture.
+	 *
+	 * @param {Node<int>} levelNode - The mip level to sample.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	level( levelNode ) {
+
+		const textureNode = this.clone();
+		textureNode.levelNode = nodeObject( levelNode );
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	/**
+	 * Returns the texture size of the requested level.
+	 *
+	 * @param {Node<int>} levelNode - The level to compute the size for.
+	 * @return {TextureSizeNode} The texture size.
+	 */
+	size( levelNode ) {
+
+		return textureSize( this, levelNode );
+
+	}
+
+	/**
+	 * Samples the texture with the given bias.
+	 *
+	 * @param {Node<float>} biasNode - The bias node.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	bias( biasNode ) {
+
+		const textureNode = this.clone();
+		textureNode.biasNode = nodeObject( biasNode );
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	/**
+	 * Returns the base texture of this node.
+	 * @return {TextureNode} The base texture node.
+	 */
+	getBase() {
+
+		return this.referenceNode ? this.referenceNode.getBase() : this;
+
+	}
+
+	/**
+	 * Samples the texture by executing a compare operation.
+	 *
+	 * @param {Node<float>} compareNode - The node that defines the compare value.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	compare( compareNode ) {
+
+		const textureNode = this.clone();
+		textureNode.compareNode = nodeObject( compareNode );
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	/**
+	 * Samples the texture using an explicit gradient.
+	 *
+	 * @param {Node<vec2>} gradNodeX - The gradX node.
+	 * @param {Node<vec2>} gradNodeY - The gradY node.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	grad( gradNodeX, gradNodeY ) {
+
+		const textureNode = this.clone();
+		textureNode.gradNode = [ nodeObject( gradNodeX ), nodeObject( gradNodeY ) ];
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	/**
+	 * Gathers four texels from the texture.
+	 *
+	 * @param {Node<int>} gatherNode - The index of the channel to read. This must be in range [0, 3] and a compile-time constant.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	gather( gatherNode = 0 ) {
+
+		const textureNode = this.clone();
+		textureNode.gatherNode = nodeObject( gatherNode );
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	/**
+	 * Returns `true` if the texture is sampled with a depth comparison,
+	 * meaning the node must be bound with a comparison sampler.
+	 *
+	 * @return {boolean} Whether comparison sampling is used or not.
+	 */
+	isSampleCompare() {
+
+		return this.compareNode !== null || this._samplerComparison === true;
+
+	}
+
+	/**
+	 * Samples the texture by defining a depth node.
+	 *
+	 * @param {Node<int>} depthNode - The depth node.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	depth( depthNode ) {
+
+		const textureNode = this.clone();
+		textureNode.depthNode = nodeObject( depthNode );
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	/**
+	 * Samples the texture by defining an offset node.
+	 *
+	 * @param {Node<ivec2>} offsetNode - The offset node.
+	 * @return {TextureNode} A texture node representing the texture sample.
+	 */
+	offset( offsetNode ) {
+
+		const textureNode = this.clone();
+		textureNode.offsetNode = nodeObject( offsetNode );
+		textureNode.referenceNode = this.getBase();
+
+		return textureNode;
+
+	}
+
+	// --
+
+	serialize( data ) {
+
+		super.serialize( data );
+
+		data.value = this.value.toJSON( data.meta ).uuid;
+		data.sampler = this.sampler;
+		data.updateMatrix = this.updateMatrix;
+
+	}
+
+	deserialize( data ) {
+
+		super.deserialize( data );
+
+		this.value = data.meta.textures[ data.value ];
+		this.sampler = data.sampler;
+		this.updateMatrix = data.updateMatrix;
+
+	}
+
+	/**
+	 * Clones the texture node.
+	 *
+	 * @return {TextureNode} The cloned texture node.
+	 */
+	clone() {
+
+		const newNode = new this.constructor( this.value, this.uvNode, this.levelNode, this.biasNode );
+		newNode.sampler = this.sampler;
+		newNode.depthNode = this.depthNode;
+		newNode.compareNode = this.compareNode;
+		newNode.gradNode = this.gradNode;
+		newNode.gatherNode = this.gatherNode;
+		newNode.offsetNode = this.offsetNode;
+
+		return newNode;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a texture node.
+ *
+ * @tsl
+ * @function
+ * @param {?Texture} value - The texture.
+ * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
+ * @param {?Node<int>} [levelNode=null] - The level node.
+ * @param {?Node<float>} [biasNode=null] - The bias node.
+ * @returns {TextureNode}
+ */
+const textureBase = /*@__PURE__*/ nodeProxy( TextureNode ).setParameterLength( 1, 4 ).setName( 'texture' );
+
+/**
+ * TSL function for creating a texture node or sample a texture node already existing.
+ *
+ * @tsl
+ * @function
+ * @param {?(Texture|TextureNode)} [value=EmptyTexture] - The texture.
+ * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
+ * @param {?Node<int>} [levelNode=null] - The level node.
+ * @param {?Node<float>} [biasNode=null] - The bias node.
+ * @returns {TextureNode}
+ */
+const texture = ( value = EmptyTexture$1, uvNode = null, levelNode = null, biasNode = null ) => {
+
+	let textureNode;
+
+	if ( value && value.isTextureNode === true ) {
+
+		textureNode = value.clone();
+		textureNode.referenceNode = value.getBase(); // Ensure the reference is set to the original node
+
+		if ( uvNode !== null ) textureNode.uvNode = nodeObject( uvNode );
+		if ( levelNode !== null ) textureNode.levelNode = nodeObject( levelNode );
+		if ( biasNode !== null ) textureNode.biasNode = nodeObject( biasNode );
+
+	} else {
+
+		textureNode = textureBase( value, uvNode, levelNode, biasNode );
+
+	}
+
+	return textureNode;
+
+};
+
+/**
+ * TSL function for creating a non-mergeable uniform texture node.
+ *
+ * @tsl
+ * @function
+ * @param {?Texture} value - The texture.
+ * @returns {TextureNode}
+ */
+const uniformTexture = ( value = EmptyTexture$1 ) => {
+
+	const textureNode = texture( value );
+
+	textureNode.mergeable = false;
+
+	return textureNode;
+
+};
+
+/**
+ * TSL function for creating a texture node that fetches/loads texels without interpolation.
+ *
+ * @tsl
+ * @function
+ * @param {?(Texture|TextureNode)} [value=EmptyTexture] - The texture.
+ * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
+ * @param {?Node<int>} [levelNode=null] - The level node.
+ * @param {?Node<float>} [biasNode=null] - The bias node.
+ * @returns {TextureNode}
+ */
+const textureLoad = ( ...params ) => texture( ...params ).setSampler( false );
+
+const textureLevel = ( value, uv, level ) => texture( value, uv ).level( level );
+
+/**
+ * Converts a texture or texture node to a sampler.
+ *
+ * @tsl
+ * @function
+ * @param {TextureNode|Texture} value - The texture or texture node to convert.
+ * @returns {Node}
+ */
+const sampler = ( value ) => ( value.isNode === true ? value : texture( value ) ).convert( 'sampler' );
+
+/**
+ * Converts a texture or texture node to a sampler comparison.
+ *
+ * @tsl
+ * @function
+ * @param {TextureNode|Texture} value - The texture or texture node to convert.
+ * @returns {Node}
+ */
+const samplerComparison = ( value ) => ( value.isNode === true ? value : texture( value ) ).convert( 'samplerComparison' );
+
+/**
+ * A special type of uniform node which represents array-like data
+ * as uniform buffers. The access usually happens via `element()`
+ * which returns an instance of {@link ArrayElementNode}. For example:
+ *
+ * ```js
+ * const bufferNode = buffer( array, 'mat4', count );
+ * const matrixNode = bufferNode.element( index ); // access a matrix from the buffer
+ * ```
+ * In general, it is recommended to use the more managed {@link UniformArrayNode}
+ * since it handles more input types and automatically cares about buffer paddings.
+ *
+ * @augments UniformNode
+ */
+class BufferNode extends UniformNode {
+
+	static get type() {
+
+		return 'BufferNode';
+
+	}
+
+	/**
+	 * Constructs a new buffer node.
+	 *
+	 * @param {Array<number>} value - Array-like buffer data.
+	 * @param {string} bufferType - The data type of the buffer.
+	 * @param {number} [bufferCount=0] - The count of buffer elements.
+	 */
+	constructor( value, bufferType, bufferCount = 0 ) {
+
+		super( value, bufferType );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isBufferNode = true;
+
+		/**
+		 * The data type of the buffer.
+		 *
+		 * @type {string}
+		 */
+		this.bufferType = bufferType;
+
+		/**
+		 * The uniform node that holds the value of the reference node.
+		 *
+		 * @type {number}
+		 * @default 0
+		 */
+		this.bufferCount = bufferCount;
+
+		/**
+		 * An array of update ranges.
+		 *
+		 * @type {Array<{start: number, count: number}>}
+		 */
+		this.updateRanges = [];
+
+	}
+
+	/**
+	 * Adds a range of data in the data array to be updated on the GPU.
+	 *
+	 * @param {number} start - Position at which to start update.
+	 * @param {number} count - The number of components to update.
+	 */
+	addUpdateRange( start, count ) {
+
+		this.updateRanges.push( { start, count } );
+
+	}
+
+	/**
+	 * Clears the update ranges.
+	 */
+	clearUpdateRanges() {
+
+		this.updateRanges.length = 0;
+
+	}
+
+	/**
+	 * The data type of the buffer elements.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The element type.
+	 */
+	getElementType( builder ) {
+
+		return this.getNodeType( builder );
+
+	}
+
+	/**
+	 * Overwrites the default implementation to return a fixed value `'buffer'`.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The input type.
+	 */
+	getInputType( /*builder*/ ) {
+
+		return 'buffer';
+
+	}
+
+}
+
+/**
+ * TSL function for creating a buffer node.
+ *
+ * @tsl
+ * @function
+ * @param {Array<number>} value - Array-like buffer data.
+ * @param {string} type - The data type of a buffer element.
+ * @param {number} count - The count of buffer elements.
+ * @returns {BufferNode}
+ */
+const buffer = ( value, type, count ) => new BufferNode( value, type, count );
+
+/**
+ * Represents the element access on uniform array nodes.
+ *
+ * @augments ArrayElementNode
+ */
+class UniformArrayElementNode extends ArrayElementNode {
+
+	static get type() {
+
+		return 'UniformArrayElementNode';
+
+	}
+
+	/**
+	 * Constructs a new buffer node.
+	 *
+	 * @param {UniformArrayNode} uniformArrayNode - The uniform array node to access.
+	 * @param {IndexNode} indexNode - The index data that define the position of the accessed element in the array.
+	 */
+	constructor( uniformArrayNode, indexNode ) {
+
+		super( uniformArrayNode, indexNode );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isArrayBufferElementNode = true;
+
+	}
+
+	generate( builder ) {
+
+		const snippet = super.generate( builder );
+		const type = this.getNodeType( builder );
+		const paddedType = this.node.getPaddedType( builder );
+
+		return builder.format( snippet, paddedType, type );
+
+	}
+
+}
+
+/**
+ * Similar to {@link BufferNode} this module represents array-like data as
+ * uniform buffers. Unlike {@link BufferNode}, it can handle more common
+ * data types in the array (e.g `three.js` primitives) and automatically
+ * manage buffer padding. It should be the first choice when working with
+ * uniforms buffers.
+ * ```js
+ * const tintColors = uniformArray( [
+ * 	new Color( 1, 0, 0 ),
+ * 	new Color( 0, 1, 0 ),
+ * 	new Color( 0, 0, 1 )
+ * ], 'color' );
+ *
+ * const redColor = tintColors.element( 0 );
+ *
+ * @augments BufferNode
+ */
+class UniformArrayNode extends BufferNode {
+
+	static get type() {
+
+		return 'UniformArrayNode';
+
+	}
+
+	/**
+	 * Constructs a new uniform array node.
+	 *
+	 * @param {Array<any>} value - Array holding the buffer data.
+	 * @param {?string} [elementType=null] - The data type of a buffer element.
+	 */
+	constructor( value, elementType = null ) {
+
+		super( null );
+
+		/**
+		 * Array holding the buffer data. Unlike {@link BufferNode}, the array can
+		 * hold number primitives as well as three.js objects like vectors, matrices
+		 * or colors.
+		 *
+		 * @type {Array<any>}
+		 */
+		this.array = value;
+
+		/**
+		 * The data type of an array element.
+		 *
+		 * @type {string}
+		 */
+		this.elementType = elementType === null ? getValueType( value[ 0 ] ) : elementType;
+
+		/**
+		 * Overwritten since uniform array nodes are updated per render.
+		 *
+		 * @type {string}
+		 * @default 'render'
+		 */
+		this.updateType = NodeUpdateType.RENDER;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isArrayBufferNode = true;
+
+	}
+
+	/**
+	 * This method is overwritten since the node type is inferred from the
+	 * padded type.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The node type.
+	 */
+	generateNodeType( builder ) {
+
+		return this.getPaddedType( builder );
+
+	}
+
+	/**
+	 * The data type of the array elements.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The element type.
+	 */
+	getElementType() {
+
+		return this.elementType;
+
+	}
+
+	/**
+	 * Returns the padded type based on the element type.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The padded type.
+	 */
+	getPaddedType( builder ) {
+
+		const elementType = this.elementType;
+
+		let paddedType = 'vec4';
+
+		if ( elementType === 'mat2' ) {
+
+			paddedType = builder.renderer.backend.isWebGLBackend === true ? 'vec4' : 'mat2';
+
+		} else if ( /mat/.test( elementType ) === true ) {
+
+			paddedType = 'mat4';
+
+		} else if ( elementType.charAt( 0 ) === 'i' ) {
+
+			paddedType = 'ivec4';
+
+		} else if ( elementType.charAt( 0 ) === 'u' ) {
+
+			paddedType = 'uvec4';
+
+		}
+
+		return paddedType;
+
+	}
+
+	update( /*frame*/ ) {
+
+		this.updateBuffer();
+
+	}
+
+	/**
+	 * Composes a user-defined update with the buffer transfer.
+	 *
+	 * @param {Function} callback - The update function.
+	 * @param {string} updateType - The update type.
+	 * @return {UniformArrayNode} A reference to this node.
+	 */
+	onUpdate( callback, updateType ) {
+
+		callback = callback.bind( this );
+
+		return super.onUpdate( ( frame, self ) => {
+
+			callback( frame, self );
+
+			this.updateBuffer();
+
+		}, updateType );
+
+	}
+
+	/**
+	 * The method makes sure to correctly transfer the data from the (complex) objects
+	 * in the array to the internal, correctly padded value buffer.
+	 */
+	updateBuffer() {
+
+		const { array, value } = this;
+
+		const elementType = this.elementType;
+
+		if ( elementType === 'float' || elementType === 'int' || elementType === 'uint' ) {
+
+			for ( let i = 0; i < array.length; i ++ ) {
+
+				const index = i * 4;
+
+				value[ index ] = array[ i ];
+
+			}
+
+		} else if ( elementType === 'color' ) {
+
+			for ( let i = 0; i < array.length; i ++ ) {
+
+				const index = i * 4;
+				const vector = array[ i ];
+
+				value[ index ] = vector.r;
+				value[ index + 1 ] = vector.g;
+				value[ index + 2 ] = vector.b || 0;
+				//value[ index + 3 ] = vector.a || 0;
+
+			}
+
+		} else if ( elementType === 'mat2' ) {
+
+			for ( let i = 0; i < array.length; i ++ ) {
+
+				const index = i * 4;
+				const matrix = array[ i ];
+
+				value[ index ] = matrix.elements[ 0 ];
+				value[ index + 1 ] = matrix.elements[ 1 ];
+				value[ index + 2 ] = matrix.elements[ 2 ];
+				value[ index + 3 ] = matrix.elements[ 3 ];
+
+			}
+
+		} else if ( elementType === 'mat3' ) {
+
+			for ( let i = 0; i < array.length; i ++ ) {
+
+				const index = i * 16;
+				const matrix = array[ i ];
+
+				value[ index ] = matrix.elements[ 0 ];
+				value[ index + 1 ] = matrix.elements[ 1 ];
+				value[ index + 2 ] = matrix.elements[ 2 ];
+
+				value[ index + 4 ] = matrix.elements[ 3 ];
+				value[ index + 5 ] = matrix.elements[ 4 ];
+				value[ index + 6 ] = matrix.elements[ 5 ];
+
+				value[ index + 8 ] = matrix.elements[ 6 ];
+				value[ index + 9 ] = matrix.elements[ 7 ];
+				value[ index + 10 ] = matrix.elements[ 8 ];
+
+				value[ index + 15 ] = 1;
+
+			}
+
+		} else if ( elementType === 'mat4' ) {
+
+			for ( let i = 0; i < array.length; i ++ ) {
+
+				const index = i * 16;
+				const matrix = array[ i ];
+
+				for ( let i = 0; i < matrix.elements.length; i ++ ) {
+
+					value[ index + i ] = matrix.elements[ i ];
+
+				}
+
+			}
+
+		} else {
+
+			for ( let i = 0; i < array.length; i ++ ) {
+
+				const index = i * 4;
+				const vector = array[ i ];
+
+				value[ index ] = vector.x;
+				value[ index + 1 ] = vector.y;
+				value[ index + 2 ] = vector.z || 0;
+				value[ index + 3 ] = vector.w || 0;
+
+			}
+
+		}
+
+	}
+
+	/**
+	 * Implement the value buffer creation based on the array data.
+	 *
+	 * @param {NodeBuilder} builder - A reference to the current node builder.
+	 * @return {null}
+	 */
+	setup( builder ) {
+
+		const length = this.array.length;
+		const elementType = this.elementType;
+
+		let arrayType = Float32Array;
+
+		const paddedType = this.getPaddedType( builder );
+		const paddedElementLength = builder.getTypeLength( paddedType );
+
+		if ( elementType.charAt( 0 ) === 'i' ) arrayType = Int32Array;
+		if ( elementType.charAt( 0 ) === 'u' ) arrayType = Uint32Array;
+
+		this.value = new arrayType( length * paddedElementLength );
+		this.bufferCount = length;
+		this.bufferType = paddedType;
+
+		this.updateBuffer(); // initialize the buffer values
+
+		return super.setup( builder );
+
+	}
+
+	/**
+	 * Overwrites the default `element()` method to provide element access
+	 * based on {@link UniformArrayNode}.
+	 *
+	 * @param {IndexNode} indexNode - The index node.
+	 * @return {UniformArrayElementNode}
+	 */
+	element( indexNode ) {
+
+		return new UniformArrayElementNode( this, nodeObject( indexNode ) );
+
+	}
+
+}
+
+/**
+ * TSL function for creating an uniform array node.
+ *
+ * @tsl
+ * @function
+ * @param {Array<any>} values - Array-like data.
+ * @param {?string} [nodeType] - The data type of the array elements.
+ * @returns {UniformArrayNode}
+ */
+const uniformArray = ( values, nodeType ) => new UniformArrayNode( values, nodeType );
+
+/**
+ * The node allows to set values for built-in shader variables. That is
+ * required for features like hardware-accelerated vertex clipping.
+ *
+ * @augments Node
+ */
+class BuiltinNode extends Node {
+
+	/**
+	 * Constructs a new builtin node.
+	 *
+	 * @param {string} name - The name of the built-in shader variable.
+	 */
+	constructor( name ) {
+
+		super( 'float' );
+
+		/**
+		 * The name of the built-in shader variable.
+		 *
+		 * @type {string}
+		 */
+		this.name = name;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isBuiltinNode = true;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	/**
+	 * Generates the code snippet of the builtin node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The generated code snippet.
+	 */
+	generate( /* builder */ ) {
+
+		return this.name;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a builtin node.
+ *
+ * @tsl
+ * @function
+ * @param {string} name - The name of the built-in shader variable.
+ * @returns {BuiltinNode}
+ */
+const builtin = /*@__PURE__*/ nodeProxy( BuiltinNode ).setParameterLength( 1 );
+
+let _screenSizeVec, _viewportVec;
+
+/**
+ * This node provides a collection of screen related metrics.
+ * Depending on {@link ScreenNode#scope}, the nodes can represent
+ * resolution or viewport data as well as fragment or uv coordinates.
+ *
+ * @augments Node
+ */
+class ScreenNode extends Node {
+
+	static get type() {
+
+		return 'ScreenNode';
+
+	}
+
+	/**
+	 * Constructs a new screen node.
+	 *
+	 * @param {('coordinate'|'viewport'|'size'|'uv')} scope - The node's scope.
+	 */
+	constructor( scope ) {
+
+		super();
+
+		/**
+		 * The node represents different metric depending on which scope is selected.
+		 *
+		 * - `ScreenNode.COORDINATE`: Window-relative coordinates of the current fragment according to WebGPU standards.
+		 * - `ScreenNode.VIEWPORT`: The current viewport defined as a four-dimensional vector.
+		 * - `ScreenNode.SIZE`: The dimensions of the current bound framebuffer.
+		 * - `ScreenNode.UV`: Normalized coordinates.
+		 *
+		 * @type {('coordinate'|'viewport'|'size'|'uv')}
+		 */
+		this.scope = scope;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isViewportNode = true;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	/**
+	 * This method is overwritten since the node type depends on the selected scope.
+	 *
+	 * @return {('vec2'|'vec4')} The node type.
+	 */
+	generateNodeType() {
+
+		if ( this.scope === ScreenNode.VIEWPORT ) return 'vec4';
+		else return 'vec2';
+
+	}
+
+	/**
+	 * `ScreenNode` implements {@link Node#update} to retrieve viewport and size information
+	 * from the current renderer.
+	 *
+	 * @param {NodeFrame} frame - A reference to the current node frame.
+	 */
+	update( { renderer } ) {
+
+		const renderTarget = renderer.getRenderTarget();
+
+		if ( this.scope === ScreenNode.VIEWPORT ) {
+
+			if ( renderTarget !== null ) {
+
+				_viewportVec.copy( renderTarget.viewport );
+
+			} else {
+
+				renderer.getViewport( _viewportVec );
+
+				_viewportVec.multiplyScalar( renderer.getPixelRatio() );
+
+			}
+
+		} else {
+
+			if ( renderTarget !== null ) {
+
+				_screenSizeVec.width = renderTarget.width;
+				_screenSizeVec.height = renderTarget.height;
+
+			} else {
+
+				renderer.getDrawingBufferSize( _screenSizeVec );
+
+			}
+
+		}
+
+	}
+
+	setup( /*builder*/ ) {
+
+		const scope = this.scope;
+
+		let output = null;
+
+		if ( scope === ScreenNode.SIZE ) {
+
+			output = uniform( _screenSizeVec || ( _screenSizeVec = new Vector2() ) ).setGroup( renderGroup );
+
+		} else if ( scope === ScreenNode.VIEWPORT ) {
+
+			output = uniform( _viewportVec || ( _viewportVec = new Vector4() ) ).setGroup( renderGroup );
+
+		} else {
+
+			output = vec2( screenCoordinate.div( screenSize ) );
+
+		}
+
+		//
+
+		let updateType = NodeUpdateType.NONE;
+
+		if ( this.scope === ScreenNode.SIZE || this.scope === ScreenNode.VIEWPORT ) {
+
+			updateType = NodeUpdateType.RENDER;
+
+		}
+
+		this.updateType = updateType;
+
+		//
+
+		return output;
+
+	}
+
+	generate( builder ) {
+
+		if ( this.scope === ScreenNode.COORDINATE ) {
+
+			let coord = builder.getFragCoord();
+
+			if ( builder.isFlipY() ) {
+
+				// follow webgpu standards
+
+				const size = builder.getNodeProperties( screenSize ).outputNode.build( builder );
+
+				coord = `${ builder.getType( 'vec2' ) }( ${ coord }.x, ${ size }.y - ${ coord }.y )`;
+
+			}
+
+			return coord;
+
+		}
+
+		return super.generate( builder );
+
+	}
+
+}
+
+ScreenNode.COORDINATE = 'coordinate';
+ScreenNode.VIEWPORT = 'viewport';
+ScreenNode.SIZE = 'size';
+ScreenNode.UV = 'uv';
+
+// Screen
+
+/**
+ * TSL object that represents the current DPR.
+ *
+ * @tsl
+ * @type {UniformNode<float>}
+ */
+const screenDPR = /*@__PURE__*/ uniform( 1 ).setGroup( renderGroup ).onRenderUpdate( ( { renderer } ) => renderer.getPixelRatio() );
+
+/**
+ * TSL object that represents normalized screen coordinates, unitless in `[0, 1]`.
+ *
+ * @tsl
+ * @type {ScreenNode<vec2>}
+ */
+const screenUV = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.UV );
+
+/**
+ * TSL object that represents the screen resolution in physical pixel units.
+ *
+ * @tsl
+ * @type {ScreenNode<vec2>}
+ */
+const screenSize = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.SIZE );
+
+/**
+ * TSL object that represents the current `x`/`y` pixel position on the screen in physical pixel units.
+ *
+ * @tsl
+ * @type {ScreenNode<vec2>}
+ */
+const screenCoordinate = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.COORDINATE );
+
+// Viewport
+
+/**
+ * TSL object that represents the viewport rectangle as `x`, `y`, `width` and `height` in physical pixel units.
+ *
+ * @tsl
+ * @type {ScreenNode<vec4>}
+ */
+const viewport = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.VIEWPORT );
+
+/**
+ * TSL object that represents the viewport resolution in physical pixel units.
+ *
+ * @tsl
+ * @type {ScreenNode<vec2>}
+ */
+const viewportSize = viewport.zw;
+
+/**
+ * TSL object that represents the current `x`/`y` pixel position on the viewport in physical pixel units.
+ *
+ * @tsl
+ * @type {ScreenNode<vec2>}
+ */
+const viewportCoordinate = /*@__PURE__*/ screenCoordinate.sub( viewport.xy );
+
+/**
+ * TSL object that represents normalized viewport coordinates, unitless in `[0, 1]`.
+ *
+ * @tsl
+ * @type {ScreenNode<vec2>}
+ */
+const viewportUV = /*@__PURE__*/ viewportCoordinate.div( viewportSize );
+
+// Cache single-camera uniforms globally. Array uniforms are cached per renderer and
+// camera count so cameras with different array sizes cannot overwrite each other's
+// buffers, while builders with matching counts still share them.
+
+const _cameraArrays = /*@__PURE__*/ new WeakMap();
+
+function getCameraArray( renderer, camera, name, create ) {
+
+	let arrays = _cameraArrays.get( renderer );
+
+	if ( arrays === undefined ) {
+
+		arrays = new Map();
+		_cameraArrays.set( renderer, arrays );
+
+	}
+
+	const key = name + ':' + camera.cameras.length;
+
+	let array = arrays.get( key );
+
+	if ( array === undefined ) {
+
+		array = create( camera );
+		arrays.set( key, array );
+
+	}
+
+	return array;
+
+}
+
+let _cameraProjectionMatrixBase = null;
+
+let _cameraProjectionMatrixInverseBase = null;
+
+let _cameraViewMatrixBase = null;
+
+let _cameraWorldMatrixBase = null;
+
+let _cameraNormalMatrixBase = null;
+
+let _cameraPositionBase = null;
+
+let _cameraViewportBase = null;
+
+/**
+ * TSL object that represents the current `index` value of the camera if used ArrayCamera.
+ *
+ * @tsl
+ * @type {UniformNode<uint>}
+ */
+const cameraIndex = /*@__PURE__*/ uniform( 0, 'uint' ).setName( 'u_cameraIndex' ).setGroup( sharedUniformGroup( 'cameraIndex' ) ).toVarying( 'v_cameraIndex' );
+
+/**
+ * TSL object that represents the `near` value of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<float>}
+ */
+const cameraNear = /*@__PURE__*/ uniform( 'float' ).setName( 'cameraNear' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.near );
+
+/**
+ * TSL object that represents the `far` value of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<float>}
+ */
+const cameraFar = /*@__PURE__*/ uniform( 'float' ).setName( 'cameraFar' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.far );
+
+/**
+ * TSL object that represents the projection matrix of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<mat4>}
+ */
+const cameraProjectionMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
+
+	let cameraProjectionMatrix;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const cameraArray = getCameraArray( renderer, camera, 'cameraProjectionMatrices', ( camera ) => {
+
+			const values = camera.cameras.map( ( subCamera ) => subCamera.projectionMatrix );
+
+			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraProjectionMatrices' ).onRenderUpdate( ( { camera }, self ) => {
+
+				for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+					self.array[ i ] = camera.cameras[ i ].projectionMatrix;
+
+				}
+
+			} );
+
+		} );
+
+		cameraProjectionMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		if ( _cameraProjectionMatrixBase === null ) {
+
+			_cameraProjectionMatrixBase = uniform( camera.projectionMatrix ).setName( 'cameraProjectionMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.projectionMatrix );
+
+		}
+
+		cameraProjectionMatrix = _cameraProjectionMatrixBase;
+
+	}
+
+	return cameraProjectionMatrix;
+
+} ).once() )();
+
+/**
+ * TSL object that represents the inverse projection matrix of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<mat4>}
+ */
+const cameraProjectionMatrixInverse = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
+
+	let cameraProjectionMatrixInverse;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const cameraArray = getCameraArray( renderer, camera, 'cameraProjectionMatricesInverse', ( camera ) => {
+
+			const values = camera.cameras.map( ( subCamera ) => subCamera.projectionMatrixInverse );
+
+			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraProjectionMatricesInverse' ).onRenderUpdate( ( { camera }, self ) => {
+
+				for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+					self.array[ i ] = camera.cameras[ i ].projectionMatrixInverse;
+
+				}
+
+			} );
+
+		} );
+
+		cameraProjectionMatrixInverse = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		if ( _cameraProjectionMatrixInverseBase === null ) {
+
+			_cameraProjectionMatrixInverseBase = uniform( camera.projectionMatrixInverse ).setName( 'cameraProjectionMatrixInverse' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.projectionMatrixInverse );
+
+		}
+
+		cameraProjectionMatrixInverse = _cameraProjectionMatrixInverseBase;
+
+	}
+
+	return cameraProjectionMatrixInverse;
+
+} ).once() )();
+
+/**
+ * TSL object that represents the view matrix of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<mat4>}
+ */
+const cameraViewMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
+
+	let cameraViewMatrix;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const cameraArray = getCameraArray( renderer, camera, 'cameraViewMatrices', ( camera ) => {
+
+			const values = camera.cameras.map( ( subCamera ) => subCamera.matrixWorldInverse );
+
+			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraViewMatrices' ).onRenderUpdate( ( { camera }, self ) => {
+
+				for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+					self.array[ i ] = camera.cameras[ i ].matrixWorldInverse;
+
+				}
+
+			} );
+
+		} );
+
+		cameraViewMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		if ( _cameraViewMatrixBase === null ) {
+
+			_cameraViewMatrixBase = uniform( camera.matrixWorldInverse ).setName( 'cameraViewMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.matrixWorldInverse );
+
+		}
+
+		cameraViewMatrix = _cameraViewMatrixBase;
+
+	}
+
+	return cameraViewMatrix;
+
+} ).once() )();
+
+/**
+ * TSL object that represents the world matrix of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<mat4>}
+ */
+const cameraWorldMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
+
+	let cameraWorldMatrix;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const cameraArray = getCameraArray( renderer, camera, 'cameraWorldMatrices', ( camera ) => {
+
+			const values = camera.cameras.map( ( subCamera ) => subCamera.matrixWorld );
+
+			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraWorldMatrices' ).onRenderUpdate( ( { camera }, self ) => {
+
+				for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+					self.array[ i ] = camera.cameras[ i ].matrixWorld;
+
+				}
+
+			} );
+
+		} );
+
+		cameraWorldMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		if ( _cameraWorldMatrixBase === null ) {
+
+			_cameraWorldMatrixBase = uniform( camera.matrixWorld ).setName( 'cameraWorldMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.matrixWorld );
+
+		}
+
+		cameraWorldMatrix = _cameraWorldMatrixBase;
+
+	}
+
+	return cameraWorldMatrix;
+
+} ).once() )();
+
+/**
+ * TSL object that represents the normal matrix of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<mat3>}
+ */
+const cameraNormalMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
+
+	let cameraNormalMatrix;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const cameraArray = getCameraArray( renderer, camera, 'cameraNormalMatrices', ( camera ) => {
+
+			const values = camera.cameras.map( ( subCamera ) => subCamera.normalMatrix );
+
+			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraNormalMatrices' ).onRenderUpdate( ( { camera }, self ) => {
+
+				for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+					self.array[ i ] = camera.cameras[ i ].normalMatrix;
+
+				}
+
+			} );
+
+		} );
+
+		cameraNormalMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		if ( _cameraNormalMatrixBase === null ) {
+
+			_cameraNormalMatrixBase = uniform( camera.normalMatrix ).setName( 'cameraNormalMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.normalMatrix );
+
+		}
+
+		cameraNormalMatrix = _cameraNormalMatrixBase;
+
+	}
+
+	return cameraNormalMatrix;
+
+} ).once() )();
+
+/**
+ * TSL object that represents the position in world space of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<vec3>}
+ */
+const cameraPosition = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
+
+	let cameraPosition;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const cameraArray = getCameraArray( renderer, camera, 'cameraPositions', ( camera ) => {
+
+			const positions = [];
+
+			for ( let i = 0, l = camera.cameras.length; i < l; i ++ ) {
+
+				positions.push( new Vector3() );
+
+			}
+
+			return uniformArray( positions ).setGroup( renderGroup ).setName( 'cameraPositions' ).onRenderUpdate( ( { camera }, self ) => {
+
+				const subCameras = camera.cameras;
+				const array = self.array;
+
+				for ( let i = 0, l = subCameras.length; i < l; i ++ ) {
+
+					array[ i ].setFromMatrixPosition( subCameras[ i ].matrixWorld );
+
+				}
+
+			} );
+
+		} );
+
+		cameraPosition = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		if ( _cameraPositionBase === null ) {
+
+			_cameraPositionBase = uniform( new Vector3() ).setName( 'cameraPosition' ).setGroup( renderGroup ).onRenderUpdate( ( { camera }, self ) => self.value.setFromMatrixPosition( camera.matrixWorld ) );
+
+		}
+
+		cameraPosition = _cameraPositionBase;
+
+	}
+
+	return cameraPosition;
+
+} ).once() )();
+
+
+/**
+ * TSL object that represents the viewport of the camera used for the current render.
+ *
+ * @tsl
+ * @type {UniformNode<vec4>}
+ */
+const cameraViewport = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
+
+	let cameraViewport;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const cameraArray = getCameraArray( renderer, camera, 'cameraViewports', ( camera ) => {
+
+			const values = camera.cameras.map( ( subCamera ) => subCamera.viewport );
+
+			return uniformArray( values, 'vec4' ).setGroup( renderGroup ).setName( 'cameraViewports' ).onRenderUpdate( ( { camera }, self ) => {
+
+				for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+					self.array[ i ] = camera.cameras[ i ].viewport;
+
+				}
+
+			} );
+
+		} );
+
+		cameraViewport = cameraArray.element( cameraIndex );
+
+	} else {
+
+		if ( _cameraViewportBase === null ) {
+
+			// Fallback for single camera
+			_cameraViewportBase = vec4( 0, 0, screenSize.x, screenSize.y ).toConst( 'cameraViewport' );
+
+		}
+
+		cameraViewport = _cameraViewportBase;
+
+	}
+
+	return cameraViewport;
+
+} ).once() )();
+
+const _sphere = /*@__PURE__*/ new Sphere();
+
+/**
+ * This node can be used to access transformation related metrics of 3D objects.
+ * Depending on the selected scope, a different metric is represented as a uniform
+ * in the shader. The following scopes are supported:
+ *
+ * - `POSITION`: The object's position in world space.
+ * - `VIEW_POSITION`: The object's position in view/camera space.
+ * - `DIRECTION`: The object's direction in world space.
+ * - `SCALE`: The object's scale in world space.
+ * - `WORLD_MATRIX`: The object's matrix in world space.
+ *
+ * @augments Node
+ */
+class Object3DNode extends Node {
+
+	static get type() {
+
+		return 'Object3DNode';
+
+	}
+
+	/**
+	 * Constructs a new object 3D node.
+	 *
+	 * @param {('position'|'viewPosition'|'direction'|'scale'|'worldMatrix')} scope - The node represents a different type of transformation depending on the scope.
+	 * @param {?Object3D} [object3d=null] - The 3D object.
+	 */
+	constructor( scope, object3d = null ) {
+
+		super();
+
+		/**
+		 * The node reports a different type of transformation depending on the scope.
+		 *
+		 * @type {('position'|'viewPosition'|'direction'|'scale'|'worldMatrix')}
+		 */
+		this.scope = scope;
+
+		/**
+		 * The 3D object.
+		 *
+		 * @type {?Object3D}
+		 * @default null
+		 */
+		this.object3d = object3d;
+
+		/**
+		 * Overwritten since this type of node is updated per object.
+		 *
+		 * @type {string}
+		 * @default 'object'
+		 */
+		this.updateType = NodeUpdateType.OBJECT;
+
+		/**
+		 * Holds the value of the node as a uniform.
+		 *
+		 * @type {UniformNode}
+		 */
+		this.uniformNode = new UniformNode( null );
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	/**
+	 * Overwritten since the node type is inferred from the scope.
+	 *
+	 * @return {('mat4'|'vec3'|'float')} The node type.
+	 */
+	generateNodeType() {
+
+		const scope = this.scope;
+
+		if ( scope === Object3DNode.WORLD_MATRIX ) {
+
+			return 'mat4';
+
+		} else if ( scope === Object3DNode.POSITION || scope === Object3DNode.VIEW_POSITION || scope === Object3DNode.DIRECTION || scope === Object3DNode.SCALE ) {
+
+			return 'vec3';
+
+		} else if ( scope === Object3DNode.RADIUS ) {
+
+			return 'float';
+
+		}
+
+	}
+
+	/**
+	 * Updates the uniform value depending on the scope.
+	 *
+	 * @param {NodeFrame} frame - The current node frame.
+	 */
+	update( frame ) {
+
+		const object = this.object3d;
+		const uniformNode = this.uniformNode;
+		const scope = this.scope;
+
+		if ( scope === Object3DNode.WORLD_MATRIX ) {
+
+			uniformNode.value = object.matrixWorld;
+
+		} else if ( scope === Object3DNode.POSITION ) {
+
+			uniformNode.value = uniformNode.value || new Vector3();
+
+			uniformNode.value.setFromMatrixPosition( object.matrixWorld );
+
+		} else if ( scope === Object3DNode.SCALE ) {
+
+			uniformNode.value = uniformNode.value || new Vector3();
+
+			uniformNode.value.setFromMatrixScale( object.matrixWorld );
+
+		} else if ( scope === Object3DNode.DIRECTION ) {
+
+			uniformNode.value = uniformNode.value || new Vector3();
+
+			object.getWorldDirection( uniformNode.value );
+
+		} else if ( scope === Object3DNode.VIEW_POSITION ) {
+
+			const camera = frame.camera;
+
+			uniformNode.value = uniformNode.value || new Vector3();
+			uniformNode.value.setFromMatrixPosition( object.matrixWorld );
+
+			uniformNode.value.applyMatrix4( camera.matrixWorldInverse );
+
+		} else if ( scope === Object3DNode.RADIUS ) {
+
+			const geometry = frame.object.geometry;
+
+			if ( geometry.boundingSphere === null ) geometry.computeBoundingSphere();
+
+			_sphere.copy( geometry.boundingSphere ).applyMatrix4( object.matrixWorld );
+
+			uniformNode.value = _sphere.radius;
+
+		}
+
+	}
+
+	/**
+	 * Generates the code snippet of the uniform node. The node type of the uniform
+	 * node also depends on the selected scope.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The generated code snippet.
+	 */
+	generate( builder ) {
+
+		const scope = this.scope;
+
+		if ( scope === Object3DNode.WORLD_MATRIX ) {
+
+			this.uniformNode.nodeType = 'mat4';
+
+		} else if ( scope === Object3DNode.POSITION || scope === Object3DNode.VIEW_POSITION || scope === Object3DNode.DIRECTION || scope === Object3DNode.SCALE ) {
+
+			this.uniformNode.nodeType = 'vec3';
+
+		} else if ( scope === Object3DNode.RADIUS ) {
+
+			this.uniformNode.nodeType = 'float';
+
+		}
+
+		return this.uniformNode.build( builder );
+
+	}
+
+	serialize( data ) {
+
+		super.serialize( data );
+
+		data.scope = this.scope;
+
+	}
+
+	deserialize( data ) {
+
+		super.deserialize( data );
+
+		this.scope = data.scope;
+
+	}
+
+}
+
+Object3DNode.WORLD_MATRIX = 'worldMatrix';
+Object3DNode.POSITION = 'position';
+Object3DNode.SCALE = 'scale';
+Object3DNode.VIEW_POSITION = 'viewPosition';
+Object3DNode.DIRECTION = 'direction';
+Object3DNode.RADIUS = 'radius';
+
+/**
+ * TSL function for creating an object 3D node that represents the object's direction in world space.
+ *
+ * @tsl
+ * @function
+ * @param {?Object3D} [object3d] - The 3D object.
+ * @returns {Object3DNode<vec3>}
+ */
+const objectDirection = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.DIRECTION ).setParameterLength( 1 );
+
+/**
+ * TSL function for creating an object 3D node that represents the object's world matrix.
+ *
+ * @tsl
+ * @function
+ * @param {?Object3D} [object3d] - The 3D object.
+ * @returns {Object3DNode<mat4>}
+ */
+const objectWorldMatrix = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.WORLD_MATRIX ).setParameterLength( 1 );
+
+/**
+ * TSL function for creating an object 3D node that represents the object's position in world space.
+ *
+ * @tsl
+ * @function
+ * @param {?Object3D} [object3d] - The 3D object.
+ * @returns {Object3DNode<vec3>}
+ */
+const objectPosition = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.POSITION ).setParameterLength( 1 );
+
+/**
+ * TSL function for creating an object 3D node that represents the object's scale in world space.
+ *
+ * @tsl
+ * @function
+ * @param {?Object3D} [object3d] - The 3D object.
+ * @returns {Object3DNode<vec3>}
+ */
+const objectScale = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.SCALE ).setParameterLength( 1 );
+
+/**
+ * TSL function for creating an object 3D node that represents the object's position in view/camera space.
+ *
+ * @tsl
+ * @function
+ * @param {?Object3D} [object3d] - The 3D object.
+ * @returns {Object3DNode<vec3>}
+ */
+const objectViewPosition = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.VIEW_POSITION ).setParameterLength( 1 );
+
+/**
+ * TSL function for creating an object 3D node that represents the object's radius.
+ *
+ * @tsl
+ * @function
+ * @param {?Object3D} [object3d] - The 3D object.
+ * @returns {Object3DNode<float>}
+ */
+const objectRadius = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.RADIUS ).setParameterLength( 1 );
+
+const _modelViewMatrix = /*@__PURE__*/ new Matrix4();
+
+/**
+ * This type of node is a specialized version of `Object3DNode`
+ * with larger set of model related metrics. Unlike `Object3DNode`,
+ * `ModelNode` extracts the reference to the 3D object from the
+ * current node frame state.
+ *
+ * @augments Object3DNode
+ */
+class ModelNode extends Object3DNode {
+
+	static get type() {
+
+		return 'ModelNode';
+
+	}
+
+	/**
+	 * Constructs a new object model node.
+	 *
+	 * @param {('position'|'viewPosition'|'direction'|'scale'|'worldMatrix')} scope - The node represents a different type of transformation depending on the scope.
+	 */
+	constructor( scope ) {
+
+		super( scope );
+
+	}
+
+	/**
+	 * Extracts the model reference from the frame state and then
+	 * updates the uniform value depending on the scope.
+	 *
+	 * @param {NodeFrame} frame - The current node frame.
+	 */
+	update( frame ) {
+
+		this.object3d = frame.object;
+
+		super.update( frame );
+
+	}
+
+}
+
+/**
+ * TSL object that represents the object's direction in world space.
+ *
+ * @tsl
+ * @type {ModelNode<vec3>}
+ */
+const modelDirection = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.DIRECTION );
+
+/**
+ * TSL object that represents the object's world matrix.
+ *
+ * @tsl
+ * @type {ModelNode<mat4>}
+ */
+const modelWorldMatrix = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.WORLD_MATRIX );
+
+/**
+ * TSL object that represents the object's position in world space.
+ *
+ * @tsl
+ * @type {ModelNode<vec3>}
+ */
+const modelPosition = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.POSITION );
+
+/**
+ * TSL object that represents the object's scale in world space.
+ *
+ * @tsl
+ * @type {ModelNode<vec3>}
+ */
+const modelScale = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.SCALE );
+
+/**
+ * TSL object that represents the object's position in view/camera space.
+ *
+ * @tsl
+ * @type {ModelNode<vec3>}
+ */
+const modelViewPosition = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.VIEW_POSITION );
+
+/**
+ * TSL object that represents the object's radius.
+ *
+ * @tsl
+ * @type {ModelNode<float>}
+ */
+const modelRadius = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.RADIUS );
+
+/**
+ * TSL object that represents the object's normal matrix.
+ *
+ * @tsl
+ * @type {UniformNode<mat3>}
+ */
+const modelNormalMatrix = /*@__PURE__*/ uniform( new Matrix3() ).onObjectUpdate( ( { object }, self ) => self.value.getNormalMatrix( object.matrixWorld ) );
+
+/**
+ * TSL object that represents the object's inverse world matrix.
+ *
+ * @tsl
+ * @type {UniformNode<mat4>}
+ */
+const modelWorldMatrixInverse = /*@__PURE__*/ uniform( new Matrix4() ).onObjectUpdate( ( { object }, self ) => self.value.copy( object.matrixWorld ).invert() );
+
+/**
+ * TSL object that represents the object's model view matrix.
+ *
+ * @tsl
+ * @type {Node<mat4>}
+ */
+const modelViewMatrix = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	return builder.context.modelViewMatrix || mediumpModelViewMatrix;
+
+} ).once() )().toVar( 'modelViewMatrix' );
+
+// GPU Precision
+
+/**
+ * TSL object that represents the object's model view in `mediump` precision.
+ *
+ * @tsl
+ * @type {Node<mat4>}
+ */
+const mediumpModelViewMatrix = /*@__PURE__*/ cameraViewMatrix.mul( modelWorldMatrix );
+
+// CPU Precision
+
+/**
+ * TSL object that represents the object's model view in `highp` precision
+ * which is achieved by computing the matrix in JS and not in the shader.
+ *
+ * @tsl
+ * @type {Node<mat4>}
+ */
+const highpModelViewMatrix = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	builder.context.isHighPrecisionModelViewMatrix = true;
+
+	const camera = builder.camera;
+
+	let highpModelViewMatrix;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const matrices = [];
+
+		for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+			matrices.push( new Matrix4() );
+
+		}
+
+		const modelViewMatrices = uniformArray( matrices ).onObjectUpdate( ( { object, camera }, self ) => {
+
+			const subCameras = camera.cameras;
+			const array = self.array;
+
+			for ( let i = 0, l = subCameras.length; i < l; i ++ ) {
+
+				array[ i ].multiplyMatrices( subCameras[ i ].matrixWorldInverse, object.matrixWorld );
+
+			}
+
+		} );
+
+		highpModelViewMatrix = modelViewMatrices.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		highpModelViewMatrix = uniform( 'mat4' ).onObjectUpdate( ( { object, camera } ) => {
+
+			return object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
+
+		} );
+
+	}
+
+	return highpModelViewMatrix;
+
+} ).once() )().toVar( 'highpModelViewMatrix' );
+
+/**
+ * TSL object that represents the object's model normal view in `highp` precision
+ * which is achieved by computing the matrix in JS and not in the shader.
+ *
+ * @tsl
+ * @type {Node<mat3>}
+ */
+const highpModelNormalViewMatrix = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	const isHighPrecisionModelViewMatrix = builder.context.isHighPrecisionModelViewMatrix;
+
+	const camera = builder.camera;
+
+	let highpModelNormalViewMatrix;
+
+	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
+
+		const matrices = [];
+
+		for ( let i = 0; i < camera.cameras.length; i ++ ) {
+
+			matrices.push( new Matrix3() );
+
+		}
+
+		const normalViewMatrices = uniformArray( matrices ).onObjectUpdate( ( { object, camera }, self ) => {
+
+			const subCameras = camera.cameras;
+			const array = self.array;
+
+			for ( let i = 0, l = subCameras.length; i < l; i ++ ) {
+
+				_modelViewMatrix.multiplyMatrices( subCameras[ i ].matrixWorldInverse, object.matrixWorld );
+
+				array[ i ].getNormalMatrix( _modelViewMatrix );
+
+			}
+
+		} );
+
+		highpModelNormalViewMatrix = normalViewMatrices.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
+
+	} else {
+
+		highpModelNormalViewMatrix = uniform( 'mat3' ).onObjectUpdate( ( { object, camera } ) => {
+
+			if ( isHighPrecisionModelViewMatrix !== true ) {
+
+				object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
+
+			}
+
+			return object.normalMatrix.getNormalMatrix( object.modelViewMatrix );
+
+		} );
+
+	}
+
+	return highpModelNormalViewMatrix;
+
+} ).once() )().toVar( 'highpModelNormalViewMatrix' );
+
+/**
+ * TSL object that represents the clip space position of the current rendered object.
+ *
+ * @tsl
+ * @type {VaryingNode<vec4>}
+ */
+const clipSpace = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	if ( builder.shaderStage !== 'fragment' ) {
+
+		warnOnce( 'TSL: `clipSpace` is only available in fragment stage.' );
+
+		return vec4();
+
+	}
+
+	return builder.context.clipSpace.toVarying( 'v_clipSpace' );
+
+} ).once() )();
+
+/**
+ * TSL object that represents the position attribute of the current rendered object.
+ *
+ * @tsl
+ * @type {AttributeNode<vec3>}
+ */
+const positionGeometry = /*@__PURE__*/ attribute( 'position', 'vec3' );
+
+/**
+ * TSL object that represents the transformed vertex position in local space of the current rendered object.
+ *
+ * The term "transformed" indicates that an object or material's properties, such as skinning, batch,
+ * instancing, or displacement mapping, will change the vertex position of the node when present.
+ * To use the pre-transformed local space position of the object, use {@link positionGeometry}.
+ *
+ * @tsl
+ * @type {AttributeNode<vec3>}
+ */
+const positionLocal = /*@__PURE__*/ positionGeometry.toVarying( 'positionLocal' );
+
+/**
+ * TSL object that represents the previous vertex position in local space of the current rendered object.
+ * Used in context of {@link VelocityNode} for rendering motion vectors.
+ *
+ * @tsl
+ * @type {AttributeNode<vec3>}
+ */
+const positionPrevious = /*@__PURE__*/ positionGeometry.toVarying( 'positionPrevious' );
+
+/**
+ * TSL object that represents the vertex position in world space of the current rendered object.
+ *
+ * @tsl
+ * @type {VaryingNode<vec3>}
+ */
+const positionWorld = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	return modelWorldMatrix.mul( positionLocal ).xyz.toVarying( builder.getSubBuildProperty( 'v_positionWorld' ) );
+
+}, 'vec3' ).once( [ 'POSITION' ] ) )();
+
+/**
+ * TSL object that represents the position world direction of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const positionWorldDirection = /*@__PURE__*/ ( Fn( () => {
+
+	const vertexPWD = positionLocal.transformDirection( modelWorldMatrix ).toVarying( 'v_positionWorldDirection' );
+
+	return vertexPWD.normalize().toVar( 'positionWorldDirection' );
+
+}, 'vec3' ).once( [ 'POSITION' ] ) )();
+
+/**
+ * TSL object that represents the vertex position in view space of the current rendered object.
+ *
+ * @tsl
+ * @type {VaryingNode<vec3>}
+ */
+const positionView = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	if ( builder.shaderStage === 'fragment' && builder.material.vertexNode ) {
+
+		// reconstruct view position from clip space
+
+		const viewPos = cameraProjectionMatrixInverse.mul( clipSpace );
+
+		return viewPos.xyz.div( viewPos.w ).toVar( 'positionView' );
+
+	}
+
+	return builder.context.setupPositionView().toVarying( 'v_positionView' );
+
+}, 'vec3' ).once( [ 'POSITION', 'VERTEX' ] ) )();
+
+/**
+ * TSL object that represents the position view direction of the current rendered object.
+ *
+ * @tsl
+ * @type {VaryingNode<vec3>}
+ */
+const positionViewDirection = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	let output;
+
+	if ( builder.camera.isOrthographicCamera ) {
+
+		output = vec3( 0, 0, 1 );
+
+	} else {
+
+		output = positionView.negate().toVarying( 'v_positionViewDirection' ).normalize();
+
+	}
+
+	return output.toVar( 'positionViewDirection' );
+
+}, 'vec3' ).once( [ 'POSITION' ] ) )();
+
+/**
+ * This node can be used to evaluate whether a primitive is front or back facing.
+ *
+ * @augments Node
+ */
+class FrontFacingNode extends Node {
+
+	static get type() {
+
+		return 'FrontFacingNode';
+
+	}
+
+	/**
+	 * Constructs a new front facing node.
+	 */
+	constructor() {
+
+		super( 'bool' );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isFrontFacingNode = true;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	generate( builder ) {
+
+		if ( builder.shaderStage !== 'fragment' ) return 'true';
+
+		//
+
+		const { material } = builder;
+
+		if ( material.side === BackSide ) {
+
+			return 'false';
+
+		}
+
+		return builder.getFrontFacing();
+
+	}
+
+}
+
+/**
+ * TSL object that represents whether a primitive is front or back facing
+ *
+ * @tsl
+ * @type {FrontFacingNode<bool>}
+ */
+const frontFacing = /*@__PURE__*/ nodeImmutable( FrontFacingNode );
+
+/**
+ * TSL object that represents the front facing status as a number instead of a bool.
+ * `1` means front facing, `-1` means back facing.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const faceDirection = /*@__PURE__*/ float( frontFacing ).mul( 2.0 ).sub( 1.0 );
+
+/**
+ * Negates a vector if the rendering occurs on the back side of a face,
+ * based on the material's side configuration.
+ *
+ * - If the material's side is `BackSide`, the vector is inverted (negated).
+ * - If the material's side is `DoubleSide`, the vector is multiplied by `faceDirection`
+ *   (negated only for back-facing fragments).
+ * - If the material's side is `FrontSide` (default), the vector remains unchanged.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec3>} vector - The vector to process.
+ * @returns {Node<vec3>} The processed vector.
+ */
+const negateOnBackSide = /*@__PURE__*/ Fn( ( [ vector ], { material } ) => {
+
+	const side = material.side;
+
+	if ( side === BackSide ) {
+
+		vector = vector.mul( -1 );
+
+	} else if ( side === DoubleSide ) {
+
+		vector = vector.mul( faceDirection );
+
+	}
+
+	return vector;
+
+} );
+
+/**
+ * Negates a vector if the rendering occurs on the back side of a face,
+ * based on the material's side configuration.
+ *
+ * - If the material's side is `BackSide`, the vector is inverted (negated).
+ * - If the material's side is `DoubleSide`, the vector is multiplied by `faceDirection`
+ *   (negated only for back-facing fragments).
+ * - If the material's side is `FrontSide` (default), the vector remains unchanged.
+ *
+ * @tsl
+ * @function
+ * @deprecated since r185. Use {@link negateOnBackSide} instead.
+ * @param {Node<vec3>} vector - The vector to convert.
+ * @returns {Node<vec3>} The converted vector.
+ */
+const directionToFaceDirection = ( vector ) => {
+
+	warnOnce( 'TSL: "directionToFaceDirection()" has been renamed to "negateOnBackSide()".' ); // @deprecated r185
+
+	return negateOnBackSide( vector );
+
+};
+
+/**
+ * TSL object that represents the normal attribute of the current rendered object in local space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const normalGeometry = /*@__PURE__*/ attribute( 'normal', 'vec3' );
+
+/**
+ * TSL object that represents the vertex normal of the current rendered object in local space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const normalLocal = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	if ( builder.geometry.hasAttribute( 'normal' ) === false ) {
+
+		warn( 'TSL: Vertex attribute "normal" not found on geometry.' );
+
+		return vec3( 0, 1, 0 );
+
+	}
+
+	return normalGeometry;
+
+}, 'vec3' ).once() )().toVar( 'normalLocal' );
+
+/**
+ * TSL object that represents the flat vertex normal of the current rendered object in view space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const normalFlat = /*@__PURE__*/ positionView.dFdx().cross( positionView.dFdy() ).normalize().toVar( 'normalFlat' );
+
+/**
+ * TSL object that represents the vertex normal of the current rendered object in view space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const normalViewGeometry = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	let node;
+
+	if ( builder.isFlatShading() ) {
+
+		node = normalFlat;
+
+	} else {
+
+		node = transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry' ).normalize();
+
+	}
+
+	return node;
+
+}, 'vec3' ).once() )().toVar( 'normalViewGeometry' );
+
+/**
+ * TSL object that represents the vertex normal of the current rendered object in world space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const normalWorldGeometry = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	let normal = normalViewGeometry.transformNormalByInverseViewMatrix( cameraViewMatrix );
+
+	if ( builder.isFlatShading() !== true ) {
+
+		normal = normal.toVarying( 'v_normalWorldGeometry' );
+
+	}
+
+	return normal.normalize().toVar( 'normalWorldGeometry' );
+
+}, 'vec3' ).once() )();
+
+/**
+ * TSL object that represents the vertex normal of the current rendered object in view space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const normalView = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	let node;
+
+	if ( builder.subBuildFn === 'NORMAL' || builder.subBuildFn === 'VERTEX' ) {
+
+		node = normalViewGeometry;
+
+		if ( builder.isFlatShading() !== true ) {
+
+			node = negateOnBackSide( node );
+
+		}
+
+	} else {
+
+		// Use custom context to avoid side effects from nodes overwriting getUV, getTextureLevel in the context (e.g. EnvironmentNode)
+
+		node = builder.context.setupNormal().context( { getUV: null, getTextureLevel: null } );
+
+	}
+
+	return node;
+
+}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'normalView' );
+
+/**
+ * TSL object that represents the vertex normal of the current rendered object in world space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const normalWorld = /*@__PURE__*/ normalView.transformNormalByInverseViewMatrix( cameraViewMatrix ).toVar( 'normalWorld' );
+
+/**
+ * TSL object that represents the clearcoat vertex normal of the current rendered object in view space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const clearcoatNormalView = /*@__PURE__*/ ( Fn( ( { subBuildFn, context } ) => {
+
+	let node;
+
+	if ( subBuildFn === 'NORMAL' || subBuildFn === 'VERTEX' ) {
+
+		node = normalView;
+
+	} else {
+
+		// Use custom context to avoid side effects from nodes overwriting getUV, getTextureLevel in the context (e.g. EnvironmentNode)
+
+		node = context.setupClearcoatNormal().context( { getUV: null, getTextureLevel: null } );
+
+	}
+
+	return node;
+
+}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'clearcoatNormalView' );
+
+/**
+ * Transforms the normal by the normal matrix of the given matrix and then normalizes the result.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec3>} normal - The normal.
+ * @param {Node<mat3|mat4>} [matrix=modelWorldMatrix] - The matrix.
+ * @return {Node<vec3>} The transformed normal.
+ */
+const transformNormal = /*@__PURE__*/ Fn( ( [ normal, matrix = modelWorldMatrix ] ) => {
+
+	const normalMatrix = mat3( matrix ).inverse().transpose();
+
+	return normalMatrix.mul( normal ).normalize();
+
+} );
+
+addMethodChaining( 'transformNormal', transformNormal );
+
+/**
+ * Transforms the given normal from local to view space.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec3>} normal - The normal.
+ * @param {NodeBuilder} builder - The current node builder.
+ * @return {Node<vec3>} The transformed normal.
+ */
+const transformNormalToView = /*@__PURE__*/ Fn( ( [ normal ], builder ) => {
+
+	const modelNormalViewMatrix = builder.context.modelNormalViewMatrix;
+
+	if ( modelNormalViewMatrix ) {
+
+		return normal.transformNormalByViewMatrix( modelNormalViewMatrix );
+
+	}
+
+	//
+
+	const transformedNormal = modelNormalMatrix.mul( normal );
+
+	return transformedNormal.transformNormalByViewMatrix( cameraViewMatrix );
+
+} );
+
+const _m1$1 = /*@__PURE__*/ new Matrix4();
+
+/**
+ * TSL object that represents the refraction ratio of the material used for rendering the current object.
+ *
+ * @tsl
+ * @type {UniformNode<float>}
+ */
+const materialRefractionRatio = /*@__PURE__*/ uniform( 0 ).onReference( ( { material } ) => material ).onObjectUpdate( ( { material } ) => material.refractionRatio );
+
+/**
+ * TSL object that represents the intensity of environment maps of PBR materials.
+ * When `material.envMap` is set, the value is `material.envMapIntensity` otherwise `scene.environmentIntensity`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialEnvIntensity = /*@__PURE__*/ uniform( 1 ).onReference( ( { material } ) => material ).onObjectUpdate( function ( { material, scene } ) {
+
+	return material.envMap ? material.envMapIntensity : scene.environmentIntensity;
+
+} );
+
+/**
+ * TSL object that represents the rotation of environment maps.
+ * When `material.envMap` is set, the value is `material.envMapRotation`.
+ * `scene.environmentRotation` controls the rotation of `scene.environment` or `scene.environmentNode` instead.
+ *
+ * @tsl
+ * @type {Node<mat4>}
+ */
+const materialEnvRotation = /*@__PURE__*/ uniform( new Matrix4() ).onReference( function ( frame ) {
+
+	return frame.material;
+
+} ).onObjectUpdate( function ( { material, scene } ) {
+
+	const hasSceneEnvironment = ( scene.environment !== null ) || ( scene.environmentNode && scene.environmentNode.isNode );
+	const rotation = ( hasSceneEnvironment && material.envMap === null ) ? scene.environmentRotation : material.envMapRotation;
+
+	if ( rotation ) {
+
+		// note: since the matrix is orthonormal, we can use the more-efficient transpose() in lieu of invert()
+		_m1$1.makeRotationFromEuler( rotation ).transpose();
+
+	} else {
+
+		_m1$1.identity();
+
+	}
+
+	return _m1$1;
+
+} );
+
+/**
+ * The reflect vector in view space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const reflectView = /*@__PURE__*/ positionViewDirection.negate().reflect( normalView );
+
+/**
+ * The refract vector in view space.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const refractView = /*@__PURE__*/ positionViewDirection.negate().refract( normalView, materialRefractionRatio );
+
+/**
+ * Used for sampling cube maps when using cube reflection mapping.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const reflectVector = /*@__PURE__*/ reflectView.transformDirection( cameraWorldMatrix ).toVar( 'reflectVector' );
+
+/**
+ * Used for sampling cube maps when using cube refraction mapping.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const refractVector = /*@__PURE__*/ refractView.transformDirection( cameraWorldMatrix ).toVar( 'refractVector' );
+
+const EmptyTexture = /*@__PURE__*/ new CubeTexture();
+
+/**
+ * This type of uniform node represents a cube texture.
+ *
+ * @augments TextureNode
+ */
+class CubeTextureNode extends TextureNode {
+
+	static get type() {
+
+		return 'CubeTextureNode';
+
+	}
+
+	/**
+	 * Constructs a new cube texture node.
+	 *
+	 * @param {CubeTexture} value - The cube texture.
+	 * @param {?Node<vec3>} [uvNode=null] - The uv node.
+	 * @param {?Node<int>} [levelNode=null] - The level node.
+	 * @param {?Node<float>} [biasNode=null] - The bias node.
+	 */
+	constructor( value, uvNode = null, levelNode = null, biasNode = null ) {
+
+		super( value, uvNode, levelNode, biasNode );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isCubeTextureNode = true;
+
+	}
+
+	/**
+	 * Overwrites the default implementation to return the appropriate cube texture type.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The input type.
+	 */
+	getInputType( /*builder*/ ) {
+
+		if ( this.value.isDepthTexture === true ) {
+
+			return 'cubeDepthTexture';
+
+		}
+
+		return 'cubeTexture';
+
+	}
+
+	/**
+	 * Returns a default uvs based on the mapping type of the cube texture.
+	 *
+	 * @return {Node<vec3>} The default uv attribute.
+	 */
+	getDefaultUV() {
+
+		const texture = this.value;
+
+		if ( texture.mapping === CubeReflectionMapping ) {
+
+			return reflectVector;
+
+		} else if ( texture.mapping === CubeRefractionMapping ) {
+
+			return refractVector;
+
+		} else {
+
+			error( 'CubeTextureNode: Mapping "%s" not supported.', texture.mapping );
+
+			return vec3( 0, 0, 0 );
+
+		}
+
+	}
+
+	/**
+	 * Overwritten with an empty implementation since the `updateMatrix` flag is ignored
+	 * for cube textures. The uv transformation matrix is not applied to cube textures.
+	 *
+	 * @param {boolean} value - The update toggle.
+	 */
+	setUpdateMatrix( /*updateMatrix*/ ) { } // Ignore .updateMatrix for CubeTextureNode
+
+	/**
+	 * Setups the uv node. Depending on the backend as well as the texture type, it might be necessary
+	 * to modify the uv node for correct sampling.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node} uvNode - The uv node to setup.
+	 * @return {Node} The updated uv node.
+	 */
+	setupUV( builder, uvNode ) {
+
+		const texture = this.value;
+
+		if ( builder.renderer.coordinateSystem === WebGPUCoordinateSystem || ( ! texture.isRenderTargetTexture && ! texture.isDepthTexture ) ) {
+
+			uvNode = vec3( uvNode.x.negate(), uvNode.yz );
+
+		}
+
+		return uvNode;
+
+	}
+
+	/**
+	 * Generates the uv code snippet.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node} cubeUV - The uv node to generate code for.
+	 * @return {string} The generated code snippet.
+	 */
+	generateUV( builder, cubeUV ) {
+
+		return cubeUV.build( builder, this.sampler === true ? 'vec3' : 'ivec3' );
+
+	}
+
+}
+
+/**
+ * TSL function for creating a cube texture node.
+ *
+ * @tsl
+ * @function
+ * @param {CubeTexture} value - The cube texture.
+ * @param {?Node<vec3>} [uvNode=null] - The uv node.
+ * @param {?Node<int>} [levelNode=null] - The level node.
+ * @param {?Node<float>} [biasNode=null] - The bias node.
+ * @returns {CubeTextureNode}
+ */
+const cubeTextureBase = /*@__PURE__*/ nodeProxy( CubeTextureNode ).setParameterLength( 1, 4 ).setName( 'cubeTexture' );
+
+/**
+ * TSL function for creating a cube texture uniform node.
+ *
+ * @tsl
+ * @function
+ * @param {?(CubeTexture|CubeTextureNode)} [value=EmptyTexture] - The cube texture.
+ * @param {?Node<vec3>} [uvNode=null] - The uv node.
+ * @param {?Node<int>} [levelNode=null] - The level node.
+ * @param {?Node<float>} [biasNode=null] - The bias node.
+ * @returns {CubeTextureNode}
+ */
+const cubeTexture = ( value = EmptyTexture, uvNode = null, levelNode = null, biasNode = null ) => {
+
+	let textureNode;
+
+	if ( value && value.isCubeTextureNode === true ) {
+
+		textureNode = value.clone();
+		textureNode.referenceNode = value; // Ensure the reference is set to the original node
+
+		if ( uvNode !== null ) textureNode.uvNode = nodeObject( uvNode );
+		if ( levelNode !== null ) textureNode.levelNode = nodeObject( levelNode );
+		if ( biasNode !== null ) textureNode.biasNode = nodeObject( biasNode );
+
+	} else {
+
+		textureNode = cubeTextureBase( value, uvNode, levelNode, biasNode );
+
+	}
+
+	return textureNode;
+
+};
+
+/**
+ * TSL function for creating a non-mergeable uniform cube texture node.
+ *
+ * @tsl
+ * @function
+ * @param {?CubeTexture} [value=EmptyTexture] - The cube texture.
+ * @returns {CubeTextureNode}
+ */
+const uniformCubeTexture = ( value = EmptyTexture ) => {
+
+	const textureNode = cubeTextureBase( value );
+
+	textureNode.mergeable = false;
+
+	return textureNode;
+
+};
+
+// TODO: Avoid duplicated code and use only ReferenceBaseNode or ReferenceNode
+
+/**
+ * This type of node establishes a reference to a property of another object.
+ * In this way, the value of the node is automatically linked to the value of
+ * referenced object. Reference nodes internally represent the linked value
+ * as a uniform.
+ *
+ * @augments Node
+ */
+class ReferenceNode extends Node {
+
+	static get type() {
+
+		return 'ReferenceNode';
+
+	}
+
+	/**
+	 * Constructs a new reference node.
+	 *
+	 * @param {string} property - The name of the property the node refers to.
+	 * @param {string} uniformType - The uniform type that should be used to represent the property value.
+	 * @param {?Object} [object=null] - The object the property belongs to.
+	 * @param {?number} [count=null] - When the linked property is an array-like, this parameter defines its length.
+	 */
+	constructor( property, uniformType, object = null, count = null ) {
+
+		super();
+
+		/**
+		 * The name of the property the node refers to.
+		 *
+		 * @type {string}
+		 */
+		this.property = property;
+
+		/**
+		 * The uniform type that should be used to represent the property value.
+		 *
+		 * @type {string}
+		 */
+		this.uniformType = uniformType;
+
+		/**
+		 * The object the property belongs to.
+		 *
+		 * @type {?Object}
+		 * @default null
+		 */
+		this.object = object;
+
+		/**
+		 * When the linked property is an array, this parameter defines its length.
+		 *
+		 * @type {?number}
+		 * @default null
+		 */
+		this.count = count;
+
+		/**
+		 * The property name might have dots so nested properties can be referred.
+		 * The hierarchy of the names is stored inside this array.
+		 *
+		 * @type {Array<string>}
+		 */
+		this.properties = property.split( '.' );
+
+		/**
+		 * Points to the current referred object. This property exists next to {@link ReferenceNode#object}
+		 * since the final reference might be updated from calling code.
+		 *
+		 * @type {?Object}
+		 * @default null
+		 */
+		this.reference = object;
+
+		/**
+		 * The uniform node that holds the value of the reference node.
+		 *
+		 * @type {UniformNode}
+		 * @default null
+		 */
+		this.node = null;
+
+		/**
+		 * The uniform group of the internal uniform.
+		 *
+		 * @type {UniformGroupNode}
+		 * @default null
+		 */
+		this.group = null;
+
+		/**
+		 * An optional label of the internal uniform node.
+		 *
+		 * @type {?string}
+		 * @default null
+		 */
+		this.name = null;
+
+		/**
+		 * Overwritten since reference nodes are updated per object.
+		 *
+		 * @type {string}
+		 * @default 'object'
+		 */
+		this.updateType = NodeUpdateType.OBJECT;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	/**
+	 * When the referred property is array-like, this method can be used
+	 * to access elements via an index node.
+	 *
+	 * @param {IndexNode} indexNode - indexNode.
+	 * @return {ReferenceElementNode} A reference to an element.
+	 */
+	element( indexNode ) {
+
+		return new ReferenceElementNode( this, nodeObject( indexNode ) );
+
+	}
+
+	/**
+	 * Sets the uniform group for this reference node.
+	 *
+	 * @param {UniformGroupNode} group - The uniform group to set.
+	 * @return {ReferenceNode} A reference to this node.
+	 */
+	setGroup( group ) {
+
+		this.group = group;
+
+		return this;
+
+	}
+
+	/**
+	 * Sets the name for the internal uniform.
+	 *
+	 * @param {string} name - The label to set.
+	 * @return {ReferenceNode} A reference to this node.
+	 */
+	setName( name ) {
+
+		this.name = name;
+
+		return this;
+
+	}
+
+	/**
+	 * Sets the label for the internal uniform.
+	 *
+	 * @deprecated
+	 * @param {string} name - The label to set.
+	 * @return {ReferenceNode} A reference to this node.
+	 */
+	label( name ) {
+
+		warn( 'TSL: "label()" has been deprecated. Use "setName()" instead.' ); // @deprecated r179
+
+		return this.setName( name );
+
+	}
+
+	/**
+	 * Sets the node type which automatically defines the internal
+	 * uniform type.
+	 *
+	 * @param {string} uniformType - The type to set.
+	 */
+	setNodeType( uniformType ) {
+
+		let node = null;
+
+		if ( this.count !== null ) {
+
+			node = buffer( null, uniformType, this.count );
+
+		} else if ( Array.isArray( this.getValueFromReference() ) ) {
+
+			node = uniformArray( null, uniformType );
+			node.updateType = NodeUpdateType.OBJECT;
+
+		} else if ( uniformType === 'texture' ) {
+
+			node = texture( null );
+
+		} else if ( uniformType === 'cubeTexture' ) {
+
+			node = cubeTexture( null );
+
+		} else {
+
+			node = uniform( null, uniformType );
+
+		}
+
+		if ( this.group !== null ) {
+
+			node.setGroup( this.group );
+
+		}
+
+		if ( this.name !== null ) node.setName( this.name );
+
+		this.node = node;
+
+	}
+
+	/**
+	 * This method is overwritten since the node type is inferred from
+	 * the type of the reference node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The node type.
+	 */
+	generateNodeType( builder ) {
+
+		if ( this.node === null ) {
+
+			this.updateReference( builder );
+			this.updateValue();
+
+		}
+
+		return this.node.getNodeType( builder );
+
+	}
+
+	/**
+	 * Returns the property value from the given referred object.
+	 *
+	 * @param {Object} [object=this.reference] - The object to retrieve the property value from.
+	 * @return {any} The value.
+	 */
+	getValueFromReference( object = this.reference ) {
+
+		const { properties } = this;
+
+		let value = object[ properties[ 0 ] ];
+
+		for ( let i = 1; i < properties.length; i ++ ) {
+
+			value = value[ properties[ i ] ];
+
+		}
+
+		return value;
+
+	}
+
+	/**
+	 * Allows to update the reference based on the given state. The state is only
+	 * evaluated {@link ReferenceNode#object} is not set.
+	 *
+	 * @param {(NodeFrame|NodeBuilder)} state - The current state.
+	 * @return {Object} The updated reference.
+	 */
+	updateReference( state ) {
+
+		this.reference = this.object !== null ? this.object : state.object;
+
+		return this.reference;
+
+	}
+
+	/**
+	 * The output of the reference node is the internal uniform node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {UniformNode} The output node.
+	 */
+	setup( /* builder */ ) {
+
+		this.updateValue();
+
+		return this.node;
+
+	}
+
+	/**
+	 * Overwritten to update the internal uniform value.
+	 *
+	 * @param {NodeFrame} frame - A reference to the current node frame.
+	 */
+	update( /*frame*/ ) {
+
+		this.updateValue();
+
+	}
+
+	/**
+	 * Retrieves the value from the referred object property and uses it
+	 * to updated the internal uniform.
+	 */
+	updateValue() {
+
+		if ( this.node === null ) this.setNodeType( this.uniformType );
+
+		const value = this.getValueFromReference();
+
+		if ( Array.isArray( value ) ) {
+
+			this.node.array = value;
+
+		} else {
+
+			this.node.value = value;
+
+		}
+
+	}
+
+}
+
+/**
+ * TSL function for creating a reference node.
+ *
+ * @tsl
+ * @function
+ * @param {string} name - The name of the property the node refers to.
+ * @param {string} type - The uniform type that should be used to represent the property value.
+ * @param {?Object} [object] - The object the property belongs to.
+ * @returns {ReferenceNode}
+ */
+const reference = ( name, type, object ) => new ReferenceNode( name, type, object );
+
+/**
+ * TSL function for creating a reference node. Use this function if you want need a reference
+ * to an array-like property that should be represented as a uniform buffer.
+ *
+ * @tsl
+ * @function
+ * @param {string} name - The name of the property the node refers to.
+ * @param {string} type - The uniform type that should be used to represent the property value.
+ * @param {number} count - The number of value inside the array-like object.
+ * @param {Object} object - An array-like object the property belongs to.
+ * @returns {ReferenceNode}
+ */
+const referenceBuffer = ( name, type, count, object ) => new ReferenceNode( name, type, object, count );
+
+/**
+ * This node is a special type of reference node which is intended
+ * for linking material properties with node values.
+ * ```js
+ * const opacityNode = materialReference( 'opacity', 'float', material );
+ * ```
+ * When changing `material.opacity`, the node value of `opacityNode` will
+ * automatically be updated.
+ *
+ * @augments ReferenceNode
+ */
+class MaterialReferenceNode extends ReferenceNode {
+
+	static get type() {
+
+		return 'MaterialReferenceNode';
+
+	}
+
+	/**
+	 * Constructs a new material reference node.
+	 *
+	 * @param {string} property - The name of the property the node refers to.
+	 * @param {string} inputType - The uniform type that should be used to represent the property value.
+	 * @param {?Material} [material=null] - The material the property belongs to. When no material is set,
+	 * the node refers to the material of the current rendered object.
+	 */
+	constructor( property, inputType, material = null ) {
+
+		super( property, inputType, material );
+
+		/**
+		 * The material the property belongs to. When no material is set,
+		 * the node refers to the material of the current rendered object.
+		 *
+		 * @type {?Material}
+		 * @default null
+		 */
+		this.material = material;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isMaterialReferenceNode = true;
+
+	}
+
+	/**
+	 * Updates the reference based on the given state. The state is only evaluated
+	 * {@link MaterialReferenceNode#material} is not set.
+	 *
+	 * @param {(NodeFrame|NodeBuilder)} state - The current state.
+	 * @return {Object} The updated reference.
+	 */
+	updateReference( state ) {
+
+		this.reference = this.material !== null ? this.material : state.material;
+
+		return this.reference;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a material reference node.
+ *
+ * @tsl
+ * @function
+ * @param {string} name - The name of the property the node refers to.
+ * @param {string} type - The uniform type that should be used to represent the property value.
+ * @param {?Material} [material=null] - The material the property belongs to.
+ * When no material is set, the node refers to the material of the current rendered object.
+ * @returns {MaterialReferenceNode}
+ */
+const materialReference = ( name, type, material = null ) => new MaterialReferenceNode( name, type, material );
+
+// Normal Mapping Without Precomputed Tangents
+// http://www.thetenthplanet.de/archives/1180
+
+const uv = uv$1();
+
+const q0 = positionView.dFdx();
+const q1 = positionView.dFdy();
+const st0 = uv.dFdx();
+const st1 = uv.dFdy();
+
+const N = normalView;
+
+const q1perp = q1.cross( N );
+const q0perp = N.cross( q0 );
+
+const T = q1perp.mul( st0.x ).add( q0perp.mul( st1.x ) );
+const B = q1perp.mul( st0.y ).add( q0perp.mul( st1.y ) );
+
+const det = T.dot( T ).max( B.dot( B ) );
+const scale = det.equal( 0.0 ).select( 0.0, det.inverseSqrt() );
+
+/**
+ * Tangent vector in view space, computed dynamically from geometry and UV derivatives.
+ * Useful for normal mapping without precomputed tangents.
+ *
+ * Reference: http://www.thetenthplanet.de/archives/1180
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const tangentViewFrame = /*@__PURE__*/ T.mul( scale ).toVar( 'tangentViewFrame' );
+
+/**
+ * Bitangent vector in view space, computed dynamically from geometry and UV derivatives.
+ * Complements the tangentViewFrame for constructing the tangent space basis.
+ *
+ * Reference: http://www.thetenthplanet.de/archives/1180
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const bitangentViewFrame = /*@__PURE__*/ B.mul( scale ).toVar( 'bitangentViewFrame' );
+
+/**
+ * TSL object that represents the tangent attribute of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec4>}
+ */
+const tangentGeometry = /*@__PURE__*/ attribute( 'tangent', 'vec4' );
+
+/**
+ * TSL object that represents the vertex tangent in local space of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const tangentLocal = /*@__PURE__*/ tangentGeometry.xyz.toVar( 'tangentLocal' );
+
+/**
+ * TSL object that represents the vertex tangent in view space of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const tangentView = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	let node;
+
+	if ( builder.subBuildFn === 'VERTEX' || builder.geometry.hasAttribute( 'tangent' ) ) {
+
+		node = modelViewMatrix.mul( vec4( tangentLocal, 0 ) ).xyz.toVarying( 'v_tangentView' ).normalize();
+
+	} else {
+
+		node = tangentViewFrame;
+
+	}
+
+	if ( builder.isFlatShading() !== true ) {
+
+		node = negateOnBackSide( node );
+
+	}
+
+	return node;
+
+}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'tangentView' );
+
+/**
+ * TSL object that represents the vertex tangent in world space of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const tangentWorld = /*@__PURE__*/ tangentView.transformDirection( cameraWorldMatrix ).toVarying( 'v_tangentWorld' ).normalize().toVar( 'tangentWorld' );
+
+/**
+ * Returns the bitangent node and assigns it to a varying if the material is not flat shaded.
+ *
+ * @tsl
+ * @private
+ * @param {Node<vec3>} crossNormalTangent - The cross product of the normal and tangent vectors.
+ * @param {string} varyingName - The name of the varying to assign the bitangent to.
+ * @returns {Node<vec3>} The bitangent node.
+ */
+const getBitangent = /*@__PURE__*/ Fn( ( [ crossNormalTangent, varyingName ], builder ) => {
+
+	let bitangent = crossNormalTangent.mul( tangentGeometry.w ).xyz;
+
+	if ( builder.subBuildFn === 'NORMAL' && builder.isFlatShading() !== true ) {
+
+		bitangent = bitangent.toVarying( varyingName );
+
+	}
+
+	return bitangent;
+
+} ).once( [ 'NORMAL' ] );
+
+/**
+ * TSL object that represents the bitangent attribute of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const bitangentGeometry = /*@__PURE__*/ getBitangent( normalGeometry.cross( tangentGeometry ), 'v_bitangentGeometry' ).normalize().toVar( 'bitangentGeometry' );
+
+/**
+ * TSL object that represents the vertex bitangent in local space of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const bitangentLocal = /*@__PURE__*/ getBitangent( normalLocal.cross( tangentLocal ), 'v_bitangentLocal' ).normalize().toVar( 'bitangentLocal' );
+
+/**
+ * TSL object that represents the vertex bitangent in view space of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const bitangentView = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	let node;
+
+	if ( builder.subBuildFn === 'VERTEX' || builder.geometry.hasAttribute( 'tangent' ) ) {
+
+		node = getBitangent( normalView.cross( tangentView ), 'v_bitangentView' ).normalize();
+
+	} else {
+
+		node = bitangentViewFrame;
+
+	}
+
+	if ( builder.isFlatShading() !== true ) {
+
+		node = negateOnBackSide( node );
+
+	}
+
+	return node;
+
+}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'bitangentView' );
+
+/**
+ * TSL object that represents the vertex bitangent in world space of the current rendered object.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const bitangentWorld = /*@__PURE__*/ getBitangent( normalWorld.cross( tangentWorld ), 'v_bitangentWorld' ).normalize().toVar( 'bitangentWorld' );
+
+/**
+ * TSL object that represents the TBN matrix in view space.
+ *
+ * @tsl
+ * @type {Node<mat3>}
+ */
+const TBNViewMatrix = /*@__PURE__*/ mat3( tangentView, bitangentView, normalView ).toVar( 'TBNViewMatrix' );
+
+/**
+ * TSL object that represents the parallax direction.
+ *
+ * @tsl
+ * @type {Node<mat3>}
+ */
+const parallaxDirection = /*@__PURE__*/ positionViewDirection.mul( TBNViewMatrix )/*.normalize()*/;
+
+/**
+ * TSL function for computing parallax uv coordinates.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec2>} uv - A uv node.
+ * @param {Node<vec2>} scale - A scale node.
+ * @returns {Node<vec2>} Parallax uv coordinates.
+ */
+const parallaxUV = ( uv, scale ) => uv.sub( parallaxDirection.mul( scale ) );
+
+/**
+ * TSL function for computing bent normals.
+ *
+ * @tsl
+ * @function
+ * @returns {Node<vec3>} Bent normals.
+ */
+const bentNormalView = /*@__PURE__*/ ( Fn( () => {
+
+	// https://google.github.io/filament/Filament.md.html#lighting/imagebasedlights/anisotropy
+
+	let bentNormal = anisotropyB.cross( positionViewDirection );
+	bentNormal = bentNormal.cross( anisotropyB ).normalize();
+	bentNormal = mix( bentNormal, normalView, anisotropy.mul( roughness.oneMinus() ).oneMinus().pow2().pow2() ).normalize();
+
+	return bentNormal;
+
+} ).once() )();
+
+/**
+ * Packs a normal vector into a color value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec3>} node - The direction to pack.
+ * @return {Node<vec3>} The color.
+ */
+const packNormalToRGB = ( node ) => nodeObject( node ).mul( 0.5 ).add( 0.5 );
+
+/**
+ * Unpacks a color value into a normal vector.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec3>} node - The color to unpack.
+ * @return {Node<vec3>} The direction.
+ */
+const unpackRGBToNormal = ( node ) => nodeObject( node ).mul( 2.0 ).sub( 1 );
+
+/**
+ * Unpacks a tangent space normal, reconstructing the Z component by projecting the X,Y coordinates onto the hemisphere.
+ * The X,Y coordinates are expected to be in the [-1, 1] range.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec2>} xy - The X,Y coordinates of the normal.
+ * @return {Node<vec3>} The resulting normal.
+ */
+const unpackNormal = ( xy ) => vec3( xy, sqrt( saturate( float( 1.0 ).sub( dot( xy, xy ) ) ) ) );
+
+/**
+ * @tsl
+ * @function
+ * @deprecated since r185. Use {@link packNormalToRGB} instead.
+ * @param {Node<vec3>} node - The direction to pack.
+ * @returns {Node<vec3>}
+ */
+const directionToColor = ( node ) => {
+
+	warnOnce( 'TSL: "directionToColor()" has been renamed to "packNormalToRGB()".' ); // @deprecated r185
+
+	return packNormalToRGB( node );
+
+};
+
+/**
+ * @tsl
+ * @function
+ * @deprecated since r185. Use {@link unpackRGBToNormal} instead.
+ * @param {Node<vec3>} node - The color to unpack.
+ * @returns {Node<vec3>}
+ */
+const colorToDirection = ( node ) => {
+
+	warnOnce( 'TSL: "colorToDirection()" has been renamed to "unpackRGBToNormal()".' ); // @deprecated r185
+
+	return unpackRGBToNormal( node );
+
+};
+
+/**
+ * This class can be used for applying normals maps to materials.
+ *
+ * ```js
+ * material.normalNode = normalMap( texture( normalTex ) );
+ * ```
+ *
+ * @augments Node
+ */
+class NormalMapNode extends Node {
+
+	static get type() {
+
+		return 'NormalMapNode';
+
+	}
+
+	/**
+	 * Constructs a new normal map node.
+	 *
+	 * @param {Node<vec3>} node - Represents the normal map data.
+	 * @param {?Node<vec2>} [scaleNode=null] - Controls the intensity of the effect.
+	 */
+	constructor( node, scaleNode = null ) {
+
+		super( 'vec3' );
+
+		/**
+		 * Represents the normal map data.
+		 *
+		 * @type {Node<vec3>}
+		 */
+		this.node = node;
+
+		/**
+		 * Controls the intensity of the effect.
+		 *
+		 * @type {?Node<vec2>}
+		 * @default null
+		 */
+		this.scaleNode = scaleNode;
+
+		/**
+		 * The normal map type.
+		 *
+		 * @type {(TangentSpaceNormalMap|ObjectSpaceNormalMap)}
+		 * @default TangentSpaceNormalMap
+		 */
+		this.normalMapType = TangentSpaceNormalMap;
+
+		/**
+		 * Controls how to unpack the sampled normal map values.
+		 *
+		 * @type {string}
+		 * @default NoNormalPacking
+		 */
+		this.unpackNormalMode = NoNormalPacking;
+
+	}
+
+	setup( builder ) {
+
+		const { normalMapType, scaleNode, unpackNormalMode } = this;
+
+		let normalMap = this.node.mul( 2.0 ).sub( 1.0 );
+
+		if ( normalMapType === TangentSpaceNormalMap ) {
+
+			if ( unpackNormalMode === NormalRGPacking ) {
+
+				normalMap = unpackNormal( normalMap.xy );
+
+			} else if ( unpackNormalMode === NormalGAPacking ) {
+
+				normalMap = unpackNormal( normalMap.yw );
+
+			} else if ( unpackNormalMode !== NoNormalPacking ) {
+
+				error( `THREE.NodeMaterial: Unexpected unpack normal mode: ${ unpackNormalMode }` );
+
+			}
+
+		} else {
+
+			if ( unpackNormalMode !== NoNormalPacking ) {
+
+				error( `THREE.NodeMaterial: Normal map type '${ normalMapType }' is not compatible with unpack normal mode '${ unpackNormalMode }'` );
+
+			}
+
+		}
+
+		if ( scaleNode !== null ) {
+
+			let scale = scaleNode;
+
+			if ( builder.isFlatShading() === true ) {
+
+				scale = negateOnBackSide( scale );
+
+			}
+
+			normalMap = vec3( normalMap.xy.mul( scale ), normalMap.z );
+
+		}
+
+		let output = null;
+
+		if ( normalMapType === ObjectSpaceNormalMap ) {
+
+			output = transformNormalToView( normalMap );
+
+		} else if ( normalMapType === TangentSpaceNormalMap ) {
+
+			output = TBNViewMatrix.mul( normalMap ).normalize();
+
+		} else {
+
+			error( `NodeMaterial: Unsupported normal map type: ${ normalMapType }` );
+
+			output = normalView; // Fallback to default normal view
+
+		}
+
+		return output;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a normal map node.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec3>} node - Represents the normal map data.
+ * @param {?Node<vec2>} [scaleNode=null] - Controls the intensity of the effect.
+ * @returns {NormalMapNode}
+ */
+const normalMap = /*@__PURE__*/ nodeProxy( NormalMapNode ).setParameterLength( 1, 2 );
+
+// Bump Mapping Unparametrized Surfaces on the GPU by Morten S. Mikkelsen
+// https://mmikk.github.io/papers3d/mm_sfgrad_bump.pdf
+
+const dHdxy_fwd = /*@__PURE__*/ Fn( ( { textureNode, bumpScale } ) => {
+
+	// It's used to preserve the same TextureNode instance
+	const sampleTexture = ( callback ) => textureNode.isolate().context( { getUV: ( texNode ) => callback( texNode.uvNode || uv$1() ), forceUVContext: true } );
+
+	const Hll = float( sampleTexture( ( uvNode ) => uvNode ) );
+
+	return vec2(
+		float( sampleTexture( ( uvNode ) => uvNode.add( uvNode.dFdx() ) ) ).sub( Hll ),
+		float( sampleTexture( ( uvNode ) => uvNode.add( uvNode.dFdy() ) ) ).sub( Hll )
+	).mul( bumpScale );
+
+} );
+
+// Evaluate the derivative of the height w.r.t. screen-space using forward differencing (listing 2)
+
+const perturbNormalArb = /*@__PURE__*/ Fn( ( inputs ) => {
+
+	const { surf_pos, surf_norm, dHdxy } = inputs;
+
+	// normalize is done to ensure that the bump map looks the same regardless of the texture's scale
+	const vSigmaX = surf_pos.dFdx().normalize();
+	const vSigmaY = surf_pos.dFdy().normalize();
+	const vN = surf_norm; // normalized
+
+	const R1 = vSigmaY.cross( vN );
+	const R2 = vN.cross( vSigmaX );
+
+	const fDet = vSigmaX.dot( R1 ).mul( faceDirection );
+
+	const vGrad = fDet.sign().mul( dHdxy.x.mul( R1 ).add( dHdxy.y.mul( R2 ) ) );
+
+	return fDet.abs().mul( surf_norm ).sub( vGrad ).normalize();
+
+} );
+
+/**
+ * This class can be used for applying bump maps to materials.
+ *
+ * ```js
+ * material.normalNode = bumpMap( texture( bumpTex ) );
+ * ```
+ *
+ * @augments Node
+ */
+class BumpMapNode extends Node {
+
+	static get type() {
+
+		return 'BumpMapNode';
+
+	}
+
+	/**
+	 * Constructs a new bump map node.
+	 *
+	 * @param {Node<float>} textureNode - Represents the bump map data.
+	 * @param {?Node<float>} [scaleNode=null] - Controls the intensity of the bump effect.
+	 * @param {Node<vec3>} [normalNode=normalView] - The view-space normal to perturb.
+	 */
+	constructor( textureNode, scaleNode = null, normalNode = normalView ) {
+
+		super( 'vec3' );
+
+		/**
+		 * Represents the bump map data.
+		 *
+		 * @type {Node<float>}
+		 */
+		this.textureNode = textureNode;
+
+		/**
+		 * Controls the intensity of the bump effect.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.scaleNode = scaleNode;
+
+		/**
+		 * The view-space normal to perturb.
+		 *
+		 * @type {Node<vec3>}
+		 * @default normalView
+		 */
+		this.normalNode = normalNode;
+
+	}
+
+	setup( builder ) {
+
+		// Screen-space derivatives are unreliable on thin lines, so the bump
+		// effect is disabled for wireframe rendering.
+
+		if ( builder.material.wireframe === true ) return this.normalNode;
+
+		const bumpScale = this.scaleNode !== null ? this.scaleNode : 1;
+		const dHdxy = dHdxy_fwd( { textureNode: this.textureNode, bumpScale } );
+
+		return perturbNormalArb( {
+			surf_pos: positionView,
+			surf_norm: this.normalNode,
+			dHdxy
+		} );
+
+	}
+
+}
+
+/**
+ * TSL function for creating a bump map node.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} textureNode - Represents the bump map data.
+ * @param {?Node<float>} [scaleNode=null] - Controls the intensity of the bump effect.
+ * @param {Node<vec3>} [normalNode=normalView] - The view-space normal to perturb.
+ * @returns {BumpMapNode}
+ */
+const bumpMap = /*@__PURE__*/ nodeProxy( BumpMapNode ).setParameterLength( 1, 3 );
+
+const _propertyCache = new Map();
+
+/**
+ * This class should simplify the node access to material properties.
+ * It internal uses reference nodes to make sure  changes to material
+ * properties are automatically reflected to predefined TSL objects
+ * like e.g. `materialColor`.
+ *
+ * @augments Node
+ */
+class MaterialNode extends Node {
+
+	static get type() {
+
+		return 'MaterialNode';
+
+	}
+
+	/**
+	 * Constructs a new material node.
+	 *
+	 * @param {string} scope - The scope defines what kind of material property is referred by the node.
+	 */
+	constructor( scope ) {
+
+		super();
+
+		/**
+		 * The scope defines what material property is referred by the node.
+		 *
+		 * @type {string}
+		 */
+		this.scope = scope;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	/**
+	 * Returns a cached reference node for the given property and type.
+	 *
+	 * @param {string} property - The name of the material property.
+	 * @param {string} type - The uniform type of the property.
+	 * @return {MaterialReferenceNode} A material reference node representing the property access.
+	 */
+	getCache( property, type ) {
+
+		let node = _propertyCache.get( property );
+
+		if ( node === undefined ) {
+
+			node = materialReference( property, type );
+
+			_propertyCache.set( property, node );
+
+		}
+
+		return node;
+
+	}
+
+	/**
+	 * Returns a float-typed material reference node for the given property name.
+	 *
+	 * @param {string} property - The name of the material property.
+	 * @return {MaterialReferenceNode<float>} A material reference node representing the property access.
+	 */
+	getFloat( property ) {
+
+		return this.getCache( property, 'float' );
+
+	}
+
+	/**
+	 * Returns a color-typed material reference node for the given property name.
+	 *
+	 * @param {string} property - The name of the material property.
+	 * @return {MaterialReferenceNode<color>} A material reference node representing the property access.
+	 */
+	getColor( property ) {
+
+		return this.getCache( property, 'color' );
+
+	}
+
+	/**
+	 * Returns a texture-typed material reference node for the given property name.
+	 *
+	 * @param {string} property - The name of the material property.
+	 * @return {MaterialReferenceNode} A material reference node representing the property access.
+	 */
+	getTexture( property ) {
+
+		return this.getCache( property === 'map' ? 'map' : property + 'Map', 'texture' );
+
+	}
+
+	/**
+	 * The node setup is done depending on the selected scope. Multiple material properties
+	 * might be grouped into a single node composition if they logically belong together.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node} The node representing the selected scope.
+	 */
+	setup( builder ) {
+
+		const material = builder.context.material;
+		const scope = this.scope;
+
+		let node = null;
+
+		if ( scope === MaterialNode.COLOR ) {
+
+			const colorNode = material.color !== undefined ? this.getColor( scope ) : vec3();
+
+			if ( material.map && material.map.isTexture === true ) {
+
+				node = colorNode.mul( this.getTexture( 'map' ) );
+
+			} else {
+
+				node = colorNode;
+
+			}
+
+		} else if ( scope === MaterialNode.OPACITY ) {
+
+			const opacityNode = this.getFloat( scope );
+
+			if ( material.alphaMap && material.alphaMap.isTexture === true ) {
+
+				node = opacityNode.mul( this.getTexture( 'alpha' ) );
+
+			} else {
+
+				node = opacityNode;
+
+			}
+
+		} else if ( scope === MaterialNode.SPECULAR_STRENGTH ) {
+
+			if ( material.specularMap && material.specularMap.isTexture === true ) {
+
+				node = this.getTexture( 'specular' ).r;
+
+			} else {
+
+				node = float( 1 );
+
+			}
+
+		} else if ( scope === MaterialNode.SPECULAR_INTENSITY ) {
+
+			const specularIntensityNode = this.getFloat( scope );
+
+			if ( material.specularIntensityMap && material.specularIntensityMap.isTexture === true ) {
+
+				node = specularIntensityNode.mul( this.getTexture( scope ).a );
+
+			} else {
+
+				node = specularIntensityNode;
+
+			}
+
+		} else if ( scope === MaterialNode.SPECULAR_COLOR ) {
+
+			const specularColorNode = this.getColor( scope );
+
+			if ( material.specularColorMap && material.specularColorMap.isTexture === true ) {
+
+				node = specularColorNode.mul( this.getTexture( scope ).rgb );
+
+			} else {
+
+				node = specularColorNode;
+
+			}
+
+		} else if ( scope === MaterialNode.ROUGHNESS ) { // TODO: cleanup similar branches
+
+			const roughnessNode = this.getFloat( scope );
+
+			if ( material.roughnessMap && material.roughnessMap.isTexture === true ) {
+
+				node = roughnessNode.mul( this.getTexture( scope ).g );
+
+			} else {
+
+				node = roughnessNode;
+
+			}
+
+		} else if ( scope === MaterialNode.DIFFUSE_ROUGHNESS ) {
+
+			const diffuseRoughnessNode = this.getFloat( scope );
+
+			if ( material.diffuseRoughnessMap && material.diffuseRoughnessMap.isTexture === true ) {
+
+				node = diffuseRoughnessNode.mul( this.getTexture( scope ).r );
+
+			} else {
+
+				node = diffuseRoughnessNode;
+
+			}
+
+		} else if ( scope === MaterialNode.METALNESS ) {
+
+			const metalnessNode = this.getFloat( scope );
+
+			if ( material.metalnessMap && material.metalnessMap.isTexture === true ) {
+
+				node = metalnessNode.mul( this.getTexture( scope ).b );
+
+			} else {
+
+				node = metalnessNode;
+
+			}
+
+		} else if ( scope === MaterialNode.EMISSIVE ) {
+
+			const emissiveIntensityNode = this.getFloat( 'emissiveIntensity' );
+			const emissiveNode = this.getColor( scope ).mul( emissiveIntensityNode );
+
+			if ( material.emissiveMap && material.emissiveMap.isTexture === true ) {
+
+				node = emissiveNode.mul( this.getTexture( scope ) );
+
+			} else {
+
+				node = emissiveNode;
+
+			}
+
+		} else if ( scope === MaterialNode.NORMAL ) {
+
+			if ( material.normalMap ) {
+
+				node = normalMap( this.getTexture( 'normal' ), this.getCache( 'normalScale', 'vec2' ) );
+				node.normalMapType = material.normalMapType;
+
+				if ( material.normalMap.format == RGFormat || material.normalMap.format == RED_GREEN_RGTC2_Format || material.normalMap.format == RG11_EAC_Format ) {
+
+					node.unpackNormalMode = NormalRGPacking;
+
+				}
+
+			} else if ( material.bumpMap ) {
+
+				node = bumpMap( this.getTexture( 'bump' ).r, this.getFloat( 'bumpScale' ) );
+
+			} else {
+
+				node = normalView;
+
+			}
+
+		} else if ( scope === MaterialNode.CLEARCOAT ) {
+
+			const clearcoatNode = this.getFloat( scope );
+
+			if ( material.clearcoatMap && material.clearcoatMap.isTexture === true ) {
+
+				node = clearcoatNode.mul( this.getTexture( scope ).r );
+
+			} else {
+
+				node = clearcoatNode;
+
+			}
+
+		} else if ( scope === MaterialNode.CLEARCOAT_ROUGHNESS ) {
+
+			const clearcoatRoughnessNode = this.getFloat( scope );
+
+			if ( material.clearcoatRoughnessMap && material.clearcoatRoughnessMap.isTexture === true ) {
+
+				node = clearcoatRoughnessNode.mul( this.getTexture( scope ).g );
+
+			} else {
+
+				node = clearcoatRoughnessNode;
+
+			}
+
+		} else if ( scope === MaterialNode.CLEARCOAT_NORMAL ) {
+
+			if ( material.clearcoatNormalMap ) {
+
+				node = normalMap( this.getTexture( scope ), this.getCache( scope + 'Scale', 'vec2' ) );
+
+			} else {
+
+				node = normalView;
+
+			}
+
+		} else if ( scope === MaterialNode.SHEEN ) {
+
+			const sheenNode = this.getColor( 'sheenColor' ).mul( this.getFloat( 'sheen' ) ); // Move this mul() to CPU
+
+			if ( material.sheenColorMap && material.sheenColorMap.isTexture === true ) {
+
+				node = sheenNode.mul( this.getTexture( 'sheenColor' ).rgb );
+
+			} else {
+
+				node = sheenNode;
+
+			}
+
+		} else if ( scope === MaterialNode.SHEEN_ROUGHNESS ) {
+
+			const sheenRoughnessNode = this.getFloat( scope );
+
+			if ( material.sheenRoughnessMap && material.sheenRoughnessMap.isTexture === true ) {
+
+				node = sheenRoughnessNode.mul( this.getTexture( scope ).a );
+
+			} else {
+
+				node = sheenRoughnessNode;
+
+			}
+
+			node = node.clamp( 0.0001, 1.0 );
+
+		} else if ( scope === MaterialNode.ANISOTROPY ) {
+
+			if ( material.anisotropyMap && material.anisotropyMap.isTexture === true ) {
+
+				const anisotropyPolar = this.getTexture( scope );
+				const anisotropyMat = mat2( materialAnisotropyVector.x, materialAnisotropyVector.y, materialAnisotropyVector.y.negate(), materialAnisotropyVector.x );
+
+				node = anisotropyMat.mul( anisotropyPolar.rg.mul( 2.0 ).sub( vec2( 1.0 ) ).normalize().mul( anisotropyPolar.b ) );
+
+			} else {
+
+				node = materialAnisotropyVector;
+
+			}
+
+		} else if ( scope === MaterialNode.IRIDESCENCE_THICKNESS ) {
+
+			const iridescenceThicknessMaximum = this.getFloat( 'iridescenceThicknessMaximum' );
+
+			if ( material.iridescenceThicknessMap ) {
+
+				const iridescenceThicknessMinimum = this.getFloat( 'iridescenceThicknessMinimum' );
+
+				node = iridescenceThicknessMaximum.sub( iridescenceThicknessMinimum ).mul( this.getTexture( scope ).g ).add( iridescenceThicknessMinimum );
+
+			} else {
+
+				node = iridescenceThicknessMaximum;
+
+			}
+
+		} else if ( scope === MaterialNode.TRANSMISSION ) {
+
+			const transmissionNode = this.getFloat( scope );
+
+			if ( material.transmissionMap ) {
+
+				node = transmissionNode.mul( this.getTexture( scope ).r );
+
+			} else {
+
+				node = transmissionNode;
+
+			}
+
+		} else if ( scope === MaterialNode.THICKNESS ) {
+
+			const thicknessNode = this.getFloat( scope );
+
+			if ( material.thicknessMap ) {
+
+				node = thicknessNode.mul( this.getTexture( scope ).g );
+
+			} else {
+
+				node = thicknessNode;
+
+			}
+
+		} else if ( scope === MaterialNode.IOR ) {
+
+			node = this.getFloat( scope );
+
+		} else if ( scope === MaterialNode.LIGHT_MAP ) {
+
+			if ( material.lightMap ) {
+
+				node = this.getTexture( scope ).rgb.mul( this.getFloat( 'lightMapIntensity' ) );
+
+			} else {
+
+				node = vec3( 0.0 );
+
+			}
+
+		} else if ( scope === MaterialNode.AO ) {
+
+			if ( material.aoMap ) {
+
+				node = this.getTexture( scope ).r.sub( 1.0 ).mul( this.getFloat( 'aoMapIntensity' ) ).add( 1.0 );
+
+			} else {
+
+				node = float( 1.0 );
+
+			}
+
+		} else if ( scope === MaterialNode.LINE_DASH_OFFSET ) {
+
+			node = ( material.dashOffset ) ? this.getFloat( scope ) : float( 0 );
+
+		} else {
+
+			const outputType = this.getNodeType( builder );
+
+			node = this.getCache( scope, outputType );
+
+		}
+
+		return node;
+
+	}
+
+}
+
+MaterialNode.ALPHA_TEST = 'alphaTest';
+MaterialNode.COLOR = 'color';
+MaterialNode.OPACITY = 'opacity';
+MaterialNode.SHININESS = 'shininess';
+MaterialNode.SPECULAR = 'specular';
+MaterialNode.SPECULAR_STRENGTH = 'specularStrength';
+MaterialNode.SPECULAR_INTENSITY = 'specularIntensity';
+MaterialNode.SPECULAR_COLOR = 'specularColor';
+MaterialNode.REFLECTIVITY = 'reflectivity';
+MaterialNode.ROUGHNESS = 'roughness';
+MaterialNode.DIFFUSE_ROUGHNESS = 'diffuseRoughness';
+MaterialNode.METALNESS = 'metalness';
+MaterialNode.NORMAL = 'normal';
+MaterialNode.CLEARCOAT = 'clearcoat';
+MaterialNode.CLEARCOAT_ROUGHNESS = 'clearcoatRoughness';
+MaterialNode.CLEARCOAT_NORMAL = 'clearcoatNormal';
+MaterialNode.EMISSIVE = 'emissive';
+MaterialNode.ROTATION = 'rotation';
+MaterialNode.SHEEN = 'sheen';
+MaterialNode.SHEEN_ROUGHNESS = 'sheenRoughness';
+MaterialNode.ANISOTROPY = 'anisotropy';
+MaterialNode.IRIDESCENCE = 'iridescence';
+MaterialNode.IRIDESCENCE_IOR = 'iridescenceIOR';
+MaterialNode.IRIDESCENCE_THICKNESS = 'iridescenceThickness';
+MaterialNode.IOR = 'ior';
+MaterialNode.TRANSMISSION = 'transmission';
+MaterialNode.THICKNESS = 'thickness';
+MaterialNode.ATTENUATION_DISTANCE = 'attenuationDistance';
+MaterialNode.ATTENUATION_COLOR = 'attenuationColor';
+MaterialNode.LINE_SCALE = 'scale';
+MaterialNode.LINE_DASH_SIZE = 'dashSize';
+MaterialNode.LINE_GAP_SIZE = 'gapSize';
+MaterialNode.LINE_WIDTH = 'linewidth';
+MaterialNode.LINE_DASH_OFFSET = 'dashOffset';
+MaterialNode.POINT_SIZE = 'size';
+MaterialNode.DISPERSION = 'dispersion';
+MaterialNode.RETROREFLECTIVITY = 'retroreflectivity';
+MaterialNode.LIGHT_MAP = 'light';
+MaterialNode.AO = 'ao';
+
+/**
+ * TSL object that represents alpha test of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialAlphaTest = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ALPHA_TEST );
+
+/**
+ * TSL object that represents the diffuse color of the current material.
+ * The value is composed via `color` * `map`.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialColor = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.COLOR );
+
+/**
+ * TSL object that represents the shininess of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialShininess = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SHININESS );
+
+/**
+ * TSL object that represents the emissive color of the current material.
+ * The value is composed via `emissive` * `emissiveIntensity` * `emissiveMap`.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialEmissive = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.EMISSIVE );
+
+/**
+ * TSL object that represents the opacity of the current material.
+ * The value is composed via `opacity` * `alphaMap`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialOpacity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.OPACITY );
+
+/**
+ * TSL object that represents the specular of the current material.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialSpecular = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR );
+
+/**
+ * TSL object that represents the specular intensity of the current material.
+ * The value is composed via `specularIntensity` * `specularMap.a`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialSpecularIntensity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR_INTENSITY );
+
+/**
+ * TSL object that represents the specular color of the current material.
+ * The value is composed via `specularColor` * `specularMap.rgb`.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialSpecularColor = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR_COLOR );
+
+/**
+ * TSL object that represents the specular strength of the current material.
+ * The value is composed via `specularMap.r`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialSpecularStrength = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR_STRENGTH );
+
+/**
+ * TSL object that represents the reflectivity of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialReflectivity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.REFLECTIVITY );
+
+/**
+ * TSL object that represents the roughness of the current material.
+ * The value is composed via `roughness` * `roughnessMap.g`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ROUGHNESS );
+
+/**
+ * TSL object that represents the diffuse roughness of the current material.
+ * The value is composed via `diffuseRoughness` * `diffuseRoughnessMap.r`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialDiffuseRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.DIFFUSE_ROUGHNESS );
+
+/**
+ * TSL object that represents the metalness of the current material.
+ * The value is composed via `metalness` * `metalnessMap.b`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialMetalness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.METALNESS );
+
+/**
+ * TSL object that represents the normal of the current material.
+ * The value will be either `normalMap` * `normalScale`, `bumpMap` * `bumpScale` or `normalView`.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialNormal = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.NORMAL );
+
+/**
+ * TSL object that represents the clearcoat of the current material.
+ * The value is composed via `clearcoat` * `clearcoatMap.r`
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialClearcoat = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.CLEARCOAT );
+
+/**
+ * TSL object that represents the clearcoat roughness of the current material.
+ * The value is composed via `clearcoatRoughness` * `clearcoatRoughnessMap.r`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialClearcoatRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.CLEARCOAT_ROUGHNESS );
+
+/**
+ * TSL object that represents the clearcoat normal of the current material.
+ * The value will be either `clearcoatNormalMap` or `normalView`.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialClearcoatNormal = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.CLEARCOAT_NORMAL );
+
+/**
+ * TSL object that represents the rotation of the current sprite material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialRotation = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ROTATION );
+
+/**
+ * TSL object that represents the sheen color of the current material.
+ * The value is composed via `sheen` * `sheenColor` * `sheenColorMap`.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialSheen = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SHEEN );
+
+/**
+ * TSL object that represents the sheen roughness of the current material.
+ * The value is composed via `sheenRoughness` * `sheenRoughnessMap.a`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialSheenRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SHEEN_ROUGHNESS );
+
+/**
+ * TSL object that represents the anisotropy of the current material.
+ *
+ * @tsl
+ * @type {Node<vec2>}
+ */
+const materialAnisotropy = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ANISOTROPY );
+
+/**
+ * TSL object that represents the iridescence of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialIridescence = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IRIDESCENCE );
+
+/**
+ * TSL object that represents the iridescence IOR of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialIridescenceIOR = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IRIDESCENCE_IOR );
+
+/**
+ * TSL object that represents the iridescence thickness of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialIridescenceThickness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IRIDESCENCE_THICKNESS );
+
+/**
+ * TSL object that represents the transmission of the current material.
+ * The value is composed via `transmission` * `transmissionMap.r`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialTransmission = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.TRANSMISSION );
+
+/**
+ * TSL object that represents the thickness of the current material.
+ * The value is composed via `thickness` * `thicknessMap.g`.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialThickness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.THICKNESS );
+
+/**
+ * TSL object that represents the IOR of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialIOR = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IOR );
+
+/**
+ * TSL object that represents the attenuation distance of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialAttenuationDistance = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ATTENUATION_DISTANCE );
+
+/**
+ * TSL object that represents the attenuation color of the current material.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialAttenuationColor = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ATTENUATION_COLOR );
+
+/**
+ * TSL object that represents the scale of the current dashed line material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialLineScale = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_SCALE );
+
+/**
+ * TSL object that represents the dash size of the current dashed line material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialLineDashSize = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_DASH_SIZE );
+
+/**
+ * TSL object that represents the gap size of the current dashed line material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialLineGapSize = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_GAP_SIZE );
+
+/**
+ * TSL object that represents the line width of the current line material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialLineWidth = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_WIDTH );
+
+/**
+ * TSL object that represents the dash offset of the current line material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialLineDashOffset = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_DASH_OFFSET );
+
+/**
+ * TSL object that represents the point size of the current points material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialPointSize = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.POINT_SIZE );
+
+/**
+ * TSL object that represents the dispersion of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialDispersion = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.DISPERSION );
+
+/**
+ * TSL object that represents the retroreflective strength of the current material.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialRetroreflectivity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.RETROREFLECTIVITY );
+
+/**
+ * TSL object that represents the light map of the current material.
+ * The value is composed via `lightMapIntensity` * `lightMap.rgb`.
+ *
+ * @tsl
+ * @type {Node<vec3>}
+ */
+const materialLightMap = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LIGHT_MAP );
+
+/**
+ * TSL object that represents the ambient occlusion map of the current material.
+ * The value is composed via `aoMap.r` - 1 * `aoMapIntensity` + 1.
+ *
+ * @tsl
+ * @type {Node<float>}
+ */
+const materialAO = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.AO );
+
+/**
+ * TSL object that represents the anisotropy vector of the current material.
+ *
+ * @tsl
+ * @type {Node<vec2>}
+ */
+const materialAnisotropyVector = /*@__PURE__*/ uniform( new Vector2() ).onReference( function ( frame ) {
+
+	return frame.material;
+
+} ).onRenderUpdate( function ( { material } ) {
+
+	this.value.set( material.anisotropy * Math.cos( material.anisotropyRotation ), material.anisotropy * Math.sin( material.anisotropyRotation ) );
+
+} );
+
+/**
+ * TSL object that represents the position in clip space after the model-view-projection transform of the current rendered object.
+ *
+ * @tsl
+ * @type {VaryingNode<vec4>}
+ */
+const modelViewProjection = /*@__PURE__*/ ( Fn( ( builder ) => {
+
+	return builder.context.setupModelViewProjection();
+
+}, 'vec4' ).once() )().toVarying( 'v_modelViewProjection' );
+
+/**
+ * EventNode is a node that executes a callback during specific update phases.
+ *
+ * @augments Node
+ */
+class EventNode extends Node {
+
+	static get type() {
+
+		return 'EventNode';
+
+	}
+
+	/**
+	 * Creates an EventNode.
+	 *
+	 * @param {string} eventType - The type of event
+	 * @param {Function} callback - The callback to execute on update.
+	 */
+	constructor( eventType, callback ) {
+
+		super( 'void' );
+
+		this.eventType = eventType;
+		this.callback = callback;
+
+		if ( eventType === EventNode.OBJECT ) {
+
+			this.updateType = NodeUpdateType.OBJECT;
+
+		} else if ( eventType === EventNode.MATERIAL ) {
+
+			this.updateType = NodeUpdateType.RENDER;
+
+		} else if ( eventType === EventNode.FRAME ) {
+
+			this.updateType = NodeUpdateType.FRAME;
+
+		} else if ( eventType === EventNode.AFTER_OBJECT ) {
+
+			this.updateAfterType = NodeUpdateType.OBJECT;
+
+		} else if ( eventType === EventNode.BEFORE_OBJECT ) {
+
+			this.updateBeforeType = NodeUpdateType.OBJECT;
+
+		} else if ( eventType === EventNode.BEFORE_MATERIAL ) {
+
+			this.updateBeforeType = NodeUpdateType.RENDER;
+
+		} else if ( eventType === EventNode.BEFORE_FRAME ) {
+
+			this.updateBeforeType = NodeUpdateType.FRAME;
+
+		}
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	setup( builder ) {
+
+		const { eventType, callback } = this;
+
+		if ( eventType === EventNode.BEFORE_RENDER_PIPELINE ) {
+
+			const callbacks = builder.context.onBeforePipelineCallbacks;
+
+			if ( callbacks ) {
+
+				callbacks.push( callback );
+
+			}
+
+		} else if ( eventType === EventNode.AFTER_RENDER_PIPELINE ) {
+
+			const callbacks = builder.context.onAfterPipelineCallbacks;
+
+			if ( callbacks ) {
+
+				callbacks.push( callback );
+
+			}
+
+		}
+
+		return super.setup( builder );
+
+	}
+
+	update( frame ) {
+
+		this.callback( frame );
+
+	}
+
+	updateBefore( frame ) {
+
+		this.callback( frame );
+
+	}
+
+	updateAfter( frame ) {
+
+		this.callback( frame );
+
+	}
+
+}
+
+EventNode.OBJECT = 'object';
+EventNode.MATERIAL = 'material';
+EventNode.FRAME = 'frame';
+EventNode.AFTER_OBJECT = 'afterObject';
+EventNode.BEFORE_OBJECT = 'beforeObject';
+EventNode.BEFORE_MATERIAL = 'beforeMaterial';
+EventNode.BEFORE_FRAME = 'beforeFrame';
+EventNode.BEFORE_RENDER_PIPELINE = 'beforeRenderPipeline';
+EventNode.AFTER_RENDER_PIPELINE = 'afterRenderPipeline';
+
+/**
+ * Helper to create an EventNode and add it to the stack.
+ *
+ * @param {string} type - The event type.
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const createEvent = ( type, callback ) => new EventNode( type, callback ).toStack();
+
+/**
+ * Creates an event that triggers a function every time an object (Mesh|Sprite) is rendered.
+ *
+ * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnObjectUpdate = ( callback ) => createEvent( EventNode.OBJECT, callback );
+
+/**
+ * Creates an event that triggers a function when the first object that uses the material is rendered.
+ *
+ * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnMaterialUpdate = ( callback ) => createEvent( EventNode.MATERIAL, callback );
+
+/**
+ * Creates an event that triggers a function every frame.
+ *
+ * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnFrameUpdate = ( callback ) => createEvent( EventNode.FRAME, callback );
+
+/**
+ * Creates an event that triggers a function every time an object (Mesh|Sprite) has been rendered.
+ *
+ * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnAfterObjectUpdate = ( callback ) => createEvent( EventNode.AFTER_OBJECT, callback );
+
+/**
+ * Creates an event that triggers a function before an object (Mesh|Sprite) is updated.
+ *
+ * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnBeforeObjectUpdate = ( callback ) => createEvent( EventNode.BEFORE_OBJECT, callback );
+
+/**
+ * Creates an event that triggers a function before the material is updated.
+ *
+ * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnBeforeMaterialUpdate = ( callback ) => createEvent( EventNode.BEFORE_MATERIAL, callback );
+
+/**
+ * Creates an event that triggers a function before every frame.
+ *
+ * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnBeforeFrameUpdate = ( callback ) => createEvent( EventNode.BEFORE_FRAME, callback );
+
+/**
+ * Creates an event that triggers a function before the render pipeline is rendered.
+ *
+ * The node must be part of a node chain that is used as the output of a `RenderPipeline`,
+ * otherwise the event is ignored.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnBeforeRenderPipeline = ( callback ) => createEvent( EventNode.BEFORE_RENDER_PIPELINE, callback );
+
+/**
+ * Creates an event that triggers a function after the render pipeline is rendered.
+ *
+ * The node must be part of a node chain that is used as the output of a `RenderPipeline`,
+ * otherwise the event is ignored.
+ *
+ * @param {Function} callback - The callback function.
+ * @returns {EventNode}
+ */
+const OnAfterRenderPipeline = ( callback ) => createEvent( EventNode.AFTER_RENDER_PIPELINE, callback );
+
+/**
+ * This class enables element access on instances of {@link StorageBufferNode}.
+ * In most cases, it is indirectly used when accessing elements with the
+ * {@link StorageBufferNode#element} method.
+ *
+ * ```js
+ * const position = positionStorage.element( instanceIndex );
+ * ```
+ *
+ * @augments ArrayElementNode
+ */
+class StorageArrayElementNode extends ArrayElementNode {
+
+	static get type() {
+
+		return 'StorageArrayElementNode';
+
+	}
+
+	/**
+	 * Constructs storage buffer element node.
+	 *
+	 * @param {StorageBufferNode} storageBufferNode - The storage buffer node.
+	 * @param {Node} indexNode - The index node that defines the element access.
+	 */
+	constructor( storageBufferNode, indexNode ) {
+
+		super( storageBufferNode, indexNode );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isStorageArrayElementNode = true;
+
+	}
+
+	/**
+	 * The storage buffer node.
+	 *
+	 * @param {Node} value
+	 * @type {StorageBufferNode}
+	 */
+	set storageBufferNode( value ) {
+
+		this.node = value;
+
+	}
+
+	get storageBufferNode() {
+
+		return this.node;
+
+	}
+
+	getMemberType( builder, name ) {
+
+		const structTypeNode = this.storageBufferNode.structTypeNode;
+
+		if ( structTypeNode ) {
+
+			return structTypeNode.getMemberType( builder, name );
+
+		}
+
+		return 'void';
+
+	}
+
+	setup( builder ) {
+
+		if ( builder.isAvailable( 'storageBuffer' ) === false ) {
+
+			if ( this.node.isPBO === true ) {
+
+				builder.setupPBO( this.node );
+
+			}
+
+		}
+
+		return super.setup( builder );
+
+	}
+
+	generate( builder, output ) {
+
+		let snippet;
+
+		const isAssignContext = builder.isContextAssign();
+
+		//
+
+		if ( builder.isAvailable( 'storageBuffer' ) === false ) {
+
+			if ( this.node.isPBO === true && isAssignContext !== true && ( this.node.value.isInstancedBufferAttribute || builder.shaderStage !== 'compute' ) ) {
+
+				snippet = builder.generatePBO( this );
+
+			} else {
+
+				snippet = this.node.build( builder );
+
+			}
+
+		} else {
+
+			snippet = super.generate( builder );
+
+		}
+
+		if ( isAssignContext !== true ) {
+
+			const type = this.getNodeType( builder );
+
+			snippet = builder.format( snippet, type, output );
+
+		}
+
+		return snippet;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a storage element node.
+ *
+ * @tsl
+ * @function
+ * @param {StorageBufferNode} storageBufferNode - The storage buffer node.
+ * @param {Node} indexNode - The index node that defines the element access.
+ * @returns {StorageArrayElementNode}
+ */
+const storageElement = /*@__PURE__*/ nodeProxy( StorageArrayElementNode ).setParameterLength( 2 );
+
+/**
+ * This node is used in context of compute shaders and allows to define a
+ * storage buffer for data. A typical workflow is to create instances of
+ * this node with the convenience functions `attributeArray()` or `instancedArray()`,
+ * setup up a compute shader that writes into the buffers and then convert
+ * the storage buffers to attribute nodes for rendering.
+ *
+ * ```js
+ * const positionBuffer = instancedArray( particleCount, 'vec3' ); // the storage buffer node
+ *
+ * const computeInit = Fn( () => { // the compute shader
+ *
+ * 	const position = positionBuffer.element( instanceIndex );
+ *
+ * 	// compute position data
+ *
+ * 	position.x = 1;
+ * 	position.y = 1;
+ * 	position.z = 1;
+ *
+ * } )().compute( particleCount );
+ *
+ * const particleMaterial = new THREE.SpriteNodeMaterial();
+ * particleMaterial.positionNode = positionBuffer.toAttribute();
+ *
+ * renderer.computeAsync( computeInit );
+ *
+ * ```
+ *
+ * @augments BufferNode
+ */
+class StorageBufferNode extends BufferNode {
+
+	static get type() {
+
+		return 'StorageBufferNode';
+
+	}
+
+	/**
+	 * Constructs a new storage buffer node.
+	 *
+	 * @param {StorageBufferAttribute|StorageInstancedBufferAttribute|BufferAttribute} value - The buffer data.
+	 * @param {?(string|Struct)} [bufferType=null] - The buffer type (e.g. `'vec3'`).
+	 */
+	constructor( value, bufferType = null ) {
+
+		let nodeType, structTypeNode = null;
+
+		if ( bufferType && bufferType.isStructTypeNode ) {
+
+			nodeType = 'struct';
+			structTypeNode = bufferType;
+
+		} else if ( bufferType === null && ( value.isStorageBufferAttribute || value.isStorageInstancedBufferAttribute ) ) {
+
+			nodeType = getTypeFromLength( value.itemSize );
+
+		} else {
+
+			nodeType = bufferType;
+
+		}
+
+		super( value, nodeType );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isStorageBufferNode = true;
+
+
+		/**
+		 * The buffer struct type.
+		 *
+		 * @type {?StructTypeNode}
+		 * @default null
+		 */
+		this.structTypeNode = structTypeNode;
+
+		/**
+		 * The access type of the texture node.
+		 *
+		 * @type {string}
+		 * @default 'readWrite'
+		 */
+		this.access = NodeAccess.READ_WRITE;
+
+		/**
+		 * Whether the node is atomic or not.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.isAtomic = false;
+
+		/**
+		 * Whether the node represents a PBO or not.
+		 * Only relevant for WebGL.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.isPBO = false;
+
+		/**
+		 * A reference to the internal buffer attribute node.
+		 *
+		 * @private
+		 * @type {?BufferAttributeNode}
+		 * @default null
+		 */
+		this._attribute = null;
+
+		/**
+		 * A reference to the internal varying node.
+		 *
+		 * @private
+		 * @type {?VaryingNode}
+		 * @default null
+		 */
+		this._varying = null;
+
+		/**
+		 * `StorageBufferNode` sets this property to `true` by default.
+		 *
+		 * @type {boolean}
+		 * @default true
+		 */
+		this.global = true;
+
+		if ( value.isStorageBufferAttribute !== true && value.isStorageInstancedBufferAttribute !== true ) {
+
+			// TODO: Improve it, possibly adding a new property to the BufferAttribute to identify it as a storage buffer read-only attribute in Renderer
+
+			if ( value.isInstancedBufferAttribute ) value.isStorageInstancedBufferAttribute = true;
+			else value.isStorageBufferAttribute = true;
+
+		}
+
+	}
+
+	/**
+	 * Overwrites the default implementation to return a fixed value `'indirectStorageBuffer'` or `'storageBuffer'`.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The input type.
+	 */
+	getInputType( /*builder*/ ) {
+
+		return this.value.isIndirectStorageBufferAttribute ? 'indirectStorageBuffer' : 'storageBuffer';
+
+	}
+
+	/**
+	 * Enables element access with the given index node.
+	 *
+	 * @param {IndexNode} indexNode - The index node.
+	 * @return {StorageArrayElementNode} A node representing the element access.
+	 */
+	element( indexNode ) {
+
+		return storageElement( this, indexNode );
+
+	}
+
+	/**
+	 * Defines whether this node is a PBO or not. Only relevant for WebGL.
+	 *
+	 * @param {boolean} value - The value so set.
+	 * @return {StorageBufferNode} A reference to this node.
+	 */
+	setPBO( value ) {
+
+		this.isPBO = value;
+
+		return this;
+
+	}
+
+	/**
+	 * Returns the `isPBO` value.
+	 *
+	 * @return {boolean} Whether the node represents a PBO or not.
+	 */
+	getPBO() {
+
+		return this.isPBO;
+
+	}
+
+	/**
+	 * Defines the node access.
+	 *
+	 * @param {string} value - The node access.
+	 * @return {StorageBufferNode} A reference to this node.
+	 */
+	setAccess( value ) {
+
+		this.access = value;
+
+		return this;
+
+	}
+
+	/**
+	 * Convenience method for configuring a read-only node access.
+	 *
+	 * @return {StorageBufferNode} A reference to this node.
+	 */
+	toReadOnly() {
+
+		return this.setAccess( NodeAccess.READ_ONLY );
+
+	}
+
+	/**
+	 * Defines whether the node is atomic or not.
+	 *
+	 * @param {boolean} value - The atomic flag.
+	 * @return {StorageBufferNode} A reference to this node.
+	 */
+	setAtomic( value ) {
+
+		this.isAtomic = value;
+
+		return this;
+
+	}
+
+	/**
+	 * Convenience method for making this node atomic.
+	 *
+	 * @return {StorageBufferNode} A reference to this node.
+	 */
+	toAtomic() {
+
+		return this.setAtomic( true );
+
+	}
+
+	/**
+	 * Returns attribute data for this storage buffer node.
+	 *
+	 * @return {{attribute: BufferAttributeNode, varying: VaryingNode}} The attribute data.
+	 */
+	getAttributeData() {
+
+		if ( this._attribute === null ) {
+
+			this._attribute = bufferAttribute( this.value );
+			this._varying = varying( this._attribute );
+
+		}
+
+		return {
+			attribute: this._attribute,
+			varying: this._varying
+		};
+
+	}
+
+	/**
+	 * This method is overwritten since the node type is inferred from the struct type if present.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The node type.
+	 */
+	generateNodeType( builder ) {
+
+		if ( this.structTypeNode !== null ) {
+
+			return this.structTypeNode.getNodeType( builder );
+
+		}
+
+		return super.generateNodeType( builder );
+
+	}
+
+	/**
+	 * Returns the type of a member of the struct.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {string} name - The name of the member.
+	 * @return {string} The type of the member.
+	 */
+	getMemberType( builder, name ) {
+
+		if ( this.structTypeNode !== null ) {
+
+			return this.structTypeNode.getMemberType( builder, name );
+
+		}
+
+		return 'void';
+
+	}
+
+	/**
+	 * Generates the code snippet of the storage buffer node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The generated code snippet.
+	 */
+	generate( builder ) {
+
+		if ( this.structTypeNode !== null ) this.structTypeNode.build( builder );
+
+		if ( builder.isAvailable( 'storageBuffer' ) || builder.isAvailable( 'indirectStorageBuffer' ) ) {
+
+			return super.generate( builder );
+
+		}
+
+		const { attribute, varying } = this.getAttributeData();
+
+		const output = varying.build( builder );
+
+		builder.registerTransform( output, attribute );
+
+		return builder.format( output, attribute.getNodeType( builder ), this.getNodeType( builder ) );
+
+	}
+
+}
+
+/**
+ * TSL function for creating a storage buffer node.
+ *
+ * @tsl
+ * @function
+ * @param {StorageBufferAttribute|StorageInstancedBufferAttribute|BufferAttribute} value - The buffer data.
+ * @param {?(string|Struct)} [type=null] - The buffer type (e.g. `'vec3'`).
+ * @returns {StorageBufferNode}
+ */
+const storage = ( value, type = null ) => new StorageBufferNode( value, type );
+
+const _columns = /*@__PURE__*/ new WeakMap();
+
+/**
+ * Returns a column of the given buffer attribute, like a column of the matrices of an
+ * instanced mesh. The column views the attribute itself, so both share the same GPU buffer.
+ *
+ * @private
+ * @param {BufferAttribute} attribute - The buffer attribute.
+ * @param {string} type - The type of the column (e.g. `'vec4'`).
+ * @param {number} offset - The offset of the column.
+ * @return {InterleavedBufferAttribute} The column.
+ */
+function getAttributeColumn( attribute, type, offset ) {
+
+	let columns = _columns.get( attribute );
+
+	if ( columns === undefined ) {
+
+		columns = [];
+
+		_columns.set( attribute, columns );
+
+	}
+
+	return columns[ offset ] || ( columns[ offset ] = new InterleavedBufferAttribute( attribute, getLengthFromType( type ), offset ) );
+
+}
+
+/**
+ * A buffer attribute node that binds the attribute of the rendered object
+ * referred to by a {@link ReferenceAttributeNode}.
+ *
+ * @private
+ * @augments BufferAttributeNode
+ */
+class ReferenceBufferAttributeNode extends BufferAttributeNode {
+
+	static get type() {
+
+		return 'ReferenceBufferAttributeNode';
+
+	}
+
+	/**
+	 * Constructs a new reference buffer attribute node.
+	 *
+	 * @param {ReferenceAttributeNode} referenceNode - The reference attribute node.
+	 * @param {string} bufferType - The buffer type (e.g. `'vec3'`).
+	 * @param {number} [bufferStride=0] - The buffer stride, when binding a column of the attribute.
+	 * @param {number} [bufferOffset=0] - The buffer offset, when binding a column of the attribute.
+	 */
+	constructor( referenceNode, bufferType, bufferStride = 0, bufferOffset = 0 ) {
+
+		super( null, bufferType, bufferStride, bufferOffset );
+
+		/**
+		 * The reference attribute node.
+		 *
+		 * @type {ReferenceAttributeNode}
+		 */
+		this.referenceNode = referenceNode;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isReferenceBufferAttributeNode = true;
+
+	}
+
+	/**
+	 * Overwritten since the node has no attribute data of its own.
+	 *
+	 * @return {string} The hash.
+	 */
+	getHash() {
+
+		return String( this.id );
+
+	}
+
+	/**
+	 * Returns the referred attribute of the given object, or its column.
+	 *
+	 * @param {Object3D} object - The rendered object.
+	 * @return {?(BufferAttribute|InterleavedBufferAttribute)} The buffer attribute.
+	 */
+	getObjectAttribute( object ) {
+
+		const attribute = this.referenceNode.getAttribute( object );
+
+		if ( ! attribute || this.bufferStride === 0 ) return attribute;
+
+		return getAttributeColumn( attribute, this.bufferType, this.bufferOffset );
+
+	}
+
+	/**
+	 * The attribute of the object the program is built for defines the layout.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	setup( builder ) {
+
+		this.attribute = this.getObjectAttribute( builder.object );
+
+	}
+
+}
+
+/**
+ * This node binds a buffer attribute that is a property of the rendered object, like the
+ * matrices of an instanced mesh. Unlike {@link BufferAttributeNode}, the attribute isn't part
+ * of the program: each object binds its own attribute, so objects can share a program.
+ * ```js
+ * const matrix = referenceAttribute( 'instanceMatrix', 'mat4' );
+ * const color = referenceAttribute( 'instanceColor' );
+ * ```
+ * Matrices are bound as columns. Storage buffer attributes are bound as storage buffers.
+ *
+ * @augments Node
+ */
+class ReferenceAttributeNode extends Node {
+
+	static get type() {
+
+		return 'ReferenceAttributeNode';
+
+	}
+
+	/**
+	 * Constructs a new reference attribute node.
+	 *
+	 * @param {string} property - The name of the property the node refers to.
+	 * @param {?string} [nodeType=null] - The node type. Inferred from the attribute if not set.
+	 * @param {?Object} [object=null] - The object the property belongs to. The rendered object if not set.
+	 */
+	constructor( property, nodeType = null, object = null ) {
+
+		super( nodeType );
+
+		/**
+		 * The name of the property the node refers to.
+		 *
+		 * @type {string}
+		 */
+		this.property = property;
+
+		/**
+		 * The property name might have dots so nested properties can be referred.
+		 * The hierarchy of the names is stored inside this array.
+		 *
+		 * @type {Array<string>}
+		 */
+		this.properties = property.split( '.' );
+
+		/**
+		 * The object the property belongs to. If `null`, the rendered object is used.
+		 *
+		 * @type {?Object}
+		 * @default null
+		 */
+		this.object = object;
+
+	}
+
+	/**
+	 * Returns the value of the referred property of the given object.
+	 *
+	 * @param {Object} object - The object.
+	 * @return {?(BufferAttribute|InterleavedBufferAttribute)} The value of the referred property.
+	 */
+	getValueFromReference( object ) {
+
+		let value = object;
+
+		for ( const property of this.properties ) {
+
+			if ( value === undefined || value === null ) break;
+
+			value = value[ property ];
+
+		}
+
+		return value;
+
+	}
+
+	/**
+	 * Returns the attribute the node binds when rendering the given object.
+	 *
+	 * @param {Object3D} object - The rendered object.
+	 * @return {?(BufferAttribute|InterleavedBufferAttribute)} The buffer attribute.
+	 */
+	getAttribute( object ) {
+
+		return this.getValueFromReference( this.object !== null ? this.object : object );
+
+	}
+
+	/**
+	 * Returns the node type, inferred from the attribute if not set.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The node type.
+	 */
+	generateNodeType( builder ) {
+
+		if ( this.nodeType !== null ) return this.nodeType;
+
+		const attribute = this.getAttribute( builder.object );
+
+		return attribute ? builder.getTypeFromAttribute( attribute ) : 'float';
+
+	}
+
+	/**
+	 * Sets up the attribute nodes.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node} The attribute node.
+	 */
+	setup( builder ) {
+
+		const attribute = this.getAttribute( builder.object );
+
+		if ( ! attribute ) throw new Error( `THREE.ReferenceAttributeNode: Attribute "${ this.property }" not found.` );
+
+		const type = this.getNodeType( builder );
+
+		if ( attribute.isStorageBufferAttribute === true || attribute.isStorageInstancedBufferAttribute === true ) {
+
+			const index = attribute.isStorageInstancedBufferAttribute === true ? instanceIndex : vertexIndex;
+
+			return storage( attribute, type ).onObjectUpdate( ( { object } ) => this.getAttribute( object ) ).element( index );
+
+		}
+
+		if ( type === 'mat4' ) {
+
+			return mat4( ...[ 0, 4, 8, 12 ].map( ( offset ) => new ReferenceBufferAttributeNode( this, 'vec4', 16, offset ) ) );
+
+		} else if ( type === 'mat3' ) {
+
+			return mat3( ...[ 0, 3, 6 ].map( ( offset ) => new ReferenceBufferAttributeNode( this, 'vec3', 9, offset ) ) );
+
+		}
+
+		return new ReferenceBufferAttributeNode( this, type );
+
+	}
+
+}
+
+/**
+ * TSL function for creating a reference attribute node.
+ *
+ * @tsl
+ * @function
+ * @param {string} name - The name of the property the node refers to.
+ * @param {?string} [type=null] - The node type. Inferred from the attribute if not set.
+ * @param {?Object} [object=null] - The object the property belongs to. The rendered object if not set.
+ * @returns {ReferenceAttributeNode}
+ */
+const referenceAttribute = ( name, type = null, object = null ) => new ReferenceAttributeNode( name, type, object );
+
+const _previousInstanceMatrices = /*@__PURE__*/ new WeakMap();
+const _previousMatrices = /*@__PURE__*/ new WeakMap();
+
+// The default limit of vertex buffers in WebGPU.
+const MAX_VERTEX_BUFFERS = 8;
+
+/**
+ * Creates the appropriate node for instanced matrix transformations.
+ * Depending on buffer limits and storage capability, returns either a storage, buffer, or instanced interleaved attribute node.
+ *
+ * @param {NodeBuilder} builder - The current node builder.
+ * @param {InstancedBufferAttribute|StorageInstancedBufferAttribute} instanceMatrix - The matrix buffer attribute.
+ * @returns {Node} The matrix node.
+ */
+function createInstanceMatrixNode( builder, instanceMatrix ) {
+
+	let instanceMatrixNode;
+	const matrixCount = Math.max( instanceMatrix.count, 1 );
+
+	const isStorageMatrix = instanceMatrix.isStorageInstancedBufferAttribute === true;
+
+	if ( isStorageMatrix ) {
+
+		instanceMatrixNode = storage( instanceMatrix, 'mat4' ).element( instanceIndex );
+
+	} else {
+
+		const uniformBufferSize = matrixCount * 16 * 4;
+
+		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
+
+			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
+
+		} else {
+
+			// the columns view the matrices, so both share the same GPU buffer which is freed via instanceMatrix.dispose()
+
+			const bufferFn = instanceMatrix.usage === DynamicDrawUsage ? instancedDynamicBufferAttribute : instancedBufferAttribute;
+
+			const instanceBuffers = [ 0, 4, 8, 12 ].map( ( offset ) => bufferFn( new InterleavedBufferAttribute( instanceMatrix, 4, offset ) ) );
+
+			instanceMatrixNode = mat4( ...instanceBuffers );
+
+		}
+
+	}
+
+	return instanceMatrixNode;
+
+}
+
+/**
+ * Retrieves or initializes the previous frame instance matrix node for motion vectors.
+ * Uses a WeakMap to cache previous frame instance matrices and their TSL nodes.
+ *
+ * @param {InstancedMesh} instancedMesh - The instanced mesh object.
+ * @param {InstancedBufferAttribute|StorageInstancedBufferAttribute} instanceMatrix - The current matrix buffer attribute.
+ * @param {NodeBuilder} builder - The current node builder.
+ * @returns {Node} The previous frame instance matrix node.
+ */
+function getPreviousInstance( instancedMesh, instanceMatrix, builder ) {
+
+	let data = _previousInstanceMatrices.get( instancedMesh );
+
+	if ( data === undefined ) {
+
+		const previousInstanceMatrix = instanceMatrix.clone();
+
+		data = {
+			previousInstanceMatrix,
+			node: createInstanceMatrixNode( builder, previousInstanceMatrix )
+		};
+
+		_previousInstanceMatrices.set( instancedMesh, data );
+
+		instancedMesh.addEventListener( 'dispose', onPreviousInstanceDispose );
+
+	}
+
+	return data.node;
+
+}
+
+/**
+ * Frees the GPU buffer of the previous frame instance matrices when the mesh is disposed.
+ * The matrices are kept since the node refers to them, rendering the mesh again re-creates the buffer.
+ *
+ * @param {Object} event - The dispose event.
+ */
+function onPreviousInstanceDispose( { target: object } ) {
+
+	_previousInstanceMatrices.get( object ).previousInstanceMatrix.dispose();
+
+}
+
+/**
+ * Returns the instance matrices of the previous frame of the given mesh, for motion vectors.
+ *
+ * @param {InstancedMesh} object - The instanced mesh.
+ * @returns {InstancedBufferAttribute} The matrices of the previous frame.
+ */
+function getPreviousMatrix( object ) {
+
+	const matrices = object.instanceMatrix;
+
+	let previous = _previousMatrices.get( object );
+
+	if ( previous === undefined || previous.count !== matrices.count ) {
+
+		if ( previous === undefined ) {
+
+			object.addEventListener( 'dispose', onPreviousMatrixDispose );
+
+		} else {
+
+			previous.dispose();
+
+		}
+
+		previous = matrices.clone();
+
+		_previousMatrices.set( object, previous );
+
+	}
+
+	return previous;
+
+}
+
+/**
+ * Disposes the instance matrices of the previous frame when the mesh is disposed.
+ *
+ * @param {Object} event - The dispose event.
+ */
+function onPreviousMatrixDispose( { target: object } ) {
+
+	object.removeEventListener( 'dispose', onPreviousMatrixDispose );
+
+	_previousMatrices.get( object ).dispose();
+	_previousMatrices.delete( object );
+
+}
+
+/**
+ * Binds the instance matrices of the previous frame of the rendered mesh.
+ *
+ * @private
+ * @augments ReferenceAttributeNode
+ */
+class PreviousInstanceMatrixNode extends ReferenceAttributeNode {
+
+	static get type() {
+
+		return 'PreviousInstanceMatrixNode';
+
+	}
+
+	/**
+	 * Constructs a new previous instance matrix node.
+	 */
+	constructor() {
+
+		super( 'previousInstanceMatrix', 'mat4' );
+
+	}
+
+	/**
+	 * Returns the instance matrices of the previous frame of the given mesh.
+	 *
+	 * @param {InstancedMesh} object - The instanced mesh.
+	 * @return {InstancedBufferAttribute} The matrices of the previous frame.
+	 */
+	getValueFromReference( object ) {
+
+		return getPreviousMatrix( object );
+
+	}
+
+}
+
+/**
+ * Returns `true` if the build can bind the instance data of the rendered mesh, so it can
+ * be shared between instanced meshes.
+ *
+ * @param {InstancedMesh} object - The instanced mesh.
+ * @param {NodeBuilder} builder - The current node builder.
+ * @returns {boolean} Whether the build can bind the instance data of the rendered mesh.
+ */
+function canReferenceInstanceData( object, builder ) {
+
+	// only render objects bind attributes per object
+
+	if ( builder.renderer.isRenderer !== true ) return false;
+
+	// the instance data take up to three vertex buffers next to the ones of the geometry
+
+	const instanceBuffers = 1 + ( object.instanceColor !== null ? 1 : 0 ) + ( builder.needsPreviousData() ? 1 : 0 );
+
+	return Object.keys( object.geometry.attributes ).length + instanceBuffers <= MAX_VERTEX_BUFFERS;
+
+}
+
+/**
+ * Transforms the position, the previous position and the normal with the given instance matrices.
+ *
+ * @param {NodeBuilder} builder - The current node builder.
+ * @param {Node<mat4>} instanceMatrixNode - The instance matrix.
+ * @param {?Node<mat4>} previousMatrixNode - The instance matrix of the previous frame, if motion vectors are needed.
+ */
+function transformInstance( builder, instanceMatrixNode, previousMatrixNode ) {
+
+	// POSITION
+
+	const instancePosition = instanceMatrixNode.mul( positionLocal ).xyz;
+	positionLocal.assign( instancePosition );
+
+	if ( previousMatrixNode !== null ) {
+
+		positionPrevious.assign( previousMatrixNode.mul( positionPrevious ).xyz );
+
+	}
+
+	// NORMAL
+
+	if ( builder.hasGeometryAttribute( 'normal' ) ) {
+
+		const instanceNormal = transformNormal( normalLocal, instanceMatrixNode );
+		normalLocal.assign( instanceNormal );
+
+	}
+
+}
+
+/**
+ * TSL object representing a varying property for the instanced color vector.
+ *
+ * @type {VaryingNode<vec3>}
+ */
+const instanceColor = /*@__PURE__*/ varyingProperty( 'vec3', 'vInstanceColor' );
+
+/**
+ * TSL function representing the standard instancing vertex shader setup.
+ * Transforms positionLocal and normalLocal, and assigns varying color in-place.
+ *
+ * @tsl
+ * @function
+ * @param {InstancedBufferAttribute|StorageInstancedBufferAttribute} matrices - The instanced transformation matrices.
+ * @param {?InstancedBufferAttribute|StorageInstancedBufferAttribute} [colors=null] - The optional instanced colors.
+ */
+const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+
+	const isStorageColor = colors && colors.isStorageInstancedBufferAttribute === true;
+
+	const instanceMatrixNode = createInstanceMatrixNode( builder, matrices );
+
+	let instanceColorNode = null;
+
+	if ( colors ) {
+
+		if ( isStorageColor ) {
+
+			instanceColorNode = storage( colors, 'vec3' ).element( instanceIndex );
+
+		} else {
+
+			// bound directly, so the GPU buffer is freed via instanceColor.dispose()
+
+			const bufferFn = colors.usage === DynamicDrawUsage ? instancedDynamicBufferAttribute : instancedBufferAttribute;
+
+			instanceColorNode = vec3( bufferFn( colors ) );
+
+		}
+
+	}
+
+	let previousInstanceMatrixNode = null;
+
+	if ( builder.needsPreviousData() ) {
+
+		const instancedMesh = builder.object;
+
+		OnAfterObjectUpdate( ( { object } ) => {
+
+			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
+
+			previousInstanceMatrix.array.set( matrices.array );
+			previousInstanceMatrix.version = matrices.version;
+
+		} );
+
+		previousInstanceMatrixNode = getPreviousInstance( instancedMesh, matrices, builder );
+
+	}
+
+	transformInstance( builder, instanceMatrixNode, previousInstanceMatrixNode );
+
+	// COLOR
+
+	if ( instanceColorNode !== null ) {
+
+		instanceColor.assign( instanceColorNode );
+
+	}
+
+}, 'void' );
+
+/**
+ * TSL wrapper for applying instanced mesh rendering setup.
+ *
+ * The instance data of the rendered mesh are bound per object via {@link ReferenceAttributeNode},
+ * so instanced meshes share builds.
+ *
+ * @tsl
+ * @function
+ * @param {InstancedMesh} instancedMesh - The instanced mesh.
+ */
+const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) => {
+
+	if ( canReferenceInstanceData( instancedMesh, builder ) ) {
+
+		let previousInstanceMatrixNode = null;
+
+		if ( builder.needsPreviousData() ) {
+
+			OnAfterObjectUpdate( ( { object } ) => {
+
+				const previous = getPreviousMatrix( object );
+
+				previous.array.set( object.instanceMatrix.array );
+				previous.version = object.instanceMatrix.version;
+
+			} );
+
+			previousInstanceMatrixNode = new PreviousInstanceMatrixNode();
+
+		}
+
+		transformInstance( builder, referenceAttribute( 'instanceMatrix', 'mat4' ), previousInstanceMatrixNode );
+
+		if ( instancedMesh.instanceColor !== null ) {
+
+			instanceColor.assign( referenceAttribute( 'instanceColor', 'vec3' ) );
+
+		}
+
+	} else {
+
+		builder.objectSpecific = true;
+
+		instance( instancedMesh.instanceMatrix, instancedMesh.instanceColor );
+
+	}
+
+}, 'void' );
+
+/**
+ * TSL function that retrieves the batching color for a given instance ID from a colors texture.
+ *
+ * @param {Node<texture>} colorsTexture - The colors texture.
+ * @param {Node<int>} id - The instance or batch ID.
+ * @returns {Node<vec4>} The retrieved color.
+ */
+const getBatchingColor = /*@__PURE__*/ Fn( ( [ colorsTexture, id ] ) => {
+
+	const size = int( textureSize( textureLoad( colorsTexture ), 0 ).x ).toConst();
+	const j = int( id );
+	const x = j.mod( size ).toConst();
+	const y = j.div( size ).toConst();
+	return textureLoad( colorsTexture, ivec2( x, y ) );
+
+} );
+
+/**
+ * TSL function that retrieves the indirect index for a given batch ID.
+ *
+ * @param {BatchedMesh} batchMesh - The batched mesh.
+ * @param {Node<int>} id - The draw or instance ID.
+ * @returns {Node<uint>} The indirect index.
+ */
+const getIndirectIndex = /*@__PURE__*/ Fn( ( [ indirectTexture, id ] ) => {
+
+	const size = int( textureSize( textureLoad( indirectTexture ), 0 ).x ).toConst();
+	const x = int( id ).mod( size ).toConst();
+	const y = int( id ).div( size ).toConst();
+	return textureLoad( indirectTexture, ivec2( x, y ) ).x;
+
+} );
+
+/**
+ * Creates the node that reads a batching matrix from the given matrices texture.
+ *
+ * @param {Texture} matricesTexture - The matrices texture.
+ * @param {Node<uint>} id - The indirect instance ID.
+ * @returns {Node<mat4>} The matrix node.
+ */
+function createBatchingMatrixNode( matricesTexture, id ) {
+
+	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
+	const j = float( id ).mul( 4 ).toInt().toConst();
+
+	const x = j.mod( size ).toConst();
+	const y = j.div( size ).toConst();
+
+	return mat4(
+		textureLoad( matricesTexture, ivec2( x, y ) ),
+		textureLoad( matricesTexture, ivec2( x.add( 1 ), y ) ),
+		textureLoad( matricesTexture, ivec2( x.add( 2 ), y ) ),
+		textureLoad( matricesTexture, ivec2( x.add( 3 ), y ) )
+	);
+
+}
+
+/**
+ * Returns the batching matrices texture of the previous frame for motion vectors.
+ * It is created on first use and again after the batched mesh released it.
+ *
+ * @param {BatchedMesh} batchMesh - The batched mesh.
+ * @returns {DataTexture} The previous frame matrices texture.
+ */
+function getPreviousMatricesTexture( batchMesh ) {
+
+	let previousMatricesTexture = batchMesh._previousMatricesTexture;
+
+	if ( previousMatricesTexture === null ) {
+
+		const { image, format, type, version } = batchMesh._matricesTexture;
+
+		previousMatricesTexture = new DataTexture( image.data.slice(), image.width, image.height, format, type );
+		previousMatricesTexture.version = version;
+
+		batchMesh._previousMatricesTexture = previousMatricesTexture;
+
+	}
+
+	return previousMatricesTexture;
+
+}
+
+/**
+ * TSL object representing a varying property for the batching color vector.
+ *
+ * @type {VaryingNode<vec4>}
+ */
+const batchColor = /*@__PURE__*/ varyingProperty( 'vec4', 'vBatchColor' );
+
+/**
+ * TSL object representing a varying property for the batch indirect index (instance ID).
+ *
+ * @type {VaryingNode<uint>}
+ */
+const batchIndirectIndex = /*@__PURE__*/ varyingProperty( 'uint', 'vBatchIndirectId' );
+
+/**
+ * TSL function representing the vertex shader batching setup.
+ * Applies the batch transformation matrix to positionLocal, normalLocal, and tangentLocal.
+ * Also assigns the batch color if a color texture is present.
+ *
+ * @tsl
+ * @function
+ * @param {BatchedMesh} batchMesh - The batched mesh.
+ */
+const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+
+	const batchingIdNode = builder.getDrawIndex() === null ? instanceIndex : drawIndex;
+
+	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
+
+	batchIndirectIndex.assign( indirectId );
+
+	const batchingMatrix = createBatchingMatrixNode( batchMesh._matricesTexture, indirectId );
+
+	const colorsTexture = batchMesh._colorsTexture;
+
+	if ( colorsTexture !== null ) {
+
+		const color = getBatchingColor( colorsTexture, indirectId );
+
+		batchColor.assign( color );
+
+	}
+
+	const bm = mat3( batchingMatrix );
+
+	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
+
+	if ( builder.needsPreviousData() ) {
+
+		OnAfterObjectUpdate( ( { object } ) => {
+
+			const previousMatricesTexture = getPreviousMatricesTexture( object );
+			const matricesTexture = object._matricesTexture;
+
+			if ( previousMatricesTexture.version !== matricesTexture.version ) {
+
+				previousMatricesTexture.image.data.set( matricesTexture.image.data );
+				previousMatricesTexture.version = matricesTexture.version;
+
+			}
+
+		} );
+
+		const previousBatchingMatrixNode = createBatchingMatrixNode( getPreviousMatricesTexture( batchMesh ), indirectId );
+		positionPrevious.assign( previousBatchingMatrixNode.mul( positionPrevious ).xyz );
+
+	}
+
+	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
+
+	const batchingNormal = bm.mul( transformedNormal ).xyz;
+
+	normalLocal.assign( batchingNormal );
+
+	if ( builder.hasGeometryAttribute( 'tangent' ) ) {
+
+		tangentLocal.mulAssign( bm );
+
+	}
+
+	const drawFormat = builder.renderer.backend.isWebGPUBackend === true ? 'merged' : 'multiDraw';
+
+	OnObjectUpdate( ( { object, camera, material } ) => {
+
+		object._updateDrawParameters( camera, object.geometry, material, drawFormat );
+
+	} );
+
+}, 'void' );
+
+const _skeletonsUpdated = /*@__PURE__*/ new WeakMap();
+
+/**
+ * Creates an accessor for bone matrices stored in a bone texture.
+ *
+ * @param {TextureNode} boneTexture - The bone texture node.
+ * @returns {Object} An accessor with the same `element()` interface as a buffer node.
+ */
+function getBoneTextureMatrices( boneTexture ) {
+
+	return {
+		element: ( i ) => {
+
+			const size = int( textureSize( boneTexture ).x ).toConst();
+			const j = int( i ).mul( 4 ).toConst();
+			const y = j.div( size ).toConst();
+			const x = j.sub( y.mul( size ) ).toConst();
+
+			return mat4(
+				boneTexture.load( ivec2( x, y ) ),
+				boneTexture.load( ivec2( x.add( 1 ), y ) ),
+				boneTexture.load( ivec2( x.add( 2 ), y ) ),
+				boneTexture.load( ivec2( x.add( 3 ), y ) )
+			);
+
+		}
+	};
+
+}
+
+/**
+ * Creates the bone matrices node. Skeletons that fit within the uniform buffer limit
+ * use a uniform buffer, larger skeletons fall back to a bone texture.
+ *
+ * @param {NodeBuilder} builder - The current node builder.
+ * @param {Skeleton} skeleton - The skeleton.
+ * @returns {Object} The bone matrices node.
+ */
+function getBoneMatricesNode( builder, skeleton ) {
+
+	let node;
+
+	const uniformBufferSize = skeleton.bones.length * 16 * 4;
+
+	if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
+
+		node = referenceBuffer( 'skeleton.boneMatrices', 'mat4', skeleton.bones.length );
+
+	} else {
+
+		if ( skeleton.boneTexture === null ) skeleton.computeBoneTexture();
+
+		const boneTexture = texture( skeleton.boneTexture );
+
+		OnObjectUpdate( ( { object } ) => {
+
+			const skeleton = object.skeleton;
+
+			if ( skeleton.boneTexture === null ) skeleton.computeBoneTexture();
+
+			boneTexture.value = skeleton.boneTexture;
+
+		} );
+
+		node = getBoneTextureMatrices( boneTexture );
+
+	}
+
+	return node;
+
+}
+
+/**
+ * Computes the skinned position by applying bone matrices based on weights.
+ *
+ * @param {Node} boneMatrices - The bone matrices buffer or storage node.
+ * @param {Node<vec3>} position - The vertex position to transform.
+ * @param {Node<mat4>} bindMatrix - The bind matrix node.
+ * @param {Node<mat4>} bindMatrixInverse - The inverse bind matrix node.
+ * @param {Node<uvec4>} skinIndex - The skin index attribute.
+ * @param {Node<vec4>} skinWeight - The skin weight attribute.
+ * @returns {Node<vec3>} The skinned position.
+ */
+function getSkinnedPosition( boneMatrices, position, bindMatrix, bindMatrixInverse, skinIndex, skinWeight ) {
+
+	const boneMatX = boneMatrices.element( skinIndex.x );
+	const boneMatY = boneMatrices.element( skinIndex.y );
+	const boneMatZ = boneMatrices.element( skinIndex.z );
+	const boneMatW = boneMatrices.element( skinIndex.w );
+
+	// POSITION
+
+	const skinVertex = bindMatrix.mul( position );
+
+	const skinned = add(
+		boneMatX.mul( skinWeight.x ).mul( skinVertex ),
+		boneMatY.mul( skinWeight.y ).mul( skinVertex ),
+		boneMatZ.mul( skinWeight.z ).mul( skinVertex ),
+		boneMatW.mul( skinWeight.w ).mul( skinVertex )
+	);
+
+	return bindMatrixInverse.mul( skinned ).xyz;
+
+}
+
+/**
+ * Computes the skinned normal and tangent vectors by applying bone matrices based on weights.
+ *
+ * @param {Node} boneMatrices - The bone matrices buffer or storage node.
+ * @param {Node<vec3>} normal - The normal vector in local space.
+ * @param {Node<vec3>} tangent - The tangent vector in local space.
+ * @param {Node<mat4>} bindMatrix - The bind matrix node.
+ * @param {Node<mat4>} bindMatrixInverse - The inverse bind matrix node.
+ * @param {Node<uvec4>} skinIndex - The skin index attribute.
+ * @param {Node<vec4>} skinWeight - The skin weight attribute.
+ * @returns {{skinNormal: Node<vec3>, skinTangent: Node<vec3>}} The skinned normal and tangent.
+ */
+function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix, bindMatrixInverse, skinIndex, skinWeight ) {
+
+	const boneMatX = boneMatrices.element( skinIndex.x );
+	const boneMatY = boneMatrices.element( skinIndex.y );
+	const boneMatZ = boneMatrices.element( skinIndex.z );
+	const boneMatW = boneMatrices.element( skinIndex.w );
+
+	// NORMAL and TANGENT
+
+	let skinMatrix = add(
+		skinWeight.x.mul( boneMatX ),
+		skinWeight.y.mul( boneMatY ),
+		skinWeight.z.mul( boneMatZ ),
+		skinWeight.w.mul( boneMatW )
+	);
+
+	skinMatrix = bindMatrixInverse.mul( skinMatrix ).mul( bindMatrix );
+
+	const skinMatrix3 = mat3( skinMatrix );
+
+	const skinNormal = skinMatrix3.mul( normal );
+	const skinTangent = skinMatrix3.mul( tangent );
+
+	return { skinNormal, skinTangent };
+
+}
+
+/**
+ * Creates the bone data of the previous frame if they do not exist yet.
+ *
+ * @param {Skeleton} skeleton - The skeleton.
+ */
+function setupPreviousBoneData( skeleton ) {
+
+	if ( skeleton.previousBoneMatrices === null ) {
+
+		skeleton.update();
+
+		skeleton.previousBoneMatrices = new Float32Array( skeleton.boneMatrices );
+
+	}
+
+	if ( skeleton.previousBoneTexture === null && skeleton.boneTexture !== null ) {
+
+		const { width, height } = skeleton.boneTexture.image;
+
+		skeleton.previousBoneTexture = new DataTexture( skeleton.previousBoneMatrices, width, height, RGBAFormat, FloatType );
+		skeleton.previousBoneTexture.needsUpdate = true;
+
+	}
+
+}
+
+/**
+ * Creates the bone matrices node of the previous frame.
+ *
+ * @param {NodeBuilder} builder - The current node builder.
+ * @param {Skeleton} skeleton - The skeleton.
+ * @returns {Object} The previous bone matrices node.
+ */
+function getPreviousBoneMatricesNode( builder, skeleton ) {
+
+	let node;
+
+	setupPreviousBoneData( skeleton );
+
+	const uniformBufferSize = skeleton.bones.length * 16 * 4;
+
+	if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
+
+		node = referenceBuffer( 'skeleton.previousBoneMatrices', 'mat4', skeleton.bones.length );
+
+	} else {
+
+		const previousBoneTexture = texture( skeleton.previousBoneTexture );
+
+		OnObjectUpdate( ( { object } ) => {
+
+			previousBoneTexture.value = object.skeleton.previousBoneTexture;
+
+		} );
+
+		node = getBoneTextureMatrices( previousBoneTexture );
+
+	}
+
+	return node;
+
+}
+
+/**
+ * TSL function representing the standard skeletal animation vertex shader setup.
+ * Transforms positionLocal, normalLocal, and tangentLocal in-place.
+ *
+ * @tsl
+ * @function
+ * @param {SkinnedMesh} skinnedMesh - The skinned mesh.
+ */
+const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+
+	const skinIndexNode = attribute( 'skinIndex', 'uvec4' );
+	const skinWeightNode = attribute( 'skinWeight', 'vec4' );
+	const bindMatrixNode = reference( 'bindMatrix', 'mat4' );
+	const bindMatrixInverseNode = reference( 'bindMatrixInverse', 'mat4' );
+	const boneMatricesNode = getBoneMatricesNode( builder, skinnedMesh.skeleton );
+	const needsPreviousData = builder.needsPreviousData();
+
+	OnObjectUpdate( ( { object, frameId } ) => {
+
+		const skeleton = object.skeleton;
+
+		if ( needsPreviousData ) setupPreviousBoneData( skeleton );
+
+		if ( _skeletonsUpdated.get( skeleton ) !== frameId ) {
+
+			_skeletonsUpdated.set( skeleton, frameId );
+
+			if ( skeleton.previousBoneMatrices !== null ) {
+
+				skeleton.previousBoneMatrices.set( skeleton.boneMatrices );
+
+				if ( skeleton.previousBoneTexture !== null ) {
+
+					skeleton.previousBoneTexture.needsUpdate = true;
+
+				}
+
+			}
+
+			skeleton.update();
+
+		}
+
+	} );
+
+	if ( needsPreviousData ) {
+
+		const previousBoneMatricesNode = getPreviousBoneMatricesNode( builder, skinnedMesh.skeleton );
+		const previousSkinnedPosition = getSkinnedPosition( previousBoneMatricesNode, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
+
+		positionPrevious.assign( previousSkinnedPosition );
+
+	}
+
+	const skinPosition = getSkinnedPosition( boneMatricesNode, positionLocal, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
+	positionLocal.assign( skinPosition );
+
+	if ( builder.hasGeometryAttribute( 'normal' ) ) {
+
+		const { skinNormal, skinTangent } = getSkinnedNormalAndTangent( boneMatricesNode, normalLocal, tangentLocal, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
+
+		normalLocal.assign( skinNormal );
+
+		if ( builder.hasGeometryAttribute( 'tangent' ) ) {
+
+			tangentLocal.assign( skinTangent );
+
+		}
+
+	}
+
+}, 'void' );
+
+/**
+ * TSL function that computes skeletal animation for custom compute passes.
+ *
+ * @tsl
+ * @function
+ * @param {SkinnedMesh} skinnedMesh - The skinned mesh.
+ * @param {Node<vec3>} [toPosition=null] - The target position node to assign.
+ * @returns {Node<vec3>} The computed skinned position node.
+ */
+const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ], builder ) => {
+
+	const positionNode = storage( new InstancedBufferAttribute( skinnedMesh.geometry.getAttribute( 'position' ).array, 3 ), 'vec3' ).setPBO( true ).toReadOnly().element( instanceIndex ).toVar();
+	const skinIndexNode = storage( new InstancedBufferAttribute( new Uint32Array( skinnedMesh.geometry.getAttribute( 'skinIndex' ).array ), 4 ), 'uvec4' ).setPBO( true ).toReadOnly().element( instanceIndex ).toVar();
+	const skinWeightNode = storage( new InstancedBufferAttribute( skinnedMesh.geometry.getAttribute( 'skinWeight' ).array, 4 ), 'vec4' ).setPBO( true ).toReadOnly().element( instanceIndex ).toVar();
+	const bindMatrixNode = uniform( skinnedMesh.bindMatrix, 'mat4' );
+	const bindMatrixInverseNode = uniform( skinnedMesh.bindMatrixInverse, 'mat4' );
+	const boneMatricesNode = buffer( skinnedMesh.skeleton.boneMatrices, 'mat4', skinnedMesh.skeleton.bones.length );
+
+	const skeleton = skinnedMesh.skeleton;
+
+	OnObjectUpdate( ( { frameId } ) => {
+
+		if ( _skeletonsUpdated.get( skeleton ) !== frameId ) {
+
+			_skeletonsUpdated.set( skeleton, frameId );
+
+			if ( skeleton.previousBoneMatrices !== null ) {
+
+				skeleton.previousBoneMatrices.set( skeleton.boneMatrices );
+
+				if ( skeleton.previousBoneTexture !== null ) {
+
+					skeleton.previousBoneTexture.needsUpdate = true;
+
+				}
+
+			}
+
+			skeleton.update();
+
+		}
+
+	} );
+
+	if ( builder.needsPreviousData() ) {
+
+		setupPreviousBoneData( skeleton );
+
+		const previousBoneMatricesNode = buffer( skeleton.previousBoneMatrices, 'mat4', skeleton.bones.length );
+		const previousSkinnedPosition = getSkinnedPosition( previousBoneMatricesNode, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
+
+		positionPrevious.assign( previousSkinnedPosition );
+
+	}
+
+	const skinPosition = getSkinnedPosition( boneMatricesNode, positionNode, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
+
+	if ( toPosition !== null ) {
+
+		toPosition.assign( skinPosition );
+
+	}
+
+	if ( builder.hasGeometryAttribute( 'normal' ) ) {
+
+		const { skinNormal, skinTangent } = getSkinnedNormalAndTangent( boneMatricesNode, normalLocal, tangentLocal, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
+
+		normalLocal.assign( skinNormal );
+
+		if ( builder.hasGeometryAttribute( 'tangent' ) ) {
+
+			tangentLocal.assign( skinTangent );
+
+		}
+
+	}
+
+	return skinPosition;
+
+} );
+
+/**
+ * This module offers a variety of ways to implement loops in TSL. In it's basic form it's:
+ * ```js
+ * Loop( count, ( { i } ) => {
+ *
+ * } );
+ * ```
+ * However, it is also possible to define a start and end ranges, data types and loop conditions:
+ * ```js
+ * Loop( { start: int( 0 ), end: int( 10 ), type: 'int', condition: '<' }, ( { i } ) => {
+ *
+ * } );
+ *```
+ * Nested loops can be defined in a compacted form:
+ * ```js
+ * Loop( 10, 5, ( { i, j } ) => {
+ *
+ * } );
+ * ```
+ * Loops that should run backwards can be defined like so:
+ * ```js
+ * Loop( { start: 10 }, () => {} );
+ * ```
+ * It is possible to execute with boolean values, similar to the `while` syntax.
+ * ```js
+ * const value = float( 0 ).toVar();
+ *
+ * Loop( value.lessThan( 10 ), () => {
+ *
+ * 	value.addAssign( 1 );
+ *
+ * } );
+ * ```
+ * The module also provides `Break()` and `Continue()` TSL expressions for loop control.
+ * @augments Node
+ */
+class LoopNode extends Node {
+
+	static get type() {
+
+		return 'LoopNode';
+
+	}
+
+	/**
+	 * Constructs a new loop node.
+	 *
+	 * @param {Array<LoopNode~Params|loopBodyCallback>} params - Any number of loop parameters followed by the loop body.
+	 */
+	constructor( params = [] ) {
+
+		super( 'void' );
+
+		this.params = params;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	/**
+	 * Returns a loop variable name based on an index. The pattern is
+	 * `0` = `i`, `1`= `j`, `2`= `k` and so on.
+	 *
+	 * @param {number} index - The index.
+	 * @return {string} The loop variable name.
+	 */
+	getVarName( index ) {
+
+		return String.fromCharCode( 'i'.charCodeAt( 0 ) + index );
+
+	}
+
+	/**
+	 * Returns properties about this node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Object} The node properties.
+	 */
+	getProperties( builder ) {
+
+		const properties = builder.getNodeProperties( this );
+
+		if ( properties.stackNode !== undefined ) return properties;
+
+		//
+
+		const inputs = {};
+		const params = this._getInternalParams();
+
+		for ( let i = 0, l = params.length - 1; i < l; i ++ ) {
+
+			const param = params[ i ];
+
+			const name = ( param.isNode !== true && param.name ) || this.getVarName( i );
+			const type = ( param.isNode !== true && param.type ) || 'int';
+
+			inputs[ name ] = expression( name, type );
+
+		}
+
+		const stack = builder.addStack();
+
+		const fnCall = params[ params.length - 1 ]( inputs );
+
+		properties.returnsNode = fnCall.context( { nodeLoop: this, nodeBlock: builder.createBlock() } );
+		properties.stackNode = stack;
+
+		const baseParam = params[ 0 ];
+
+		if ( baseParam.isNode !== true && typeof baseParam.update === 'function' ) {
+
+			const fnUpdateCall = Fn( baseParam.update )( inputs );
+
+			properties.updateNode = fnUpdateCall.context( { nodeLoop: this } );
+
+		}
+
+		builder.removeStack();
+
+		return properties;
+
+	}
+
+	_getInternalParams() {
+
+		const params = this.params;
+
+		if ( typeof params[ 0 ] === 'function' ) {
+
+			return [ bool( true ), params[ 0 ] ];
+
+		}
+
+		return params;
+
+	}
+
+	setup( builder ) {
+
+		// setup properties
+
+		this.getProperties( builder );
+
+	}
+
+	generate( builder ) {
+
+		const properties = this.getProperties( builder );
+
+		const params = this._getInternalParams();
+		const stackNode = properties.stackNode;
+
+		for ( let i = 0, l = params.length - 1; i < l; i ++ ) {
+
+			const param = params[ i ];
+
+			let isWhile = false, start = null, end = null, name = null, type = null, condition = null, update = null;
+
+			if ( param.isNode ) {
+
+				if ( param.getNodeType( builder ) === 'bool' ) {
+
+					isWhile = true;
+					type = 'bool';
+					end = param.build( builder, type );
+
+				} else {
+
+					type = 'int';
+					name = this.getVarName( i );
+					start = '0';
+					end = param.build( builder, type );
+					condition = '<';
+
+				}
+
+			} else {
+
+				type = param.type || 'int';
+				name = param.name || this.getVarName( i );
+				start = param.start;
+				end = param.end;
+				condition = param.condition;
+				update = param.update;
+
+				if ( typeof start === 'number' ) start = builder.generateConst( type, start );
+				else if ( start && start.isNode ) start = start.build( builder, type );
+
+				if ( typeof end === 'number' ) end = builder.generateConst( type, end );
+				else if ( end && end.isNode ) end = end.build( builder, type );
+
+				if ( start !== undefined && end === undefined ) {
+
+					start = start + ' - 1';
+					end = '0';
+					condition = '>=';
+
+				} else if ( end !== undefined && start === undefined ) {
+
+					start = '0';
+					condition = '<';
+
+				}
+
+				if ( condition === undefined ) {
+
+					if ( Number( start ) > Number( end ) ) {
+
+						condition = '>=';
+
+					} else {
+
+						condition = '<';
+
+					}
+
+				}
+
+			}
+
+			let loopSnippet;
+
+			if ( isWhile ) {
+
+				loopSnippet = `while ( ${ end } )`;
+
+			} else {
+
+				const internalParam = { start, end};
+
+				//
+
+				const startSnippet = internalParam.start;
+				const endSnippet = internalParam.end;
+
+				let updateSnippet;
+
+				const deltaOperator = () => condition.includes( '<' ) ? '+=' : '-=';
+
+				if ( update !== undefined && update !== null ) {
+
+					switch ( typeof update ) {
+
+						case 'function':
+
+							const flow = builder.flowStagesNode( properties.updateNode, 'void' );
+							const snippet = flow.code.replace( /\t|;/g, '' );
+
+							updateSnippet = snippet;
+
+							break;
+
+						case 'number':
+
+							updateSnippet = name + ' ' + deltaOperator() + ' ' + builder.generateConst( type, update );
+
+							break;
+
+						case 'string':
+
+							updateSnippet = name + ' ' + update;
+
+							break;
+
+						default:
+
+							if ( update.isNode ) {
+
+								updateSnippet = name + ' ' + deltaOperator() + ' ' + update.build( builder );
+
+							} else {
+
+								error( 'TSL: \'Loop( { update: ... } )\' is not a function, string or number.', this.stackTrace );
+
+								updateSnippet = 'break /* invalid update */';
+
+							}
+
+					}
+
+				} else {
+
+					if ( type === 'int' || type === 'uint' ) {
+
+						update = condition.includes( '<' ) ? '++' : '--';
+
+					} else {
+
+						update = deltaOperator() + ' 1.';
+
+					}
+
+					updateSnippet = name + ' ' + update;
+
+				}
+
+				const declarationSnippet = builder.getVar( type, name ) + ' = ' + startSnippet;
+				const conditionalSnippet = name + ' ' + condition + ' ' + endSnippet;
+
+				loopSnippet = `for ( ${ declarationSnippet }; ${ conditionalSnippet }; ${ updateSnippet } )`;
+
+			}
+
+			builder.addFlowCode( ( i === 0 ? '\n' : '' ) + builder.tab + loopSnippet + ' {\n\n' ).addFlowTab();
+
+		}
+
+		const flowBlock = builder.flowBlock;
+
+		builder.flowBlock = { parent: flowBlock };
+
+		const stackSnippet = stackNode.build( builder, 'void' );
+
+		properties.returnsNode.build( builder, 'void' );
+
+		builder.flowBlock = flowBlock;
+
+		builder.removeFlowTab().addFlowCode( '\n' + builder.tab + stackSnippet );
+
+		for ( let i = 0, l = params.length - 1; i < l; i ++ ) {
+
+			builder.addFlowCode( ( i === 0 ? '' : builder.tab ) + '}\n\n' ).removeFlowTab();
+
+		}
+
+		builder.addFlowTab();
+
+	}
+
+}
+
+/**
+ * TSL function for creating a loop node.
+ *
+ * @tsl
+ * @function
+ * @param {...(LoopNode~Params|loopBodyCallback)} params - Any number of loop parameters followed by the loop body.
+ * @returns {LoopNode}
+ */
+const Loop = ( ...params ) => new LoopNode( nodeArray( params, 'int' ) ).toStack();
+
+/**
+ * TSL function for inserting a `continue` expression into the shader.
+ *
+ * @tsl
+ * @function
+ * @returns {ExpressionNode}
+ */
+const Continue = () => expression( 'continue' ).toStack();
+
+/**
+ * TSL function for inserting a `break` expression into the shader.
+ *
+ * @tsl
+ * @function
+ * @returns {ExpressionNode}
+ */
+const Break = () => expression( 'break' ).toStack();
+
+/**
+ * The parameters of a loop. A number or int/uint node defines the loop's end value,
+ * a bool node defines a `while` loop and an object allows a more detailed configuration.
+ *
+ * @typedef {number|Node<int>|Node<uint>|Node<bool>|LoopNode~ObjectParams} LoopNode~Params
+ */
+
+/**
+ * A detailed loop configuration.
+ *
+ * @typedef {Object} LoopNode~ObjectParams
+ * @property {number|Node<int>|Node<uint>} [start=0] - The initial value of the loop variable.
+ * @property {number|Node<int>|Node<uint>} [end] - The value the loop variable is compared against. If omitted, the loop counts down from `start - 1` to `0`.
+ * @property {string} [name] - The name of the loop variable. Defaults to `i`, `j`, `k` and so on.
+ * @property {string} [type='int'] - The data type of the loop variable.
+ * @property {('<'|'<='|'>'|'>=')} [condition] - The comparison operator. The loop runs as long as the comparison is true. Inferred from `start` and `end` if not set.
+ * @property {string|number|Function|Node} [update] - Defines how the loop variable is updated after each iteration. Inferred from `condition` and `type` if not set.
+ */
+
+/**
+ * The loop body.
+ *
+ * @callback loopBodyCallback
+ * @param {Object<string, Node>} inputs - The loop variables of the current `Loop()` call, keyed by their name.
+ */
+
+const _morphTextures = /*@__PURE__*/ new WeakMap();
+const _morphVec4 = /*@__PURE__*/ new Vector4();
+const _morphInfluencesData = /*@__PURE__*/ new WeakMap();
+
+/**
+ * TSL function that retrieves and scales the morphed attribute (position, normal or color) texel value.
+ *
+ * @param {Object} params - The parameter object.
+ * @param {Node<texture>} params.bufferMap - The morph target data array texture.
+ * @param {Node<float>} params.influence - The target's animation influence weight.
+ * @param {number} params.stride - The vertex data stride (e.g. 1 or 2).
+ * @param {Node<int>} params.width - The texture width limit.
+ * @param {Node<int>} params.depth - The target layer index (morph target index).
+ * @param {Node<int>} params.offset - The texture offset (e.g. 0 for position, 1 for normal, 2 for color).
+ * @returns {Node<vec4>} The scaled morph target value.
+ */
+const getMorph = /*@__PURE__*/ Fn( ( { bufferMap, influence, stride, width, depth, offset } ) => {
+
+	const texelIndex = int( vertexIndex ).mul( stride ).add( offset );
+
+	const y = texelIndex.div( width );
+	const x = texelIndex.sub( y.mul( width ) );
+
+	const bufferAttrib = textureLoad( bufferMap, ivec2( x, y ) ).depth( depth );
+
+	return bufferAttrib.mul( influence );
+
+} );
+
+/**
+ * The morph target base influence. It is `1` when `morphTargetsRelative`
+ * is `true`, otherwise `1 - sum( influences )`.
+ *
+ * @type {UniformNode<float>}
+ */
+const morphBase = /*@__PURE__*/ uniform( 1 ).onObjectUpdate( ( { object } ) => {
+
+	return object.geometry.morphTargetsRelative ? 1 : 1 - object.morphTargetInfluences.reduce( ( a, b ) => a + b, 0 );
+
+} );
+
+/**
+ * The sum of the weighted color morph targets.
+ *
+ * @type {PropertyNode<vec4>}
+ */
+const morphColorSum = /*@__PURE__*/ property( 'vec4', 'morphColorSum' );
+
+/**
+ * TSL function that applies the color morph targets to the given color.
+ * The result is computed in the vertex stage.
+ *
+ * @tsl
+ * @function
+ * @param {Node<vec4>} color - The color to morph. Must be available in the vertex stage.
+ * @returns {Node<vec4>} The morphed color.
+ */
+const morphColor = /*@__PURE__*/ Fn( ( [ color ], { geometry } ) => {
+
+	if ( geometry.morphAttributes.color[ 0 ].itemSize === 4 ) {
+
+		return varying( color.mul( morphBase ).add( morphColorSum ) );
+
+	}
+
+	return varying( vec4( color.rgb.mul( morphBase ).add( morphColorSum.rgb ), color.a ) );
+
+} );
+
+/**
+ * Resolves or creates a compiled DataArrayTexture containing encoded vertex morph targets data for WebGL2/WebGPU.
+ *
+ * @param {BufferGeometry} geometry - The geometry to parse.
+ * @returns {Object} The resolved morph targets texture data mapping entry.
+ */
+function getEntry( geometry ) {
+
+	const hasMorphPosition = geometry.morphAttributes.position !== undefined;
+	const hasMorphNormals = geometry.morphAttributes.normal !== undefined;
+	const hasMorphColors = geometry.morphAttributes.color !== undefined;
+
+	// instead of using attributes, the WebGL 2 code path encodes morph targets
+	// into an array of data textures. Each layer represents a single morph target.
+
+	const morphAttribute = geometry.morphAttributes.position || geometry.morphAttributes.normal || geometry.morphAttributes.color;
+	const morphTargetsCount = ( morphAttribute !== undefined ) ? morphAttribute.length : 0;
+
+	let entry = _morphTextures.get( geometry );
+
+	if ( entry === undefined || entry.count !== morphTargetsCount ) {
+
+		if ( entry !== undefined ) entry.texture.dispose();
+
+		const morphTargets = geometry.morphAttributes.position || [];
+		const morphNormals = geometry.morphAttributes.normal || [];
+		const morphColors = geometry.morphAttributes.color || [];
+
+		let vertexDataCount = 0;
+
+		if ( hasMorphPosition === true ) vertexDataCount = 1;
+		if ( hasMorphNormals === true ) vertexDataCount = 2;
+		if ( hasMorphColors === true ) vertexDataCount = 3;
+
+		let width = geometry.attributes.position.count * vertexDataCount;
+		let height = 1;
+
+		const maxTextureSize = 4096; // @TODO: Use 'capabilities.maxTextureSize'
+
+		if ( width > maxTextureSize ) {
+
+			height = Math.ceil( width / maxTextureSize );
+			width = maxTextureSize;
+
+		}
+
+		const buffer = new Float32Array( width * height * 4 * morphTargetsCount );
+
+		const bufferTexture = new DataArrayTexture( buffer, width, height, morphTargetsCount );
+		bufferTexture.type = FloatType;
+		bufferTexture.needsUpdate = true;
+
+		// fill buffer
+
+		const vertexDataStride = vertexDataCount * 4;
+
+		for ( let i = 0; i < morphTargetsCount; i ++ ) {
+
+			const morphTarget = morphTargets[ i ];
+			const morphNormal = morphNormals[ i ];
+			const morphColor = morphColors[ i ];
+
+			const offset = width * height * 4 * i;
+
+			for ( let j = 0; j < morphTarget.count; j ++ ) {
+
+				const stride = j * vertexDataStride;
+
+				if ( hasMorphPosition === true ) {
+
+					_morphVec4.fromBufferAttribute( morphTarget, j );
+
+					buffer[ offset + stride + 0 ] = _morphVec4.x;
+					buffer[ offset + stride + 1 ] = _morphVec4.y;
+					buffer[ offset + stride + 2 ] = _morphVec4.z;
+					buffer[ offset + stride + 3 ] = 0;
+
+				}
+
+				if ( hasMorphNormals === true ) {
+
+					_morphVec4.fromBufferAttribute( morphNormal, j );
+
+					buffer[ offset + stride + 4 ] = _morphVec4.x;
+					buffer[ offset + stride + 5 ] = _morphVec4.y;
+					buffer[ offset + stride + 6 ] = _morphVec4.z;
+					buffer[ offset + stride + 7 ] = 0;
+
+				}
+
+				if ( hasMorphColors === true ) {
+
+					_morphVec4.fromBufferAttribute( morphColor, j );
+
+					buffer[ offset + stride + 8 ] = _morphVec4.x;
+					buffer[ offset + stride + 9 ] = _morphVec4.y;
+					buffer[ offset + stride + 10 ] = _morphVec4.z;
+					buffer[ offset + stride + 11 ] = ( morphColor.itemSize === 4 ) ? _morphVec4.w : 1;
+
+				}
+
+			}
+
+		}
+
+		entry = {
+			count: morphTargetsCount,
+			texture: bufferTexture,
+			stride: vertexDataCount,
+			size: new Vector2( width, height )
+		};
+
+		_morphTextures.set( geometry, entry );
+
+		function disposeTexture() {
+
+			bufferTexture.dispose();
+
+			_morphTextures.delete( geometry );
+
+			geometry.removeEventListener( 'dispose', disposeTexture );
+
+		}
+
+		geometry.addEventListener( 'dispose', disposeTexture );
+
+	}
+
+	return entry;
+
+}
+
+/**
+ * TSL function representing the vertex shader morph targets blend setup.
+ * Dynamically computes morph targets weights and updates positionLocal and normalLocal in-place.
+ *
+ * @tsl
+ * @function
+ * @param {Mesh} mesh - The mesh.
+ */
+const morphReference = /*@__PURE__*/ Fn( ( [ mesh ], builder ) => {
+
+	const { geometry } = mesh;
+
+	const hasMorphPosition = geometry.morphAttributes.position !== undefined;
+	const hasMorphNormals = geometry.hasAttribute( 'normal' ) && geometry.morphAttributes.normal !== undefined;
+	const hasMorphColors = builder.material.vertexColors === true && geometry.morphAttributes.color !== undefined;
+	const hasColorAlpha = hasMorphColors === true && geometry.morphAttributes.color[ 0 ].itemSize === 4;
+
+	const morphAttribute = geometry.morphAttributes.position || geometry.morphAttributes.normal || geometry.morphAttributes.color;
+	const morphTargetsCount = ( morphAttribute !== undefined ) ? morphAttribute.length : 0;
+
+	if ( morphTargetsCount === 0 ) return;
+
+	if ( mesh.morphTexture ) builder.objectSpecific = true;
+
+	// Init
+
+	let morphInfluenceData = _morphInfluencesData.get( mesh );
+
+	if ( morphInfluenceData === undefined || morphInfluenceData.count !== morphTargetsCount ) {
+
+		morphInfluenceData = {
+			influences: mesh.morphTargetInfluences ? uniformArray( mesh.morphTargetInfluences, 'float' ) : null,
+			count: morphTargetsCount
+		};
+
+		_morphInfluencesData.set( mesh, morphInfluenceData );
+
+	}
+
+	const { influences } = morphInfluenceData;
+
+	// Shader
+
+	const { texture: bufferMap, stride, size } = getEntry( geometry );
+
+	if ( hasMorphPosition === true ) positionLocal.mulAssign( morphBase );
+	if ( hasMorphNormals === true ) normalLocal.mulAssign( morphBase );
+	if ( hasMorphColors === true ) morphColorSum.assign( 0 );
+
+	const width = int( size.width );
+
+	Loop( morphTargetsCount, ( { i } ) => {
+
+		const influence = float( 0 ).toVar();
+
+		if ( mesh.count > 1 && ( mesh.morphTexture !== null && mesh.morphTexture !== undefined ) ) {
+
+			influence.assign( textureLoad( mesh.morphTexture, ivec2( int( i ).add( 1 ), int( instanceIndex ) ) ).r );
+
+		} else {
+
+			influence.assign( influences.element( i ).toVar() );
+
+		}
+
+		If( influence.notEqual( 0 ), () => {
+
+			if ( hasMorphPosition === true ) {
+
+				positionLocal.addAssign( getMorph( {
+					bufferMap,
+					influence,
+					stride,
+					width,
+					depth: i,
+					offset: int( 0 )
+				} ).xyz );
+
+			}
+
+			if ( hasMorphNormals === true ) {
+
+				normalLocal.addAssign( getMorph( {
+					bufferMap,
+					influence,
+					stride,
+					width,
+					depth: i,
+					offset: int( 1 )
+				} ).xyz );
+
+			}
+
+			if ( hasMorphColors === true ) {
+
+				const morph = getMorph( {
+					bufferMap,
+					influence,
+					stride,
+					width,
+					depth: i,
+					offset: int( 2 )
+				} );
+
+				if ( hasColorAlpha === true ) {
+
+					morphColorSum.addAssign( morph );
+
+				} else {
+
+					morphColorSum.rgb.addAssign( morph.rgb );
+
+				}
+
+			}
+
+		} );
+
+	} );
+
+	// Update
+
+	OnObjectUpdate( ( { object } ) => {
+
+		const { influences } = morphInfluenceData;
+
+		if ( influences ) {
+
+			influences.array = object.morphTargetInfluences;
+			influences.update();
+
+		}
+
+	} );
+
+}, 'void' );
+
+/**
+ * Base class for lighting nodes.
+ *
+ * @augments Node
+ */
+class LightingNode extends Node {
+
+	static get type() {
+
+		return 'LightingNode';
+
+	}
+
+	/**
+	 * Constructs a new lighting node.
+	 */
+	constructor() {
+
+		super( 'vec3' );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isLightingNode = true;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+}
+
+/**
+ * A generic class that can be used by nodes which contribute
+ * ambient occlusion to the scene. E.g. an ambient occlusion map
+ * node can be used as input for this module. Used in {@link NodeMaterial}.
+ *
+ * @augments LightingNode
+ */
+class AONode extends LightingNode {
+
+	static get type() {
+
+		return 'AONode';
+
+	}
+
+	/**
+	 * Constructs a new AO node.
+	 *
+	 * @param {?Node<float>} [aoNode=null] - The ambient occlusion node.
+	 */
+	constructor( aoNode = null ) {
+
+		super();
+
+		/**
+		 * The ambient occlusion node.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.aoNode = aoNode;
+
+	}
+
+	setup( builder ) {
+
+		builder.context.ambientOcclusion.mulAssign( this.aoNode );
+
+	}
+
+}
+
+/**
+ * `LightingContextNode` represents an extension of the {@link ContextNode} module
+ * by adding lighting specific context data. It represents the runtime context of
+ * {@link LightsNode}.
+ *
+ * @augments ContextNode
+ */
+class LightingContextNode extends ContextNode {
+
+	static get type() {
+
+		return 'LightingContextNode';
+
+	}
+
+	/**
+	 * Constructs a new lighting context node.
+	 *
+	 * @param {LightsNode} lightsNode - The lights node.
+	 * @param {?LightingModel} [lightingModel=null] - The current lighting model.
+	 * @param {?Array<LightingNode>} materialLightings - The material lightings nodes.
+	 * @param {?Node<vec3>} [backdropNode=null] - A backdrop node.
+	 * @param {?Node<float>} [backdropAlphaNode=null] - A backdrop alpha node.
+	 */
+	constructor( lightsNode, lightingModel = null, materialLightings = [], backdropNode = null, backdropAlphaNode = null ) {
+
+		super( lightsNode );
+
+		/**
+		 * The current lighting model.
+		 *
+		 * @type {?LightingModel}
+		 * @default null
+		 */
+		this.lightingModel = lightingModel;
+
+		/**
+		 * @type {?Array<LightingNode>}
+		 * @default []
+		 */
+		this.materialLightings = materialLightings;
+
+		/**
+		 * A backdrop node.
+		 *
+		 * @type {?Node<vec3>}
+		 * @default null
+		 */
+		this.backdropNode = backdropNode;
+
+		/**
+		 * A backdrop alpha node.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.backdropAlphaNode = backdropAlphaNode;
+
+		this._value = null;
+
+	}
+
+	/**
+	 * Returns a lighting context object.
+	 *
+	 * @return {{
+	 * radiance: Node<vec3>,
+	 * irradiance: Node<vec3>,
+	 * iblIrradiance: Node<vec3>,
+	 * ambientOcclusion: Node<float>,
+	 * reflectedLight: {directDiffuse: Node<vec3>, directSpecular: Node<vec3>, indirectDiffuse: Node<vec3>, indirectSpecular: Node<vec3>},
+	 * backdrop: Node<vec3>,
+	 * backdropAlpha: Node<float>
+	 * }} The lighting context object.
+	 */
+	getContext() {
+
+		const { materialLightings, backdropNode, backdropAlphaNode } = this;
+
+		const directDiffuse = vec3().toVar( 'directDiffuse' ),
+			directSpecular = vec3().toVar( 'directSpecular' ),
+			indirectDiffuse = vec3().toVar( 'indirectDiffuse' ),
+			indirectSpecular = vec3().toVar( 'indirectSpecular' );
+
+		const reflectedLight = {
+			directDiffuse,
+			directSpecular,
+			indirectDiffuse,
+			indirectSpecular
+		};
+
+		const context = {
+			radiance: vec3().toVar( 'radiance' ),
+			irradiance: vec3().toVar( 'irradiance' ),
+			iblIrradiance: vec3().toVar( 'iblIrradiance' ),
+			ambientOcclusion: float( 1 ).toVar( 'ambientOcclusion' ),
+			reflectedLight,
+			materialLightings,
+			backdrop: backdropNode,
+			backdropAlpha: backdropAlphaNode
+		};
+
+		return context;
+
+	}
+
+	setup( builder ) {
+
+		this.value = this._value || ( this._value = this.getContext() );
+		this.value.lightingModel = this.lightingModel || builder.context.lightingModel;
+
+		return super.setup( builder );
+
+	}
+
+}
+
+const lightingContext = /*@__PURE__*/ nodeProxy( LightingContextNode );
+
+/**
+ * A generic class that can be used by nodes which contribute
+ * irradiance to the scene. E.g. a light map node can be used
+ * as input for this module. Used in {@link NodeMaterial}.
+ *
+ * @augments LightingNode
+ */
+class IrradianceNode extends LightingNode {
+
+	static get type() {
+
+		return 'IrradianceNode';
+
+	}
+
+	/**
+	 * Constructs a new irradiance node.
+	 *
+	 * @param {Node<vec3>} node - A node contributing irradiance.
+	 */
+	constructor( node ) {
+
+		super();
+
+		/**
+		 * A node contributing irradiance.
+		 *
+		 * @type {Node<vec3>}
+		 */
+		this.node = node;
+
+	}
+
+	setup( builder ) {
+
+		builder.context.irradiance.addAssign( this.node );
+
+	}
+
+}
+
+const _size$3 = /*@__PURE__*/ new Vector2();
+
+/**
+ * A special type of texture node which represents the data of the current viewport
+ * as a texture. The module extracts data from the current bound framebuffer with
+ * a copy operation so no extra render pass is required to produce the texture data
+ * (which is good for performance). `ViewportTextureNode` can be used as an input for a
+ * variety of effects like refractive or transmissive materials.
+ *
+ * @augments TextureNode
+ */
+class ViewportTextureNode extends TextureNode {
+
+	static get type() {
+
+		return 'ViewportTextureNode';
+
+	}
+
+	/**
+	 * Constructs a new viewport texture node.
+	 *
+	 * @param {Node} [uvNode=screenUV] - The uv node.
+	 * @param {?Node} [levelNode=null] - The level node.
+	 * @param {?Texture} [framebufferTexture=null] - A framebuffer texture holding the viewport data. If not provided, a framebuffer texture is created automatically.
+	 */
+	constructor( uvNode = screenUV, levelNode = null, framebufferTexture = null ) {
+
+		let defaultFramebuffer = null;
+
+		if ( framebufferTexture === null ) {
+
+			defaultFramebuffer = new FramebufferTexture();
+			defaultFramebuffer.minFilter = LinearMipmapLinearFilter;
+
+			framebufferTexture = defaultFramebuffer;
+
+		} else {
+
+			defaultFramebuffer = framebufferTexture;
+
+		}
+
+		super( framebufferTexture, uvNode, levelNode );
+
+		/**
+		 * Whether to generate mipmaps or not.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.generateMipmaps = false;
+
+		/**
+		 * The reference framebuffer texture. This is used to store the framebuffer texture
+		 * for the current render target. If the render target changes, a new framebuffer texture
+		 * is created automatically.
+		 *
+		 * @type {FramebufferTexture}
+		 * @default null
+		 */
+		this.defaultFramebuffer = defaultFramebuffer;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isOutputTextureNode = true;
+
+		/**
+		 * The `updateBeforeType` is set to `NodeUpdateType.RENDER` since the node should extract
+		 * the current contents of the bound framebuffer for each render call.
+		 *
+		 * @type {string}
+		 * @default 'render'
+		 */
+		this.updateBeforeType = NodeUpdateType.RENDER;
+
+		/**
+		 * The framebuffer texture for the current renderer context.
+		 *
+		 * @type {WeakMap<RenderTarget, FramebufferTexture>}
+		 * @private
+		 */
+		this._cacheTextures = new WeakMap();
+
+	}
+
+	/**
+	 * This methods returns a texture for the given render target or canvas target reference.
+	 *
+	 * To avoid rendering errors, `ViewportTextureNode` must use unique framebuffer textures
+	 * for different render contexts.
+	 *
+	 * @param {?(RenderTarget|CanvasTarget)} [reference=null] - The render target or canvas target reference.
+	 * @return {Texture} The framebuffer texture.
+	 */
+	getTextureForReference( reference = null ) {
+
+		let defaultFramebuffer;
+		let cacheTextures;
+
+		if ( this.referenceNode ) {
+
+			defaultFramebuffer = this.referenceNode.defaultFramebuffer;
+			cacheTextures = this.referenceNode._cacheTextures;
+
+		} else {
+
+			defaultFramebuffer = this.defaultFramebuffer;
+			cacheTextures = this._cacheTextures;
+
+		}
+
+		if ( reference === null ) {
+
+			return defaultFramebuffer;
+
+		}
+
+		if ( cacheTextures.has( reference ) === false ) {
+
+			const framebufferTexture = defaultFramebuffer.clone();
+
+			cacheTextures.set( reference, framebufferTexture );
+
+		}
+
+		return cacheTextures.get( reference );
+
+	}
+
+	updateReference( frame ) {
+
+		const renderer = frame.renderer;
+		const renderTarget = renderer.getRenderTarget();
+		const canvasTarget = renderer.getCanvasTarget();
+
+		const reference = renderTarget ? renderTarget : canvasTarget;
+
+		this.value = this.getTextureForReference( reference );
+
+		return this.value;
+
+	}
+
+	updateBefore( frame ) {
+
+		const renderer = frame.renderer;
+		const renderTarget = renderer.getRenderTarget();
+		const canvasTarget = renderer.getCanvasTarget();
+
+		const reference = renderTarget ? renderTarget : canvasTarget;
+
+		if ( reference === null ) {
+
+			renderer.getDrawingBufferSize( _size$3 );
+
+		} else if ( reference.getDrawingBufferSize ) {
+
+			reference.getDrawingBufferSize( _size$3 );
+
+		} else {
+
+			_size$3.set( reference.width, reference.height );
+
+		}
+
+		//
+
+		const framebufferTexture = this.getTextureForReference( reference );
+
+		if ( framebufferTexture.image.width !== _size$3.width || framebufferTexture.image.height !== _size$3.height ) {
+
+			framebufferTexture.image.width = _size$3.width;
+			framebufferTexture.image.height = _size$3.height;
+			framebufferTexture.needsUpdate = true;
+
+		}
+
+		//
+
+		const currentGenerateMipmaps = framebufferTexture.generateMipmaps;
+		framebufferTexture.generateMipmaps = this.generateMipmaps;
+
+		renderer.copyFramebufferToTexture( framebufferTexture );
+
+		framebufferTexture.generateMipmaps = currentGenerateMipmaps;
+
+	}
+
+	clone() {
+
+		const viewportTextureNode = new this.constructor( this.uvNode, this.levelNode, this.value );
+		viewportTextureNode.generateMipmaps = this.generateMipmaps;
+
+		return viewportTextureNode;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a viewport texture node.
+ *
+ * @tsl
+ * @function
+ * @param {?Node} [uvNode=screenUV] - The uv node.
+ * @param {?Node} [levelNode=null] - The level node.
+ * @param {?Texture} [framebufferTexture=null] - A framebuffer texture holding the viewport data. If not provided, a framebuffer texture is created automatically.
+ * @returns {ViewportTextureNode}
+ */
+const viewportTexture = /*@__PURE__*/ nodeProxy( ViewportTextureNode ).setParameterLength( 0, 3 );
+
+/**
+ * TSL function for creating a viewport texture node with enabled mipmap generation.
+ *
+ * @tsl
+ * @function
+ * @param {?Node} [uvNode=screenUV] - The uv node.
+ * @param {?Node} [levelNode=null] - The level node.
+ * @param {?Texture} [framebufferTexture=null] - A framebuffer texture holding the viewport data. If not provided, a framebuffer texture is created automatically.
+ * @returns {ViewportTextureNode}
+ */
+const viewportMipTexture = /*@__PURE__*/ nodeProxy( ViewportTextureNode, null, null, { generateMipmaps: true } ).setParameterLength( 0, 3 );
+
+// Singleton instances for common usage
+const _singletonOpaqueViewportTextureNode = /*@__PURE__*/ viewportMipTexture();
+
+/**
+ * TSL function for creating a viewport texture node with enabled mipmap generation.
+ * The texture should only contain the opaque rendering objects.
+ *
+ * This should be used just in transparent or transmissive materials.
+ *
+ * @tsl
+ * @function
+ * @param {?Node} [uv=screenUV] - The uv node.
+ * @param {?Node} [level=null] - The level node.
+ * @returns {ViewportTextureNode}
+ */
+const viewportOpaqueMipTexture = ( uv = screenUV, level = null ) => _singletonOpaqueViewportTextureNode.sample( uv, level ); // TODO: Use once() when sample() supports it
+
+let _sharedDepthbuffer = null;
+
+/**
+ * Represents the depth of the current viewport as a texture. This module
+ * can be used in combination with viewport texture to achieve effects
+ * that require depth evaluation.
+ *
+ * @augments ViewportTextureNode
+ */
+class ViewportDepthTextureNode extends ViewportTextureNode {
+
+	static get type() {
+
+		return 'ViewportDepthTextureNode';
+
+	}
+
+	/**
+	 * Constructs a new viewport depth texture node.
+	 *
+	 * @param {Node} [uvNode=screenUV] - The uv node.
+	 * @param {?Node} [levelNode=null] - The level node.
+	 * @param {?DepthTexture} [depthTexture=null] - A depth texture. If not provided, uses a shared depth texture.
+	 */
+	constructor( uvNode = screenUV, levelNode = null, depthTexture = null ) {
+
+		if ( depthTexture === null ) {
+
+			if ( _sharedDepthbuffer === null ) {
+
+				_sharedDepthbuffer = new DepthTexture();
+
+			}
+
+			depthTexture = _sharedDepthbuffer;
+
+		}
+
+		super( uvNode, levelNode, depthTexture );
+
+	}
+
+}
+
+/**
+ * TSL function for a viewport depth texture node.
+ *
+ * @tsl
+ * @function
+ * @param {?Node} [uvNode=screenUV] - The uv node.
+ * @param {?Node} [levelNode=null] - The level node.
+ * @param {?DepthTexture} [depthTexture=null] - A depth texture. If not provided, a depth texture is created automatically.
+ * @returns {ViewportDepthTextureNode}
+ */
+const viewportDepthTexture = /*@__PURE__*/ nodeProxy( ViewportDepthTextureNode ).setParameterLength( 0, 3 );
+
+/**
+ * This node offers a collection of features in context of the depth logic in the fragment shader.
+ * Depending on {@link ViewportDepthNode#scope}, it can be used to define a depth value for the current
+ * fragment or for depth evaluation purposes.
+ *
+ * @augments Node
+ */
+class ViewportDepthNode extends Node {
+
+	static get type() {
+
+		return 'ViewportDepthNode';
+
+	}
+
+	/**
+	 * Constructs a new viewport depth node.
+	 *
+	 * @param {('depth'|'depthBase'|'linearDepth')} scope - The node's scope.
+	 * @param {?Node} [valueNode=null] - The value node.
+	 */
+	constructor( scope, valueNode = null ) {
+
+		super( 'float' );
+
+		/**
+		 * The node behaves differently depending on which scope is selected.
+		 *
+		 * - `ViewportDepthNode.DEPTH_BASE`: Allows to define a value for the current fragment's depth.
+		 * - `ViewportDepthNode.DEPTH`: Represents the depth value for the current fragment (`valueNode` is ignored).
+		 * - `ViewportDepthNode.LINEAR_DEPTH`: Represents the linear (orthographic) depth value of the current fragment.
+		 * If a `valueNode` is set, the scope can be used to convert perspective depth data to linear data.
+		 *
+		 * @type {('depth'|'depthBase'|'linearDepth')}
+		 */
+		this.scope = scope;
+
+		/**
+		 * Can be used to define a custom depth value.
+		 * The property is ignored in the `ViewportDepthNode.DEPTH` scope.
+		 *
+		 * @type {?Node}
+		 * @default null
+		 */
+		this.valueNode = valueNode;
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isViewportDepthNode = true;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	generate( builder ) {
+
+		const { scope } = this;
+
+		if ( scope === ViewportDepthNode.DEPTH_BASE ) {
+
+			return builder.getFragDepth();
+
+		}
+
+		return super.generate( builder );
+
+	}
+
+	setup( { camera } ) {
+
+		const { scope } = this;
+		const value = this.valueNode;
+
+		let node = null;
+
+		if ( scope === ViewportDepthNode.DEPTH_BASE ) {
+
+			if ( value !== null ) {
+
+				node = depthBase().assign( value );
+
+			}
+
+		} else if ( scope === ViewportDepthNode.DEPTH ) {
+
+			if ( camera.isOrthographicCamera !== true ) {
+
+				node = viewZToPerspectiveDepth( positionView.z, cameraNear, cameraFar );
+
+			} else {
+
+				node = viewZToOrthographicDepth( positionView.z, cameraNear, cameraFar );
+
+			}
+
+		} else if ( scope === ViewportDepthNode.LINEAR_DEPTH ) {
+
+			if ( value !== null ) {
+
+				if ( camera.isOrthographicCamera !== true ) {
+
+					const viewZ = perspectiveDepthToViewZ( value, cameraNear, cameraFar );
+
+					node = viewZToOrthographicDepth( viewZ, cameraNear, cameraFar );
+
+				} else {
+
+					node = value;
+
+				}
+
+			} else {
+
+				node = viewZToOrthographicDepth( positionView.z, cameraNear, cameraFar );
+
+			}
+
+		}
+
+		return node;
+
+	}
+
+}
+
+ViewportDepthNode.DEPTH_BASE = 'depthBase';
+ViewportDepthNode.DEPTH = 'depth';
+ViewportDepthNode.LINEAR_DEPTH = 'linearDepth';
+
+// NOTE: viewZ, the z-coordinate in camera space, is negative for points in front of the camera
+
+/**
+ * TSL function for converting a viewZ value to an orthographic depth value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} viewZ - The viewZ node.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const viewZToOrthographicDepth = ( viewZ, near, far ) => viewZ.add( near ).div( near.sub( far ) );
+
+/**
+ * TSL function for converting a viewZ value to a reversed orthographic depth value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} viewZ - The viewZ node.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const viewZToReversedOrthographicDepth = ( viewZ, near, far ) => viewZ.add( far ).div( far.sub( near ) );
+
+/**
+ * TSL function for converting an orthographic depth value to a viewZ value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} depth - The orthographic depth.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const orthographicDepthToViewZ = /*@__PURE__*/ Fn( ( [ depth, near, far ], builder ) => {
+
+	if ( builder.renderer.reversedDepthBuffer === true ) {
+
+		return far.sub( near ).mul( depth ).sub( far );
+
+	} else {
+
+		return near.sub( far ).mul( depth ).sub( near );
+
+	}
+
+} );
+
+/**
+ * TSL function for converting a viewZ value to a perspective depth value.
+ *
+ * Note: {link https://twitter.com/gonnavis/status/1377183786949959682}.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} viewZ - The viewZ node.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const viewZToPerspectiveDepth = ( viewZ, near, far ) => near.add( viewZ ).mul( far ).div( far.sub( near ).mul( viewZ ) );
+
+/**
+ * TSL function for converting a viewZ value to a reversed perspective depth value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} viewZ - The viewZ node.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const viewZToReversedPerspectiveDepth = ( viewZ, near, far ) => near.mul( viewZ.add( far ) ).div( viewZ.mul( near.sub( far ) ) );
+
+/**
+ * TSL function for converting a perspective depth value to a viewZ value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} depth - The perspective depth.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const perspectiveDepthToViewZ = /*@__PURE__*/ Fn( ( [ depth, near, far ], builder ) => {
+
+	if ( builder.renderer.reversedDepthBuffer === true ) {
+
+		return near.mul( far ).div( near.sub( far ).mul( depth ).sub( near ) );
+
+	} else {
+
+		return near.mul( far ).div( far.sub( near ).mul( depth ).sub( far ) );
+
+	}
+
+} );
+
+/**
+ * TSL function for converting a viewZ value to a logarithmic depth value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} viewZ - The viewZ node.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const viewZToLogarithmicDepth = ( viewZ, near, far ) => {
+
+	// NOTE: viewZ must be negative--see explanation at the end of this comment block.
+	// The final logarithmic depth formula used here is adapted from one described in an
+	// article by Thatcher Ulrich (see http://tulrich.com/geekstuff/log_depth_buffer.txt),
+	// which was an improvement upon an earlier formula one described in an
+	// Outerra article (https://outerra.blogspot.com/2009/08/logarithmic-z-buffer.html).
+	// Ulrich's formula is the following:
+	//     z = K * log( w / cameraNear ) / log( cameraFar / cameraNear )
+	//     where K = 2^k - 1, and k is the number of bits in the depth buffer.
+	// The Outerra variant ignored the camera near plane (it assumed it was 0) and instead
+	// opted for a "C-constant" for resolution adjustment of objects near the camera.
+	// Outerra states: "Notice that the 'C' variant doesn’t use a near plane distance, it has it
+	// set at 0" (quote from https://outerra.blogspot.com/2012/11/maximizing-depth-buffer-range-and.html).
+	// Ulrich's variant has the benefit of constant relative precision over the whole near-far range.
+	// It was debated here whether Outerra's "C-constant" or Ulrich's "near plane" variant should
+	// be used, and ultimately Ulrich's "near plane" version was chosen.
+	// Outerra eventually made another improvement to their original "C-constant" variant,
+	// but it still does not incorporate the camera near plane (for this version,
+	// see https://outerra.blogspot.com/2013/07/logarithmic-depth-buffer-optimizations.html).
+	// Here we make 4 changes to Ulrich's formula:
+	// 1. Clamp the camera near plane so we don't divide by 0.
+	// 2. Use log2 instead of log to avoid an extra multiply (shaders implement log using log2).
+	// 3. Assume K is 1 (K = maximum value in depth buffer; see Ulrich's formula above).
+	// 4. To maintain consistency with the functions "viewZToOrthographicDepth" and "viewZToPerspectiveDepth",
+	//    we modify the formula here to use 'viewZ' instead of 'w'. The other functions expect a negative viewZ,
+	//    so we do the same here, hence the 'viewZ.negate()' call.
+	// For visual representation of this depth curve, see https://www.desmos.com/calculator/uyqk0vex1u
+	near = near.max( EPSILON ).toVar();
+	const numerator = log2( viewZ.negate().div( near ) );
+	const denominator = log2( far.div( near ) );
+	return numerator.div( denominator );
+
+};
+
+/**
+ * TSL function for converting a logarithmic depth value to a viewZ value.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} depth - The logarithmic depth.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const logarithmicDepthToViewZ = ( depth, near, far ) => {
+
+	// NOTE: we add a 'negate()' call to the return value here to maintain consistency with
+	// the functions "orthographicDepthToViewZ" and "perspectiveDepthToViewZ" (they return
+	// a negative viewZ).
+	const exponent = depth.mul( log( far.div( near ) ) );
+	return float( Math.E ).pow( exponent ).mul( near ).negate();
+
+};
+
+/**
+ * TSL function for retrieving the depth value as produced by the camera's projection matrix.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} depth - The depth value.
+ * @param {Node<float>} near - The camera's near value.
+ * @param {Node<float>} far - The camera's far value.
+ * @returns {Node<float>}
+ */
+const projectionDepth = /*@__PURE__*/ Fn( ( [ depth, near, far ], builder ) => {
+
+	if ( builder.renderer.logarithmicDepthBuffer === true ) {
+
+		const viewZ = logarithmicDepthToViewZ( depth, near, far );
+
+		return viewZToPerspectiveDepth( viewZ, near, far );
+
+	}
+
+	return depth;
+
+} );
+
+/**
+ * TSL function for defining a value for the current fragment's depth.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} value - The depth value to set.
+ * @returns {ViewportDepthNode<float>}
+ */
+const depthBase = /*@__PURE__*/ nodeProxy( ViewportDepthNode, ViewportDepthNode.DEPTH_BASE );
+
+/**
+ * TSL object that represents the depth value for the current fragment.
+ *
+ * @tsl
+ * @type {ViewportDepthNode}
+ */
+const depth = /*@__PURE__*/ nodeImmutable( ViewportDepthNode, ViewportDepthNode.DEPTH );
+
+/**
+ * TSL function for converting a perspective depth value to linear depth.
+ *
+ * @tsl
+ * @function
+ * @param {?Node<float>} [value=null] - The perspective depth. If `null` is provided, the current fragment's depth is used.
+ * @returns {ViewportDepthNode<float>}
+ */
+const linearDepth = /*@__PURE__*/ nodeProxy( ViewportDepthNode, ViewportDepthNode.LINEAR_DEPTH ).setParameterLength( 0, 1 );
+
+/**
+ * TSL object that represents the linear (orthographic) depth value of the current fragment
+ *
+ * @tsl
+ * @type {ViewportDepthNode}
+ */
+const viewportLinearDepth = /*@__PURE__*/ linearDepth( viewportDepthTexture() );
+
+depth.assign = ( value ) => depthBase( value );
+
+/**
+ * This node is used in {@link NodeMaterial} to setup the clipping
+ * which can happen hardware-accelerated (if supported) and optionally
+ * use alpha-to-coverage for anti-aliasing clipped edges.
+ *
+ * @augments Node
+ */
+class ClippingNode extends Node {
+
+	static get type() {
+
+		return 'ClippingNode';
+
+	}
+
+	/**
+	 * Constructs a new clipping node.
+	 *
+	 * @param {('default'|'hardware'|'alphaToCoverage')} [scope='default'] - The node's scope. Similar to other nodes,
+	 * the selected scope influences the behavior of the node and what type of code is generated.
+	 */
+	constructor( scope = ClippingNode.DEFAULT ) {
+
+		super();
+
+		/**
+		 * The node's scope. Similar to other nodes, the selected scope influences
+		 * the behavior of the node and what type of code is generated.
+		 *
+		 * @type {('default'|'hardware'|'alphaToCoverage')}
+		 */
+		this.scope = scope;
+
+	}
+
+	isCacheable( /*builder*/ ) {
+
+		return false;
+
+	}
+
+	/**
+	 * Setups the node depending on the selected scope.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node} The result node.
+	 */
+	setup( builder ) {
+
+		super.setup( builder );
+
+		const clippingContext = builder.clippingContext;
+		const { intersectionPlanes, unionPlanes } = clippingContext;
+
+		this.hardwareClipping = builder.hardwareClipping;
+
+		// with ArrayCamera, clipping planes are in world space
+
+		this.position = builder.camera.isArrayCamera === true ? cameraWorldMatrix.mul( vec4( positionView, 1 ) ).xyz : positionView;
+
+		if ( this.scope === ClippingNode.ALPHA_TO_COVERAGE ) {
+
+			return this.setupAlphaToCoverage( intersectionPlanes, unionPlanes );
+
+		} else if ( this.scope === ClippingNode.HARDWARE ) {
+
+			return this.setupHardwareClipping( unionPlanes, builder );
+
+		} else {
+
+			return this.setupDefault( intersectionPlanes, unionPlanes );
+
+		}
+
+	}
+
+	/**
+	 * Setups alpha to coverage.
+	 *
+	 * @param {Array<Vector4>} intersectionPlanes - The intersection planes.
+	 * @param {Array<Vector4>} unionPlanes - The union planes.
+	 * @return {Node} The result node.
+	 */
+	setupAlphaToCoverage( intersectionPlanes, unionPlanes ) {
+
+		return Fn( () => {
+
+			const distanceToPlane = float().toVar( 'distanceToPlane' );
+			const distanceGradient = float().toVar( 'distanceToGradient' );
+
+			const clipOpacity = float( 1 ).toVar( 'clipOpacity' );
+
+			const numUnionPlanes = unionPlanes.length;
+
+			if ( this.hardwareClipping === false && numUnionPlanes > 0 ) {
+
+				const clippingPlanes = uniformArray( unionPlanes ).setGroup( renderGroup );
+
+				Loop( numUnionPlanes, ( { i } ) => {
+
+					const plane = clippingPlanes.element( i );
+
+					distanceToPlane.assign( this.position.dot( plane.xyz ).negate().add( plane.w ) );
+					distanceGradient.assign( distanceToPlane.fwidth().div( 2.0 ) );
+
+					clipOpacity.mulAssign( smoothstep( distanceGradient.negate(), distanceGradient, distanceToPlane ) );
+
+				} );
+
+			}
+
+			const numIntersectionPlanes = intersectionPlanes.length;
+
+			if ( numIntersectionPlanes > 0 ) {
+
+				const clippingPlanes = uniformArray( intersectionPlanes ).setGroup( renderGroup );
+				const intersectionClipOpacity = float( 1 ).toVar( 'intersectionClipOpacity' );
+
+				Loop( numIntersectionPlanes, ( { i } ) => {
+
+					const plane = clippingPlanes.element( i );
+
+					distanceToPlane.assign( this.position.dot( plane.xyz ).negate().add( plane.w ) );
+					distanceGradient.assign( distanceToPlane.fwidth().div( 2.0 ) );
+
+					intersectionClipOpacity.mulAssign( smoothstep( distanceGradient.negate(), distanceGradient, distanceToPlane ).oneMinus() );
+
+				} );
+
+				clipOpacity.mulAssign( intersectionClipOpacity.oneMinus() );
+
+			}
+
+			diffuseColor.a.mulAssign( clipOpacity );
+
+			diffuseColor.a.equal( 0.0 ).discard();
+
+		} )();
+
+	}
+
+	/**
+	 * Setups the default clipping.
+	 *
+	 * @param {Array<Vector4>} intersectionPlanes - The intersection planes.
+	 * @param {Array<Vector4>} unionPlanes - The union planes.
+	 * @return {Node} The result node.
+	 */
+	setupDefault( intersectionPlanes, unionPlanes ) {
+
+		return Fn( () => {
+
+			const numUnionPlanes = unionPlanes.length;
+
+			if ( this.hardwareClipping === false && numUnionPlanes > 0 ) {
+
+				const clippingPlanes = uniformArray( unionPlanes ).setGroup( renderGroup );
+
+				Loop( numUnionPlanes, ( { i } ) => {
+
+					const plane = clippingPlanes.element( i );
+					this.position.dot( plane.xyz ).greaterThan( plane.w ).discard();
+
+				} );
+
+			}
+
+			const numIntersectionPlanes = intersectionPlanes.length;
+
+			if ( numIntersectionPlanes > 0 ) {
+
+				const clippingPlanes = uniformArray( intersectionPlanes ).setGroup( renderGroup );
+				const clipped = bool( true ).toVar( 'clipped' );
+
+				Loop( numIntersectionPlanes, ( { i } ) => {
+
+					const plane = clippingPlanes.element( i );
+					clipped.assign( this.position.dot( plane.xyz ).greaterThan( plane.w ).and( clipped ) );
+
+				} );
+
+				clipped.discard();
+
+			}
+
+		} )();
+
+	}
+
+	/**
+	 * Setups hardware clipping.
+	 *
+	 * @param {Array<Vector4>} unionPlanes - The union planes.
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node} The result node.
+	 */
+	setupHardwareClipping( unionPlanes, builder ) {
+
+		const numUnionPlanes = unionPlanes.length;
+
+		builder.enableHardwareClipping( numUnionPlanes );
+
+		return Fn( () => {
+
+			const clippingPlanes = uniformArray( unionPlanes ).setGroup( renderGroup );
+			const hw_clip_distances = builtin( builder.getClipDistance() );
+
+			Loop( numUnionPlanes, ( { i } ) => {
+
+				const plane = clippingPlanes.element( i );
+
+				const distance = this.position.dot( plane.xyz ).sub( plane.w ).negate();
+				hw_clip_distances.element( i ).assign( distance );
+
+			} );
+
+		} )();
+
+	}
+
+}
+
+ClippingNode.ALPHA_TO_COVERAGE = 'alphaToCoverage';
+ClippingNode.DEFAULT = 'default';
+ClippingNode.HARDWARE = 'hardware';
+
+/**
+ * TSL function for setting up the default clipping logic.
+ *
+ * @tsl
+ * @function
+ * @returns {ClippingNode}
+ */
+const clipping = () => new ClippingNode();
+
+/**
+ * TSL function for setting up alpha to coverage.
+ *
+ * @tsl
+ * @function
+ * @returns {ClippingNode}
+ */
+const clippingAlpha = () => new ClippingNode( ClippingNode.ALPHA_TO_COVERAGE );
+
+/**
+ * TSL function for setting up hardware-based clipping.
+ *
+ * @tsl
+ * @function
+ * @returns {ClippingNode}
+ */
+const hardwareClipping = () => new ClippingNode( ClippingNode.HARDWARE );
+
+// See: https://casual-effects.com/research/Wyman2017Hashed/index.html
+
+const ALPHA_HASH_SCALE = 0.05; // Derived from trials only, and may be changed.
+
+const hash2D = /*@__PURE__*/ Fn( ( [ value ] ) => {
+
+	return fract( mul( 1.0e4, sin( mul( 17.0, value.x ).add( mul( 0.1, value.y ) ) ) ).mul( add( 0.1, abs( sin( mul( 13.0, value.y ).add( value.x ) ) ) ) ) );
+
+}, { value: 'vec2', return: 'float' } );
+
+const hash3D = /*@__PURE__*/ Fn( ( [ value ] ) => {
+
+	return hash2D( vec2( hash2D( value.xy ), value.z ) );
+
+}, { value: 'vec3', return: 'float' } );
+
+const getAlphaHashThreshold = /*@__PURE__*/ Fn( ( [ position ] ) => {
+
+	// Find the discretized derivatives of our coordinates
+	const maxDeriv = max(
+		length( dFdx( position.xyz ) ),
+		length( dFdy( position.xyz ) )
+	);
+
+	const pixScale = float( 1 ).div( float( ALPHA_HASH_SCALE ).mul( maxDeriv ) ).toVar( 'pixScale' );
+
+	// Find two nearest log-discretized noise scales
+	const pixScales = vec2(
+		exp2( floor( log2( pixScale ) ) ),
+		exp2( ceil( log2( pixScale ) ) )
+	);
+
+	// Compute alpha thresholds at our two noise scales
+	const alpha = vec2(
+		hash3D( floor( pixScales.x.mul( position.xyz ) ) ),
+		hash3D( floor( pixScales.y.mul( position.xyz ) ) ),
+	);
+
+	// Factor to interpolate lerp with
+	const lerpFactor = fract( log2( pixScale ) );
+
+	// Interpolate alpha threshold from noise at two scales
+	const x = add( mul( lerpFactor.oneMinus(), alpha.x ), mul( lerpFactor, alpha.y ) );
+
+	// Pass into CDF to compute uniformly distrib threshold
+	const a = min( lerpFactor, lerpFactor.oneMinus() );
+	const cases = vec3(
+		x.mul( x ).div( mul( 2.0, a ).mul( sub( 1.0, a ) ) ),
+		x.sub( mul( 0.5, a ) ).div( sub( 1.0, a ) ),
+		sub( 1.0, sub( 1.0, x ).mul( sub( 1.0, x ) ).div( mul( 2.0, a ).mul( sub( 1.0, a ) ) ) ) );
+
+	// Find our final, uniformly distributed alpha threshold (ατ)
+	const threshold = x.lessThan( a.oneMinus() ).select( x.lessThan( a ).select( cases.x, cases.y ), cases.z );
+
+	// Avoids ατ == 0. Could also do ατ =1-ατ
+	return clamp( threshold, 1.0e-6, 1.0 );
+
+}, { position: 'vec3', return: 'float' } );
+
+/**
+ * An attribute node for representing vertex colors.
+ *
+ * @augments AttributeNode
+ */
+class VertexColorNode extends AttributeNode {
+
+	static get type() {
+
+		return 'VertexColorNode';
+
+	}
+
+	/**
+	 * Constructs a new vertex color node.
+	 *
+	 * @param {number} index - The attribute index.
+	 */
+	constructor( index ) {
+
+		super( null, 'vec4' );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isVertexColorNode = true;
+
+		/**
+		 * The attribute index to enable more than one sets of vertex colors.
+		 *
+		 * @type {number}
+		 * @default 0
+		 */
+		this.index = index;
+
+	}
+
+	/**
+	 * Overwrites the default implementation by honoring the attribute index.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The attribute name.
+	 */
+	getAttributeName( /*builder*/ ) {
+
+		const index = this.index;
+
+		return 'color' + ( index > 0 ? index : '' );
+
+	}
+
+	generate( builder ) {
+
+		const attributeName = this.getAttributeName( builder );
+		const geometryAttribute = builder.hasGeometryAttribute( attributeName );
+
+		let result;
+
+		if ( geometryAttribute === true ) {
+
+			result = super.generate( builder );
+
+		} else {
+
+			// Vertex color fallback should be white
+			result = builder.generateConst( this.nodeType, new Vector4( 1, 1, 1, 1 ) );
+
+		}
+
+		return result;
+
+	}
+
+	serialize( data ) {
+
+		super.serialize( data );
+
+		data.index = this.index;
+
+	}
+
+	deserialize( data ) {
+
+		super.deserialize( data );
+
+		this.index = data.index;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a reference node.
+ *
+ * @tsl
+ * @function
+ * @param {number} [index=0] - The attribute index.
+ * @returns {VertexColorNode}
+ */
+const vertexColor = ( index = 0 ) => new VertexColorNode( index );
+
+/**
+ * Base class for all node materials.
+ *
+ * @augments Material
+ */
+class NodeMaterial extends Material {
+
+	static get type() {
+
+		return 'NodeMaterial';
+
+	}
+
+	/**
+	 * Represents the type of the node material.
+	 *
+	 * @type {string}
+	 */
+	get type() {
+
+		return this.constructor.type;
+
+	}
+
+	set type( _value ) { /* */ }
+
+	/**
+	 * Constructs a new node material.
+	 */
+	constructor() {
+
+		super();
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isNodeMaterial = true;
+
+		/**
+		 * Whether this material is affected by fog or not.
+		 *
+		 * @type {boolean}
+		 * @default true
+		 */
+		this.fog = true;
+
+		/**
+		 * Whether this material is affected by lights or not.
+		 *
+		 * @type {boolean}
+		 * @default false
+		 */
+		this.lights = false;
+
+		/**
+		 * Node materials which set their `lights` property to `true`
+		 * are affected by all lights of the scene. Sometimes selective
+		 * lighting is wanted which means only _some_ lights in the scene
+		 * affect a material. This can be achieved by creating an instance
+		 * of {@link LightsNode} with a list of selective
+		 * lights and assign the node to this property.
+		 *
+		 * ```js
+		 * const customLightsNode = lights( [ light1, light2 ] );
+		 * material.lightsNode = customLightsNode;
+		 * ```
+		 *
+		 * @type {?LightsNode}
+		 * @default null
+		 */
+		this.lightsNode = null;
+
+		/**
+		 * The environment of node materials can be defined by an environment
+		 * map assigned to the `envMap` property or by `Scene.environment`
+		 * if the node material is a PBR material. This node property allows to overwrite
+		 * the default behavior and define the environment with a custom node.
+		 *
+		 * ```js
+		 * material.envNode = pmremTexture( renderTarget.texture );
+		 * ```
+		 *
+		 * @type {?Node<vec3>}
+		 * @default null
+		 */
+		this.envNode = null;
+
+		/**
+		 * The lighting of node materials might be influenced by ambient occlusion.
+		 * The default AO is inferred from an ambient occlusion map assigned to `aoMap`
+		 * and the respective `aoMapIntensity`. This node property allows to overwrite
+		 * the default and define the ambient occlusion with a custom node instead.
+		 *
+		 * If you don't want to overwrite the diffuse color but modify the existing
+		 * values instead, use {@link materialAO}.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.aoNode = null;
+
+		/**
+		 * The lighting of node materials might be influenced by a light map. The default
+		 * light map is inferred from a light map assigned to `lightMap` and the respective
+		 * `lightMapIntensity`. This node property allows to overwrite the default and define
+		 * the light map with a custom node instead, e.g. the output of a denoiser.
+		 *
+		 * @type {?Node<vec3>}
+		 * @default null
+		 */
+		this.lightMapNode = null;
+
+		/**
+		 * The diffuse color of node materials is by default inferred from the
+		 * `color` and `map` properties. This node property allows to overwrite the default
+		 * and define the diffuse color with a node instead.
+		 *
+		 * ```js
+		 * material.colorNode = color( 0xff0000 ); // define red color
+		 * ```
+		 *
+		 * If you don't want to overwrite the diffuse color but modify the existing
+		 * values instead, use {@link materialColor}.
+		 *
+		 * ```js
+		 * material.colorNode = materialColor.mul( color( 0xff0000 ) ); // give diffuse colors a red tint
+		 * ```
+		 *
+		 * @type {?Node<vec3>}
+		 * @default null
+		 */
+		this.colorNode = null;
+
+		/**
+		 * The normals of node materials are by default inferred from the `normalMap`/`normalScale`
+		 * or `bumpMap`/`bumpScale` properties. This node property allows to overwrite the default
+		 * and define the normals with a node instead.
+		 *
+		 * If you don't want to overwrite the normals but modify the existing values instead,
+		 * use {@link materialNormal}.
+		 *
+		 * @type {?Node<vec3>}
+		 * @default null
+		 */
+		this.normalNode = null;
+
+		/**
+		 * The opacity of node materials is by default inferred from the `opacity`
+		 * and `alphaMap` properties. This node property allows to overwrite the default
+		 * and define the opacity with a node instead.
+		 *
+		 * If you don't want to overwrite the opacity but modify the existing
+		 * value instead, use {@link materialOpacity}.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.opacityNode = null;
+
+		/**
+		 * This node can be used to implement a variety of filter-like effects. The idea is
+		 * to store the current rendering into a texture e.g. via `viewportSharedTexture()`, use it
+		 * to create an arbitrary effect and then assign the node composition to this property.
+		 * Everything behind the object using this material will now be affected by a filter.
+		 *
+		 * ```js
+		 * const material = new NodeMaterial()
+		 * material.transparent = true;
+		 *
+		 * // everything behind the object will be monochromatic
+		 * material.backdropNode = saturation( viewportSharedTexture().rgb, 0 );
+		 * ```
+		 *
+		 * Backdrop computations are part of the lighting so only lit materials can use this property.
+		 *
+		 * @type {?Node<vec3>}
+		 * @default null
+		 */
+		this.backdropNode = null;
+
+		/**
+		 * This node allows to modulate the influence of `backdropNode` to the outgoing light.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.backdropAlphaNode = null;
+
+		/**
+		 * The alpha test of node materials is by default inferred from the `alphaTest`
+		 * property. This node property allows to overwrite the default and define the
+		 * alpha test with a node instead.
+		 *
+		 * If you don't want to overwrite the alpha test but modify the existing
+		 * value instead, use {@link materialAlphaTest}.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.alphaTestNode = null;
+
+
+		/**
+		 * Discards the fragment if the mask value is `false`.
+		 *
+		 * @type {?Node<bool>}
+		 * @default null
+		 */
+		this.maskNode = null;
+
+		/**
+		 * This node can be used to implement a shadow mask for the material.
+		 *
+		 * @type {?Node<bool>}
+		 * @default null
+		 */
+		this.maskShadowNode = null;
+
+		/**
+		 * The local vertex positions are computed based on multiple factors like the
+		 * attribute data, morphing, skinning, instancing or batching. This node property
+		 * allows to overwrite the default and define local vertex positions with nodes instead.
+		 *
+		 * If you don't want to overwrite the vertex positions but modify the existing
+		 * values instead, use {@link positionLocal}.
+		 *
+		 *```js
+		 * material.positionNode = positionLocal.add( displace );
+		 * ```
+		 *
+		 * @type {?Node<vec3>}
+		 * @default null
+		 */
+		this.positionNode = null;
+
+		/**
+		 * This node property is intended for logic which modifies geometry data once or per animation step.
+		 * Apps usually place such logic randomly in initialization routines or in the animation loop.
+		 * `geometryNode` is intended as a dedicated API so there is an intended spot where geometry modifications
+		 * can be implemented.
+		 *
+		 * The idea is to assign a `Fn` definition that holds the geometry modification logic. A typical example
+		 * would be a GPU based particle system that provides a node material for usage on app level. The particle
+		 * simulation would be implemented as compute shaders and managed inside a `Fn` function. This function is
+		 * eventually assigned to `geometryNode`.
+		 *
+		 * @type {?Function}
+		 * @default null
+		 */
+		this.geometryNode = null;
+
+		/**
+		 * Allows to overwrite depth values in the fragment shader.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.depthNode = null;
+
+		/**
+		 * Allows to overwrite the position used for shadow map rendering which
+		 * is by default {@link positionWorld}, the vertex position
+		 * in world space.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.receivedShadowPositionNode = null;
+
+		/**
+		 * Allows to overwrite the geometry position used for shadow map projection which
+		 * is by default {@link positionLocal}, the vertex position in local space.
+		 *
+		 * @type {?Node<float>}
+		 * @default null
+		 */
+		this.castShadowPositionNode = null;
+
+		/**
+		 * This node can be used to influence how an object using this node material
+		 * receive shadows.
+		 *
+		 * ```js
+		 * const totalShadows = float( 1 ).toVar();
+		 * material.receivedShadowNode = Fn( ( [ shadow ] ) => {
+		 * 	totalShadows.mulAssign( shadow );
+		 * 	//return float( 1 ); // bypass received shadows
+		 * 	return shadow.mix( color( 0xff0000 ), 1 ); // modify shadow color
+		 * } );
+		 *
+		 * @type {?(Function|FunctionNode<vec4>)}
+		 * @default null
+		 */
+		this.receivedShadowNode = null;
+
+		/**
+		 * This node can be used to influence how an object using this node material
+		 * casts shadows. To apply a color to shadows, you can simply do:
+		 *
+		 * ```js
+		 * material.castShadowNode = vec4( 1, 0, 0, 1 );
+		 * ```
+		 *
+		 * Which can be nice to fake colored shadows of semi-transparent objects. It
+		 * is also common to use the property with `Fn` function so checks are performed
+		 * per fragment.
+		 *
+		 * ```js
+		 * materialCustomShadow.castShadowNode = Fn( () => {
+		 * 	hash( vertexIndex ).greaterThan( 0.5 ).discard();
+		 * 	return materialColor;
+		 * } )();
+		 *  ```
+		 *
+		 * @type {?Node<vec4>}
+		 * @default null
+		 */
+		this.castShadowNode = null;
+
+		/**
+		 * This node can be used to overwrite the final output of the material.
+		 *
+		 * Unlike {@link NodeMaterial#fragmentNode}, the built-in material logic
+		 * (diffuse color, lighting, etc.) is still evaluated; assigning a node
+		 * only replaces the resulting output color.
+		 *
+		 * @type {?Node<vec4>}
+		 * @default null
+		 */
+		this.outputNode = null;
+
+		/**
+		 * MRT configuration is done on renderer or pass level. This node allows to
+		 * overwrite what values are written into MRT targets on material level. This
+		 * can be useful for implementing selective FX features that should only affect
+		 * specific objects.
+		 *
+		 * @type {?MRTNode}
+		 * @default null
+		 */
+		this.mrtNode = null;
+
+		/**
+		 * This node property can be used if you need complete freedom in implementing
+		 * the fragment shader. Assigning a node will replace the built-in material
+		 * logic used in the fragment stage.
+		 *
+		 * @type {?Node<vec4>}
+		 * @default null
+		 */
+		this.fragmentNode = null;
+
+		/**
+		 * This node property can be used if you need complete freedom in implementing
+		 * the vertex shader. Assigning a node will replace the built-in material logic
+		 * used in the vertex stage.
+		 *
+		 * @type {?Node<vec4>}
+		 * @default null
+		 */
+		this.vertexNode = null;
+
+		/**
+		 * This node can be used as a global context management component for this material.
+		 *
+		 * @type {?ContextNode}
+		 * @default null
+		 */
+		this.contextNode = null;
+
+	}
+
+	/**
+	 * Returns an array of child nodes for this material.
+	 *
+	 * @private
+	 * @returns {Array<{property: string, childNode: Node}>}
+	 */
+	_getNodeChildren() {
+
+		const children = [];
+
+		for ( const property of Object.getOwnPropertyNames( this ) ) {
+
+			if ( property.startsWith( '_' ) === true ) continue;
+
+			const object = this[ property ];
+
+			if ( object && object.isNode === true ) {
+
+				children.push( { property, childNode: object } );
+
+			}
+
+		}
+
+		return children;
+
+	}
+
+	/**
+	 * Allows to define a custom cache key that influence the material key computation
+	 * for render objects.
+	 *
+	 * @return {string} The custom cache key.
+	 */
+	customProgramCacheKey() {
+
+		const values = [];
+
+		for ( const { property, childNode } of this._getNodeChildren() ) {
+
+			values.push( hashString( property.slice( 0, -4 ) ), childNode.getCacheKey( true ) );
+
+		}
+
+		return this.type + hashArray( values );
+
+	}
+
+	/**
+	 * Builds this material with the given node builder.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	build( builder ) {
+
+		this.setup( builder );
+
+	}
+
+	/**
+	 * Setups a node material observer with the given builder.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {NodeMaterialObserver} The node material observer.
+	 */
+	setupObserver( builder ) {
+
+		return new NodeMaterialObserver( builder );
+
+	}
+
+	/**
+	 * Setups the vertex and fragment stage of this node material.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	setup( builder ) {
+
+		builder.context.setupNormal = () => subBuild( this.setupNormal( builder ), 'NORMAL', 'vec3' );
+		builder.context.setupPositionView = () => this.setupPositionView( builder );
+		builder.context.setupModelViewProjection = () => this.setupModelViewProjection( builder );
+
+		const renderer = builder.renderer;
+		const renderTarget = renderer.getRenderTarget();
+
+		// < VERTEX STAGE >
+
+		builder.addStack();
+
+		const mvp = this.setupVertex( builder );
+
+		const vertexNode = subBuild( this.vertexNode || mvp, 'VERTEX' );
+
+		builder.context.clipSpace = vertexNode;
+
+		builder.stack.outputNode = vertexNode;
+
+		this.setupHardwareClipping( builder );
+
+		if ( this.geometryNode !== null ) {
+
+			builder.stack.outputNode = builder.stack.outputNode.bypass( this.geometryNode );
+
+		}
+
+		builder.addFlow( 'vertex', builder.removeStack() );
+
+		// < FRAGMENT STAGE >
+
+		builder.addStack();
+
+		let resultNode;
+
+		const clippingNode = this.setupClipping( builder );
+
+		if ( this.depthWrite === true || this.depthTest === true ) {
+
+			// only write depth if depth buffer is configured
+
+			if ( renderTarget !== null ) {
+
+				if ( renderTarget.depthBuffer === true ) this.setupDepth( builder );
+
+			} else {
+
+				if ( renderer.depth === true ) this.setupDepth( builder );
+
+			}
+
+		}
+
+		if ( this.fragmentNode === null ) {
+
+			this.setupDiffuseColor( builder );
+			this.setupAmbientOcclusion( builder );
+			this.setupVariants( builder );
+
+			const outgoingLightNode = this.setupLighting( builder );
+
+			if ( clippingNode !== null ) builder.stack.addToStack( clippingNode );
+
+			// force unsigned floats - useful for RenderTargets
+
+			const basicOutput = vec4( outgoingLightNode, diffuseColor.a ).max( 0 );
+
+			resultNode = this.setupOutput( builder, basicOutput );
+
+			// OUTPUT NODE
+
+			output.assign( resultNode );
+
+			//
+
+			const isCustomOutput = this.outputNode !== null;
+
+			if ( isCustomOutput ) resultNode = this.outputNode;
+
+			//
+
+			if ( builder.context.getOutput ) {
+
+				resultNode = builder.context.getOutput( resultNode, builder );
+
+			}
+
+			// MRT
+
+			if ( renderTarget !== null ) {
+
+				const mrt = renderer.getMRT();
+				const materialMRT = this.mrtNode;
+
+				if ( mrt !== null ) {
+
+					if ( isCustomOutput ) output.assign( resultNode );
+
+					resultNode = mrt;
+
+					if ( materialMRT !== null ) {
+
+						resultNode = mrt.merge( materialMRT );
+
+					}
+
+				} else if ( materialMRT !== null ) {
+
+					resultNode = materialMRT;
+
+				}
+
+			}
+
+		} else {
+
+			let fragmentNode = this.fragmentNode;
+
+			if ( fragmentNode.isOutputStructNode !== true ) {
+
+				fragmentNode = fragmentNode.convert( builder.getOutputType() );
+
+			}
+
+			resultNode = this.setupOutput( builder, fragmentNode );
+
+		}
+
+		builder.stack.outputNode = resultNode;
+
+		builder.addFlow( 'fragment', builder.removeStack() );
+
+		// < OBSERVER >
+
+		builder.observer = this.setupObserver( builder );
+
+	}
+
+	/**
+	 * Setups the clipping node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {ClippingNode} The clipping node.
+	 */
+	setupClipping( builder ) {
+
+		if ( builder.clippingContext === null ) return null;
+
+		const { unionPlanes, intersectionPlanes } = builder.clippingContext;
+
+		let result = null;
+
+		if ( unionPlanes.length > 0 || intersectionPlanes.length > 0 ) {
+
+			const samples = builder.renderer.currentSamples;
+
+			if ( this.alphaToCoverage && samples > 1 ) {
+
+				// to be added to flow when the color/alpha value has been determined
+				result = clippingAlpha();
+
+			} else {
+
+				builder.stack.addToStack( clipping() );
+
+			}
+
+		}
+
+		return result;
+
+	}
+
+	/**
+	 * Setups the hardware clipping if available on the current device.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	setupHardwareClipping( builder ) {
+
+		builder.hardwareClipping = false;
+
+		if ( builder.clippingContext === null ) return;
+
+		const candidateCount = builder.clippingContext.unionPlanes.length;
+
+		// 8 planes supported by WebGL ANGLE_clip_cull_distance and WebGPU clip-distances
+
+		if ( candidateCount > 0 && candidateCount <= 8 && builder.isAvailable( 'clipDistance' ) ) {
+
+			builder.stack.addToStack( hardwareClipping() );
+
+			builder.hardwareClipping = true;
+
+		}
+
+		return;
+
+	}
+
+	/**
+	 * Setups the depth of this material.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	setupDepth( builder ) {
+
+		const { renderer, camera } = builder;
+
+		// Depth
+
+		let depthNode = this.depthNode;
+
+		if ( depthNode === null ) {
+
+			const mrt = renderer.getMRT();
+
+			if ( mrt && mrt.has( 'depth' ) ) {
+
+				depthNode = mrt.get( 'depth' );
+
+			} else if ( renderer.logarithmicDepthBuffer === true ) {
+
+				if ( camera.isOrthographicCamera !== true ) {
+
+					depthNode = viewZToLogarithmicDepth( positionView.z, cameraNear, cameraFar );
+
+				} else {
+
+					depthNode = viewZToOrthographicDepth( positionView.z, cameraNear, cameraFar );
+
+				}
+
+			}
+
+		}
+
+		if ( depthNode !== null ) {
+
+			depth.assign( depthNode ).toStack();
+
+		}
+
+	}
+
+	/**
+	 * Setups the position node in view space. This method exists
+	 * so derived node materials can modify the implementation e.g. sprite materials.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node<vec3>} The position in view space.
+	 */
+	setupPositionView( /*builder*/ ) {
+
+		return modelViewMatrix.mul( positionLocal ).xyz;
+
+	}
+
+	/**
+	 * Setups the position in clip space.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node<vec4>} The position in view space.
+	 */
+	setupModelViewProjection( /*builder*/ ) {
+
+		return cameraProjectionMatrix.mul( positionView );
+
+	}
+
+	/**
+	 * Setups the logic for the vertex stage.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node<vec4>} The position in clip space.
+	 */
+	setupVertex( builder ) {
+
+		builder.addStack();
+
+		this.setupPosition( builder );
+
+		builder.context.position = builder.removeStack();
+
+		return modelViewProjection;
+
+	}
+
+	/**
+	 * Setups the computation of the position in local space.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node<vec3>} The position in local space.
+	 */
+	setupPosition( builder ) {
+
+		const { object, geometry } = builder;
+
+		if ( geometry.morphAttributes.position || geometry.morphAttributes.normal || geometry.morphAttributes.color ) {
+
+			morphReference( object );
+
+		}
+
+		if ( object.isSkinnedMesh === true ) {
+
+			skinning( object );
+
+		}
+
+		if ( this.displacementMap ) {
+
+			const displacementMap = materialReference( 'displacementMap', 'texture' );
+			const displacementScale = materialReference( 'displacementScale', 'float' );
+			const displacementBias = materialReference( 'displacementBias', 'float' );
+
+			positionLocal.addAssign( normalLocal.normalize().mul( ( displacementMap.x.mul( displacementScale ).add( displacementBias ) ) ) );
+
+		}
+
+		if ( object.isBatchedMesh ) {
+
+			batch( object );
+
+		}
+
+		if ( ( object.isInstancedMesh && object.instanceMatrix && object.instanceMatrix.isInstancedBufferAttribute === true ) ) {
+
+			instancedMesh( object );
+
+		}
+
+		if ( this.positionNode !== null ) {
+
+			positionLocal.assign( subBuild( this.positionNode, 'POSITION', 'vec3' ) );
+
+		}
+
+		return positionLocal;
+
+	}
+
+	/**
+	 * Setups the computation of the material's diffuse color.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	setupDiffuseColor( builder ) {
+
+		const { object, geometry } = builder;
+
+		// MASK
+
+		if ( this.maskNode !== null ) {
+
+			// Discard if the mask is `false`
+
+			bool( this.maskNode ).not().discard();
+
+		}
+
+		// COLOR
+
+		let colorNode = this.colorNode ? vec4( this.colorNode ) : materialColor;
+
+		// VERTEX COLORS
+
+		let vertexColorNode = null;
+
+		if ( this.vertexColors === true && geometry.hasAttribute( 'color' ) ) {
+
+			vertexColorNode = vertexColor();
+
+		}
+
+		// INSTANCED COLORS
+
+		if ( object.instanceColor ) {
+
+			vertexColorNode = vertexColorNode !== null ? vertexColorNode.mul( instanceColor ) : instanceColor;
+
+		}
+
+		if ( object.isBatchedMesh && object._colorsTexture ) {
+
+			vertexColorNode = vertexColorNode !== null ? vertexColorNode.mul( batchColor ) : batchColor;
+
+		}
+
+		// MORPHED COLORS
+
+		if ( this.vertexColors === true && geometry.morphAttributes.color !== undefined ) {
+
+			vertexColorNode = morphColor( vec4( vertexColorNode !== null ? vertexColorNode : 1 ) );
+
+		}
+
+		if ( vertexColorNode !== null ) {
+
+			colorNode = colorNode.mul( vertexColorNode );
+
+		}
+
+		// DIFFUSE COLOR
+
+		diffuseColor.assign( colorNode );
+
+		// OPACITY
+
+		const opacityNode = this.opacityNode ? float( this.opacityNode ) : materialOpacity;
+		diffuseColor.a.assign( diffuseColor.a.mul( opacityNode ) );
+
+		// ALPHA TEST
+
+		let alphaTestNode = null;
+
+		if ( this.alphaTestNode !== null || this.alphaTest > 0 ) {
+
+			alphaTestNode = this.alphaTestNode !== null ? float( this.alphaTestNode ) : materialAlphaTest;
+
+			if ( this.alphaToCoverage === true ) {
+
+				diffuseColor.a = smoothstep( alphaTestNode, alphaTestNode.add( fwidth( diffuseColor.a ) ), diffuseColor.a );
+				diffuseColor.a.lessThanEqual( 0 ).discard();
+
+			} else {
+
+				diffuseColor.a.lessThanEqual( alphaTestNode ).discard();
+
+			}
+
+		}
+
+		// ALPHA HASH
+
+		if ( this.alphaHash === true ) {
+
+			diffuseColor.a.lessThan( getAlphaHashThreshold( positionLocal ) ).discard();
+
+		}
+
+		// OPAQUE
+
+		if ( builder.isOpaque() ) {
+
+			diffuseColor.a.assign( 1.0 );
+
+		}
+
+	}
+
+	/**
+	 * Abstract interface method that can be implemented by derived materials
+	 * to setup material-specific node variables.
+	 *
+	 * @abstract
+	 * @param {NodeBuilder} builder - The current node builder.
+	 */
+	setupVariants( /*builder*/ ) {
+
+		// Interface function.
+
+	}
+
+	/**
+	 * Setups the outgoing light node variable
+	 *
+	 * @return {Node<vec3>} The outgoing light node.
+	 */
+	setupOutgoingLight() {
+
+		return ( this.lights === true ) ? vec3( 0 ) : diffuseColor.rgb;
+
+	}
+
+	/**
+	 * Setups the normal node from the material.
+	 *
+	 * @return {Node<vec3>} The normal node.
+	 */
+	setupNormal() {
+
+		return this.normalNode ? vec3( this.normalNode ) : materialNormal;
+
+	}
+
+	/**
+	 * Setups the environment node from the material.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node<vec4>} The environment node.
+	 */
+	setupEnvironment( /*builder*/ ) {
+
+		let node = null;
+
+		if ( this.envNode ) {
+
+			node = this.envNode;
+
+		} else if ( this.envMap ) {
+
+			node = this.envMap.isCubeTexture ? materialReference( 'envMap', 'cubeTexture' ) : materialReference( 'envMap', 'texture' );
+
+		}
+
+		return node;
+
+	}
+
+	/**
+	 * Setups the light map node from the material.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node<vec3>} The light map node.
+	 */
+	setupLightMap( builder ) {
+
+		let node = null;
+
+		if ( this.lightMapNode !== null ) {
+
+			node = new IrradianceNode( vec3( this.lightMapNode ) );
+
+		} else if ( builder.material.lightMap ) {
+
+			node = new IrradianceNode( materialLightMap );
+
+		}
+
+		return node;
+
+	}
+
+	/**
+	 * Setups the lights node based on the scene, environment and material.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {LightingNode<Array>} The lights node.
+	 */
+	setupMaterialLightings( builder ) {
+
+		const materialLightsNode = [];
+
+		const envNode = this.setupEnvironment( builder );
+
+		if ( envNode && envNode.isLightingNode ) {
+
+			materialLightsNode.push( envNode );
+
+		}
+
+		const lightMapNode = this.setupLightMap( builder );
+
+		if ( lightMapNode && lightMapNode.isLightingNode ) {
+
+			materialLightsNode.push( lightMapNode );
+
+		}
+
+		if ( builder.context.ambientOcclusion ) {
+
+			materialLightsNode.push( new AONode( builder.context.ambientOcclusion ) );
+
+		}
+
+		if ( builder.context.getGI ) {
+
+			const giNode = builder.context.getGI( null, builder );
+
+			if ( giNode !== null ) {
+
+				materialLightsNode.push( new IrradianceNode( giNode ) );
+
+			}
+
+		}
+
+		return materialLightsNode;
+
+	}
+
+	/**
+	 * Setups the ambient occlusion node from the material.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node} The ambient occlusion node.
+	 */
+	setupAmbientOcclusion( builder ) {
+
+		let aoNode = this.aoNode;
+
+		if ( aoNode === null && builder.material.aoMap ) {
+
+			aoNode = materialAO;
+
+		}
+
+		if ( builder.context.getAO ) {
+
+			aoNode = builder.context.getAO( aoNode, builder );
+
+		}
+
+		if ( aoNode !== null ) {
+
+			ambientOcclusion.assign( aoNode );
+
+			builder.context.ambientOcclusion = ambientOcclusion;
+
+		}
+
+	}
+
+	/**
+	 * This method should be implemented by most derived materials
+	 * since it defines the material's lighting model.
+	 *
+	 * @abstract
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {LightingModel} The lighting model.
+	 */
+	setupLightingModel( /*builder*/ ) {
+
+		// Interface function.
+
+	}
+
+	/**
+	 * Setups the outgoing light node.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {Node<vec3>} The outgoing light node.
+	 */
+	setupLighting( builder ) {
+
+		const { material } = builder;
+		const { backdropNode, backdropAlphaNode, emissiveNode } = this;
+
+		// OUTGOING LIGHT
+
+		const sceneLighting = this.lights === true && builder.renderer.lighting.enabled;
+		const lights = sceneLighting || this.lightsNode !== null;
+
+		const materialLightings = sceneLighting ? this.setupMaterialLightings( builder ) : [];
+		const lightsNode = lights ? ( this.lightsNode || builder.lightsNode ) : null;
+
+		let outgoingLightNode = this.setupOutgoingLight( builder );
+
+		if ( lightsNode && ( materialLightings.length > 0 || lightsNode.getScope().hasLights ) ) {
+
+			const lightingModel = this.setupLightingModel( builder ) || null;
+
+			outgoingLightNode = lightingContext( lightsNode, lightingModel, materialLightings, backdropNode, backdropAlphaNode );
+
+		} else if ( backdropNode !== null ) {
+
+			outgoingLightNode = vec3( backdropAlphaNode !== null ? mix( outgoingLightNode, backdropNode, backdropAlphaNode ) : backdropNode );
+
+		}
+
+		// EMISSIVE
+
+		if ( ( emissiveNode && emissiveNode.isNode === true ) || ( material.emissive && material.emissive.isColor === true ) ) {
+
+			emissive.assign( vec3( emissiveNode ? emissiveNode : materialEmissive ) );
+
+			outgoingLightNode = outgoingLightNode.add( emissive );
+
+		}
+
+		return outgoingLightNode;
+
+	}
+
+	/**
+	 * Setup the fog.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node<vec4>} outputNode - The existing output node.
+	 * @return {Node<vec4>} The output node.
+	 */
+	setupFog( builder, outputNode ) {
+
+		const fogNode = builder.fogNode;
+
+		if ( fogNode ) {
+
+			output.assign( outputNode );
+
+			outputNode = vec4( fogNode.toVar() );
+
+		}
+
+		return outputNode;
+
+	}
+
+	/**
+	 * Setups premultiplied alpha.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node<vec4>} outputNode - The existing output node.
+	 * @return {Node<vec4>} The output node.
+	 */
+	setupPremultipliedAlpha( builder, outputNode ) {
+
+		return premultiplyAlpha( outputNode );
+
+	}
+
+	/**
+	 * Setups the output node.
+	 *
+	 * This method can be implemented by derived materials to extend the functionality
+	 * of the material's output or replace it altogether.
+	 *
+	 * ```js
+	 * class ColoredShadowMaterial extends MeshPhongNodeMaterial {
+	 *   constructor( parameters ) {
+	 *     super( parameters );
+	 *     this._shadeColor = uniform( new Color( parameters.shadeColor ?? 0xff0000 ) );
+	 *   }
+	 *
+	 *   setupOutput( builder, outputNode ) {
+	 *	   // Modify the native output of the MeshPhongNodeMaterial fragment shader
+	 *     const brightness = min( outputNode.r, 1.0 );
+	 *     const mixedColor = mix( this._shadeColor, diffuseColor.rgb, brightness );
+	 *	   // Return new output back into NodeMaterial flow
+	 *     return super.setupOutput( builder, vec4( mixedColor, outputNode.a ) );
+	 *   }
+	 * }
+	 * ```
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @param {Node<vec4>} outputNode - The existing output node.
+	 * @return {Node<vec4>} The output node.
+	 */
+	setupOutput( builder, outputNode ) {
+
+		// FOG
+
+		if ( this.fog === true ) {
+
+			outputNode = this.setupFog( builder, outputNode );
+
+		}
+
+		// PREMULTIPLIED ALPHA
+
+		if ( this.premultipliedAlpha === true ) {
+
+			outputNode = this.setupPremultipliedAlpha( builder, outputNode );
+
+		}
+
+		return outputNode;
+
+	}
+
+	/**
+	 * Most classic material types have a node pendant e.g. for `MeshBasicMaterial`
+	 * there is `MeshBasicNodeMaterial`. This utility method is intended for
+	 * defining all material properties of the classic type in the node type.
+	 *
+	 * @param {Material} material - The material to copy properties with their values to this node material.
+	 */
+	setDefaultValues( material ) {
+
+		// This approach is to reuse the native refreshUniforms*
+		// and turn available the use of features like transmission and environment in core
+
+		for ( const property in material ) {
+
+			const value = material[ property ];
+
+			if ( this[ property ] === undefined ) {
+
+				this[ property ] = value;
+
+				if ( value && value.clone ) this[ property ] = value.clone();
+
+			}
+
+		}
+
+		const descriptors = Object.getOwnPropertyDescriptors( material.constructor.prototype );
+
+		for ( const key in descriptors ) {
+
+			if ( Object.getOwnPropertyDescriptor( this.constructor.prototype, key ) === undefined && descriptors[ key ].get !== undefined ) {
+
+				Object.defineProperty( this.constructor.prototype, key, descriptors[ key ] );
+
+			}
+
+		}
+
+	}
+
+	/**
+	 * Serializes this material to JSON.
+	 *
+	 * @param {?(Object|string)} meta - The meta information for serialization.
+	 * @return {Object} The serialized node.
+	 */
+	toJSON( meta ) {
+
+		const isRoot = ( meta === undefined || typeof meta === 'string' );
+
+		if ( isRoot ) {
+
+			meta = {
+				textures: {},
+				images: {},
+				nodes: {}
+			};
+
+		}
+
+		const data = Material.prototype.toJSON.call( this, meta );
+		data.inputNodes = {};
+
+		for ( const { property, childNode } of this._getNodeChildren() ) {
+
+			data.inputNodes[ property ] = childNode.toJSON( meta ).uuid;
+
+		}
+
+		// TODO: Copied from Object3D.toJSON
+
+		function extractFromCache( cache ) {
+
+			const values = [];
+
+			for ( const key in cache ) {
+
+				const data = cache[ key ];
+				delete data.metadata;
+				values.push( data );
+
+			}
+
+			return values;
+
+		}
+
+		if ( isRoot ) {
+
+			const textures = extractFromCache( meta.textures );
+			const images = extractFromCache( meta.images );
+			const nodes = extractFromCache( meta.nodes );
+
+			if ( textures.length > 0 ) data.textures = textures;
+			if ( images.length > 0 ) data.images = images;
+			if ( nodes.length > 0 ) data.nodes = nodes;
+
+		}
+
+		return data;
+
+	}
+
+	/**
+	 * Copies the common properties of the given material to this instance.
+	 *
+	 * @param {Material} source - The material to copy.
+	 * @return {NodeMaterial} A reference to this node material.
+	 */
+	copy( source ) {
+
+		for ( let prototype = Object.getPrototypeOf( this ); prototype !== Object.prototype; prototype = Object.getPrototypeOf( prototype ) ) {
+
+			const descriptors = Object.getOwnPropertyDescriptors( prototype );
+
+			for ( const property in descriptors ) {
+
+				if ( descriptors[ property ].set !== undefined && source[ property ] !== undefined ) {
+
+					const value = source[ property ];
+
+					if ( this[ property ] && this[ property ].copy !== undefined ) {
+
+						this[ property ].copy( value );
+
+					} else {
+
+						this[ property ] = value;
+
+					}
+
+				}
+
+			}
+
+		}
+
+		for ( const property in this ) {
+
+			// Skip internal/private properties (starting with '_'), flags (starting with 'is' + uppercase),
+			// and properties that are handled separately or should not be copied (id, uuid, version, type, userData, clippingPlanes).
+
+			if ( /^(?:is[A-Z]|_)|^(?:id|uuid|version|type|userData|clippingPlanes)$/.test( property ) ) continue;
+
+			if ( this[ property ] !== undefined && source[ property ] !== undefined ) {
+
+				const value = source[ property ];
+
+				if ( this[ property ] && this[ property ].copy !== undefined ) {
+
+					this[ property ].copy( value );
+
+				} else {
+
+					this[ property ] = value;
+
+				}
+
+			}
+
+		}
+
+		this.clippingPlanes = source.clippingPlanes ? source.clippingPlanes.map( ( plane ) => plane.clone() ) : null;
+
+		this.userData = JSON.parse( JSON.stringify( source.userData ) );
+
+		return this;
+
+	}
+
+}
+
+/**
+ * TSL function for creating an equirect uv node.
+ *
+ * Can be used to compute texture coordinates for projecting an
+ * equirectangular texture onto a mesh for using it as the scene's
+ * background.
+ *
+ * ```js
+ * scene.backgroundNode = texture( equirectTexture, equirectUV() );
+ * ```
+ *
+ * @tsl
+ * @function
+ * @param {?Node<vec3>} [direction=positionWorldDirection] - A direction vector for sampling which is by default `positionWorldDirection`.
+ * @returns {Node<vec2>}
+ */
+const equirectUV = /*@__PURE__*/ Fn( ( [ direction = positionWorldDirection ] ) => {
+
+	const u = direction.z.atan( direction.x ).mul( 1 / ( Math.PI * 2 ) ).add( 0.5 );
+	const v = direction.y.clamp( -1, 1.0 ).asin().mul( 1 / Math.PI ).add( 0.5 );
+
+	return vec2( u, v );
+
+} );
+
+/**
+ * TSL function for creating an equirect direction node.
+ *
+ * Can be used to compute a direction vector from the given equirectangular
+ * UV coordinates.
+ *
+ * @tsl
+ * @function
+ * @param {?Node<vec2>} [uv=UV()] - The equirectangular UV coordinates.
+ * @returns {Node<vec3>} The computed direction vector.
+ */
+const equirectDirection = /*@__PURE__*/ Fn( ( [ uv = uv$1() ] ) => {
+
+	const theta = uv.x.sub( 0.5 ).mul( Math.PI * 2 );
+	const phi = uv.y.sub( 0.5 ).mul( Math.PI );
+	const cosPhi = phi.cos();
+	const x = cosPhi.mul( theta.cos() );
+	const y = phi.sin();
+	const z = cosPhi.mul( theta.sin() );
+
+	return vec3( x, y, z );
+
+} );
+
+/**
+ * This class represents a cube render target. It is a special version
+ * of `WebGLCubeRenderTarget` which is compatible with `WebGPURenderer`.
+ *
+ * @augments RenderTarget
+ */
+class CubeRenderTarget extends RenderTarget {
+
+	/**
+	 * Constructs a new cube render target.
+	 *
+	 * @param {number} [size=1] - The size of the render target.
+	 * @param {RenderTarget~Options} [options] - The configuration object.
+	 */
+	constructor( size = 1, options = {} ) {
+
+		super( size, size, options );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isCubeRenderTarget = true;
+
+		const image = { width: size, height: size, depth: 1 };
+		const images = [ image, image, image, image, image, image ];
+
+		/**
+		 * Overwritten with a different texture type.
+		 *
+		 * @type {DataArrayTexture}
+		 */
+		this.texture = new CubeTexture( images );
+		this._setTextureOptions( options );
+
+		// By convention -- likely based on the RenderMan spec from the 1990's -- cube maps are specified by WebGL (and three.js)
+		// in a coordinate system in which positive-x is to the right when looking up the positive-z axis -- in other words,
+		// in a left-handed coordinate system. By continuing this convention, preexisting cube maps continued to render correctly.
+
+		// three.js uses a right-handed coordinate system. So environment maps used in three.js appear to have px and nx swapped
+		// and the flag isRenderTargetTexture controls this conversion. The flip is not required when using WebGLCubeRenderTarget.texture
+		// as a cube texture (this is detected when isRenderTargetTexture is set to true for cube textures).
+
+		this.texture.isRenderTargetTexture = true;
+
+	}
+
+	/**
+	 * Converts the given equirectangular texture to a cube map.
+	 *
+	 * @param {Renderer} renderer - The renderer.
+	 * @param {Texture} texture - The equirectangular texture.
+	 * @return {CubeRenderTarget} A reference to this cube render target.
+	 */
+	fromEquirectangularTexture( renderer, texture$1 ) {
+
+		const currentMinFilter = texture$1.minFilter;
+		const currentGenerateMipmaps = texture$1.generateMipmaps;
+
+		texture$1.generateMipmaps = true;
+
+		this.texture.type = texture$1.type;
+		this.texture.colorSpace = texture$1.colorSpace;
+
+		this.texture.generateMipmaps = texture$1.generateMipmaps;
+		this.texture.minFilter = texture$1.minFilter;
+		this.texture.magFilter = texture$1.magFilter;
+
+		const geometry = new BoxGeometry( 5, 5, 5 );
+
+		const uvNode = equirectUV( positionWorldDirection );
+
+		const material = new NodeMaterial();
+		material.colorNode = texture( texture$1, uvNode, 0 );
+		material.side = BackSide;
+		material.blending = NoBlending;
+
+		const mesh = new Mesh( geometry, material );
+
+		const scene = new Scene();
+		scene.add( mesh );
+
+		// Avoid blurred poles
+		if ( texture$1.minFilter === LinearMipmapLinearFilter ) texture$1.minFilter = LinearFilter;
+
+		const camera = new CubeCamera( 1, 10, this );
+
+		const currentMRT = renderer.getMRT();
+		renderer.setMRT( null );
+
+		camera.update( renderer, scene );
+
+		renderer.setMRT( currentMRT );
+
+		texture$1.minFilter = currentMinFilter;
+		texture$1.generateMipmaps = currentGenerateMipmaps;
+
+		mesh.geometry.dispose();
+		mesh.material.dispose();
+
+		return this;
+
+	}
+
+	/**
+	 * Clears this cube render target.
+	 *
+	 * @param {Renderer} renderer - The renderer.
+	 * @param {boolean} [color=true] - Whether the color buffer should be cleared or not.
+	 * @param {boolean} [depth=true] - Whether the depth buffer should be cleared or not.
+	 * @param {boolean} [stencil=true] - Whether the stencil buffer should be cleared or not.
+	 */
+	clear( renderer, color = true, depth = true, stencil = true ) {
+
+		const currentRenderTarget = renderer.getRenderTarget();
+
+		for ( let i = 0; i < 6; i ++ ) {
+
+			renderer.setRenderTarget( this, i );
+
+			renderer.clear( color, depth, stencil );
+
+		}
+
+		renderer.setRenderTarget( currentRenderTarget );
+
+	}
+
+}
+
+const F_Schlick = /*@__PURE__*/ Fn( ( { f0, f90, dotVH } ) => {
+
+	// Original approximation by Christophe Schlick '94
+	// float fresnel = pow( 1.0 - dotVH, 5.0 );
+
+	// Optimized variant (presented by Epic at SIGGRAPH '13)
+	// https://cdn2.unrealengine.com/Resources/files/2013SiggraphPresentationsNotes-26915738.pdf
+	const fresnel = dotVH.mul( -5.55473 ).sub( 6.98316 ).mul( dotVH ).exp2();
+
+	return f0.mul( fresnel.oneMinus() ).add( f90.mul( fresnel ) );
+
+} ); // validated
+
+const BRDF_Lambert = /*@__PURE__*/ Fn( ( inputs ) => {
+
+	return inputs.diffuseColor.mul( 1 / Math.PI ); // punctual light
+
+} ); // validated
+
+const getGeometryRoughness = /*@__PURE__*/ Fn( ( builder ) => {
+
+	if ( builder.geometry.hasAttribute( 'normal' ) === false ) {
+
+		return float( 0 );
+
+	}
+
+	const dxy = normalViewGeometry.dFdx().abs().max( normalViewGeometry.dFdy().abs() );
+	const geometryRoughness = dxy.x.max( dxy.y ).max( dxy.z );
+
+	return geometryRoughness;
+
+} );
+
+const getRoughness = /*@__PURE__*/ Fn( ( inputs ) => {
+
+	const { roughness } = inputs;
+
+	const geometryRoughness = getGeometryRoughness();
+
+	// Minimum roughness, so even a perfect mirror samples a prefiltered level of the environment map.
+	// Matches Filament's desktop MIN_PERCEPTUAL_ROUGHNESS: https://github.com/google/filament/blob/main/shaders/src/surface_material.fs
+	let roughnessFactor = roughness.max( 0.045 );
+	roughnessFactor = roughnessFactor.add( geometryRoughness );
+	roughnessFactor = roughnessFactor.min( 1.0 );
+
+	return roughnessFactor;
+
+} );
+
+const EON_EPSILON = 1e-7;
+const FON_A_COEFFICIENT = 0.5 - 2 / ( 3 * Math.PI );
+const FON_AVERAGE_ALBEDO_COEFFICIENT = 2 / 3 - 28 / ( 15 * Math.PI );
+
+const FON_DirectionalAlbedo = /*@__PURE__*/ Fn( ( { mu, roughness, A } ) => {
+
+	const muComp = mu.oneMinus();
+	const gOverPi = muComp.mul(
+		muComp.mul(
+			muComp.mul(
+				muComp.mul( 0.0714429953 ).sub( 0.332181442 )
+			).add( 0.491881867 )
+		).add( 0.0571085289 )
+	);
+
+	return A.mul( roughness.mul( gOverPi ).add( 1.0 ) );
+
+}, { mu: 'float', roughness: 'float', A: 'float', return: 'float' } );
+
+// Portsmouth et al. 2025, "EON: A Practical Energy-Preserving Rough Diffuse BRDF"
+// https://jcgt.org/published/0014/01/06/
+const BRDF_EON = /*@__PURE__*/ Fn( ( { lightDirection, diffuseColor, roughness, normalView: normalView$1 = normalView, viewDirection = positionViewDirection } ) => {
+
+	const rho = diffuseColor.clamp();
+	const dotNL = normalView$1.dot( lightDirection ).clamp();
+	const dotNV = normalView$1.dot( viewDirection ).clamp();
+	const s = lightDirection.dot( viewDirection ).sub( dotNL.mul( dotNV ) );
+	const sOverT = s.greaterThan( 0.0 ).select( s.div( dotNL.max( dotNV ).max( EON_EPSILON ) ), s );
+
+	const A = roughness.mul( FON_A_COEFFICIENT ).add( 1.0 ).reciprocal();
+	const singleScatter = rho.mul( 1 / Math.PI, A, roughness.mul( sOverT ).add( 1.0 ) );
+
+	const averageAlbedo = A.mul( roughness.mul( FON_AVERAGE_ALBEDO_COEFFICIENT ).add( 1.0 ) );
+	const albedoV = FON_DirectionalAlbedo( { mu: dotNV, roughness, A } );
+	const albedoL = FON_DirectionalAlbedo( { mu: dotNL, roughness, A } );
+	const rhoMultiScatter = rho.mul( rho, averageAlbedo ).div( rho.mul( averageAlbedo.oneMinus() ).oneMinus().max( EON_EPSILON ) );
+	const multiScatter = rhoMultiScatter.mul(
+		1 / Math.PI,
+		albedoV.oneMinus().max( EON_EPSILON ),
+		albedoL.oneMinus().max( EON_EPSILON )
+	).div( averageAlbedo.oneMinus().max( EON_EPSILON ) );
+	const eon = singleScatter.add( multiScatter );
+
+	return roughness.lessThanEqual( EON_EPSILON ).select( rho.mul( 1 / Math.PI ), eon );
+
+} );
+
+const EON_DirectionalAlbedo = /*@__PURE__*/ Fn( ( { diffuseColor, roughness, dotNV } ) => {
+
+	const rho = diffuseColor.clamp();
+	const A = roughness.mul( FON_A_COEFFICIENT ).add( 1.0 ).reciprocal();
+	const directionalAlbedo = FON_DirectionalAlbedo( { mu: dotNV.clamp(), roughness, A } );
+	const averageAlbedo = A.mul( roughness.mul( FON_AVERAGE_ALBEDO_COEFFICIENT ).add( 1.0 ) );
+	const rhoMultiScatter = rho.mul( rho, averageAlbedo ).div( rho.mul( averageAlbedo.oneMinus() ).oneMinus().max( EON_EPSILON ) );
+	const eonAlbedo = rho.mul( directionalAlbedo ).add( rhoMultiScatter.mul( directionalAlbedo.oneMinus() ) );
+
+	return roughness.lessThanEqual( EON_EPSILON ).select( rho, eonAlbedo );
+
+}, { diffuseColor: 'vec3', roughness: 'float', dotNV: 'float', return: 'vec3' } );
+
+// Moving Frostbite to Physically Based Rendering 3.0 - page 12, listing 2
+// https://seblagarde.files.wordpress.com/2015/07/course_notes_moving_frostbite_to_pbr_v32.pdf
+const V_GGX_SmithCorrelated = /*@__PURE__*/ Fn( ( { alpha, dotNL, dotNV } ) => {
+
+	const a2 = alpha.pow2();
+
+	const gv = dotNL.mul( a2.add( a2.oneMinus().mul( dotNV.pow2() ) ).sqrt() );
+	const gl = dotNV.mul( a2.add( a2.oneMinus().mul( dotNL.pow2() ) ).sqrt() );
+
+	return div( 0.5, gv.add( gl ).max( EPSILON ) );
+
+}, { alpha: 'float', dotNL: 'float', dotNV: 'float', return: 'float' } ); // validated
+
+// https://google.github.io/filament/Filament.md.html#materialsystem/anisotropicmodel/anisotropicspecularbrdf
+
+const V_GGX_SmithCorrelated_Anisotropic = /*@__PURE__*/ Fn( ( { alphaT, alphaB, dotTV, dotBV, dotTL, dotBL, dotNV, dotNL } ) => {
+
+	const gv = dotNL.mul( vec3( alphaT.mul( dotTV ), alphaB.mul( dotBV ), dotNV ).length() );
+	const gl = dotNV.mul( vec3( alphaT.mul( dotTL ), alphaB.mul( dotBL ), dotNL ).length() );
+
+	return div( 0.5, gv.add( gl ).max( EPSILON ) );
+
+}, {
+	alphaT: 'float',
+	alphaB: 'float',
+	dotTV: 'float',
+	dotBV: 'float',
+	dotTL: 'float',
+	dotBL: 'float',
+	dotNV: 'float',
+	dotNL: 'float',
+	return: 'float'
+} );
+
+// Microfacet Models for Refraction through Rough Surfaces - equation (33)
+// http://graphicrants.blogspot.com/2013/08/specular-brdf-reference.html
+// alpha is "roughness squared" in Disney’s reparameterization
+const D_GGX = /*@__PURE__*/ Fn( ( { alpha, dotNH } ) => {
+
+	const a2 = alpha.pow2();
+
+	const denom = dotNH.pow2().mul( a2.oneMinus() ).oneMinus(); // avoid alpha = 0 with dotNH = 1
+
+	return a2.div( denom.pow2() ).mul( 1 / Math.PI );
+
+}, { alpha: 'float', dotNH: 'float', return: 'float' } ); // validated
+
+const RECIPROCAL_PI = /*@__PURE__*/ float( 1 / Math.PI );
+
+// https://google.github.io/filament/Filament.md.html#materialsystem/anisotropicmodel/anisotropicspecularbrdf
+
+const D_GGX_Anisotropic = /*@__PURE__*/ Fn( ( { alphaT, alphaB, dotNH, dotTH, dotBH } ) => {
+
+	const a2 = alphaT.mul( alphaB );
+	const v = vec3( alphaB.mul( dotTH ), alphaT.mul( dotBH ), a2.mul( dotNH ) );
+	const v2 = v.dot( v );
+	const w2 = a2.div( v2 );
+
+	return RECIPROCAL_PI.mul( a2.mul( w2.pow2() ) );
+
+}, {
+	alphaT: 'float',
+	alphaB: 'float',
+	dotNH: 'float',
+	dotTH: 'float',
+	dotBH: 'float',
+	return: 'float'
+} );
+
+// GGX Distribution, Schlick Fresnel, GGX_SmithCorrelated Visibility
+const BRDF_GGX = /*@__PURE__*/ Fn( ( { lightDirection, f0, f90, roughness, f, normalView: normalView$1 = normalView, viewDirection = positionViewDirection, USE_IRIDESCENCE, USE_ANISOTROPY } ) => {
+
+	const alpha = roughness.max( 0.045 ).pow2(); // punctual lights need a minimum roughness to show a highlight
+
+	const halfDir = lightDirection.add( viewDirection ).normalize();
+
+	const dotNL = normalView$1.dot( lightDirection ).clamp();
+	const dotNV = normalView$1.dot( viewDirection ).clamp(); // @ TODO: Move to core dotNV
+	const dotNH = normalView$1.dot( halfDir ).clamp();
+	const dotVH = viewDirection.dot( halfDir ).clamp();
+
+	let F = F_Schlick( { f0, f90, dotVH } );
+	let V, D;
+
+	if ( defined( USE_IRIDESCENCE ) ) {
+
+		F = iridescence.mix( F, f );
+
+	}
+
+	if ( defined( USE_ANISOTROPY ) ) {
+
+		const dotTL = anisotropyT.dot( lightDirection );
+		const dotTV = anisotropyT.dot( viewDirection );
+		const dotTH = anisotropyT.dot( halfDir );
+		const dotBL = anisotropyB.dot( lightDirection );
+		const dotBV = anisotropyB.dot( viewDirection );
+		const dotBH = anisotropyB.dot( halfDir );
+
+		const clampedAlphaT = alphaT.max( alpha );
+
+		V = V_GGX_SmithCorrelated_Anisotropic( { alphaT: clampedAlphaT, alphaB: alpha, dotTV, dotBV, dotTL, dotBL, dotNV, dotNL } );
+		D = D_GGX_Anisotropic( { alphaT: clampedAlphaT, alphaB: alpha, dotNH, dotTH, dotBH } );
+
+	} else {
+
+		V = V_GGX_SmithCorrelated( { alpha, dotNL, dotNV } );
+		D = D_GGX( { alpha, dotNH } );
+
+	}
+
+	return F.mul( V ).mul( D );
+
+} ); // validated
+
+/**
+ * Precomputed DFG LUT for physically based specular lighting, used by both
+ * image-based lighting and direct-light multi-scattering energy compensation
+ * Resolution: 16x16
+ * Samples: 4096 per texel
+ * Format: RG16F (2 half floats per texel: scale, bias)
+ */
+
+const DATA = new Uint16Array( [
+	0x30b5, 0x3ad1, 0x314c, 0x3a4d, 0x33d2, 0x391c, 0x35ef, 0x3828, 0x37f3, 0x36a6, 0x38d1, 0x3539, 0x3979, 0x3410, 0x39f8, 0x3252, 0x3a53, 0x30f0, 0x3a94, 0x2fc9, 0x3abf, 0x2e35, 0x3ada, 0x2d05, 0x3ae8, 0x2c1f, 0x3aed, 0x2ae0, 0x3aea, 0x29d1, 0x3ae1, 0x28ff,
+	0x3638, 0x38e4, 0x364a, 0x38ce, 0x3699, 0x385e, 0x374e, 0x372c, 0x3839, 0x35a4, 0x38dc, 0x3462, 0x396e, 0x32c4, 0x39de, 0x3134, 0x3a2b, 0x3003, 0x3a59, 0x2e3a, 0x3a6d, 0x2ce1, 0x3a6e, 0x2bba, 0x3a5f, 0x2a33, 0x3a49, 0x290a, 0x3a2d, 0x2826, 0x3a0a, 0x26e8,
+	0x3894, 0x36d7, 0x3897, 0x36c9, 0x38a3, 0x3675, 0x38bc, 0x35ac, 0x38ee, 0x349c, 0x393e, 0x3332, 0x3997, 0x3186, 0x39e2, 0x3038, 0x3a13, 0x2e75, 0x3a29, 0x2cf5, 0x3a2d, 0x2bac, 0x3a21, 0x29ff, 0x3a04, 0x28bc, 0x39dc, 0x2790, 0x39ad, 0x261a, 0x3978, 0x24fa,
+	0x39ac, 0x34a8, 0x39ac, 0x34a3, 0x39ae, 0x3480, 0x39ae, 0x3423, 0x39b1, 0x330e, 0x39c2, 0x31a9, 0x39e0, 0x3063, 0x39fc, 0x2eb5, 0x3a0c, 0x2d1d, 0x3a14, 0x2bcf, 0x3a07, 0x29ff, 0x39e9, 0x28a3, 0x39be, 0x273c, 0x3989, 0x25b3, 0x394a, 0x2488, 0x3907, 0x2345,
+	0x3a77, 0x3223, 0x3a76, 0x321f, 0x3a73, 0x3204, 0x3a6a, 0x31b3, 0x3a58, 0x3114, 0x3a45, 0x303b, 0x3a34, 0x2eb6, 0x3a26, 0x2d31, 0x3a1e, 0x2bef, 0x3a0b, 0x2a0d, 0x39ec, 0x28a1, 0x39c0, 0x271b, 0x3987, 0x2580, 0x3944, 0x2449, 0x38fa, 0x22bd, 0x38ac, 0x2155,
+	0x3b07, 0x2fca, 0x3b06, 0x2fca, 0x3b00, 0x2fb8, 0x3af4, 0x2f7c, 0x3adb, 0x2eea, 0x3ab4, 0x2e00, 0x3a85, 0x2cec, 0x3a5e, 0x2bc5, 0x3a36, 0x2a00, 0x3a0d, 0x2899, 0x39dc, 0x2707, 0x39a0, 0x2562, 0x395a, 0x2424, 0x390b, 0x2268, 0x38b7, 0x20fd, 0x385f, 0x1fd1,
+	0x3b69, 0x2cb9, 0x3b68, 0x2cbb, 0x3b62, 0x2cbb, 0x3b56, 0x2cae, 0x3b3b, 0x2c78, 0x3b0d, 0x2c0a, 0x3acf, 0x2ae3, 0x3a92, 0x2998, 0x3a54, 0x2867, 0x3a17, 0x26d0, 0x39d3, 0x253c, 0x3989, 0x2402, 0x3935, 0x2226, 0x38dc, 0x20bd, 0x387d, 0x1f54, 0x381d, 0x1db3,
+	0x3ba9, 0x296b, 0x3ba8, 0x296f, 0x3ba3, 0x297b, 0x3b98, 0x2987, 0x3b7f, 0x2976, 0x3b4e, 0x2927, 0x3b0e, 0x2895, 0x3ac2, 0x27b7, 0x3a73, 0x263b, 0x3a23, 0x24e7, 0x39d0, 0x239b, 0x3976, 0x21d9, 0x3917, 0x207e, 0x38b2, 0x1ee7, 0x384b, 0x1d53, 0x37c7, 0x1c1e,
+	0x3bd2, 0x25cb, 0x3bd1, 0x25d3, 0x3bcd, 0x25f0, 0x3bc2, 0x261f, 0x3bad, 0x2645, 0x3b7d, 0x262d, 0x3b3e, 0x25c4, 0x3aec, 0x250f, 0x3a93, 0x243a, 0x3a32, 0x22ce, 0x39d0, 0x215b, 0x3969, 0x202a, 0x38fe, 0x1e6e, 0x388f, 0x1cf1, 0x381f, 0x1b9b, 0x3762, 0x19dd,
+	0x3be9, 0x21ab, 0x3be9, 0x21b7, 0x3be5, 0x21e5, 0x3bdd, 0x2241, 0x3bc9, 0x22a7, 0x3ba0, 0x22ec, 0x3b62, 0x22cd, 0x3b0f, 0x2247, 0x3aae, 0x2175, 0x3a44, 0x2088, 0x39d4, 0x1f49, 0x3960, 0x1dbe, 0x38e9, 0x1c77, 0x3870, 0x1ae8, 0x37f1, 0x1953, 0x3708, 0x181b,
+	0x3bf6, 0x1cea, 0x3bf6, 0x1cfb, 0x3bf3, 0x1d38, 0x3bec, 0x1dbd, 0x3bda, 0x1e7c, 0x3bb7, 0x1f25, 0x3b7d, 0x1f79, 0x3b2c, 0x1f4c, 0x3ac6, 0x1ea6, 0x3a55, 0x1dbb, 0x39da, 0x1cbd, 0x395a, 0x1b9d, 0x38d8, 0x1a00, 0x3855, 0x18ac, 0x37ab, 0x173c, 0x36b7, 0x1598,
+	0x3bfc, 0x1736, 0x3bfc, 0x1759, 0x3bf9, 0x17e7, 0x3bf4, 0x1896, 0x3be4, 0x1997, 0x3bc6, 0x1aa8, 0x3b91, 0x1b84, 0x3b43, 0x1bd2, 0x3ade, 0x1b8a, 0x3a65, 0x1acd, 0x39e2, 0x19d3, 0x3957, 0x18cd, 0x38ca, 0x17b3, 0x383e, 0x1613, 0x376d, 0x14bf, 0x366f, 0x135e,
+	0x3bff, 0x101b, 0x3bff, 0x1039, 0x3bfc, 0x10c8, 0x3bf9, 0x1226, 0x3bea, 0x1428, 0x3bcf, 0x1584, 0x3b9f, 0x16c5, 0x3b54, 0x179a, 0x3af0, 0x17ce, 0x3a76, 0x1771, 0x39ea, 0x16a4, 0x3956, 0x15a7, 0x38bf, 0x14a7, 0x3829, 0x1379, 0x3735, 0x11ea, 0x362d, 0x10a1,
+	0x3c00, 0x061b, 0x3c00, 0x066a, 0x3bfe, 0x081c, 0x3bfa, 0x0a4c, 0x3bed, 0x0d16, 0x3bd5, 0x0fb3, 0x3ba9, 0x114d, 0x3b63, 0x127c, 0x3b01, 0x132f, 0x3a85, 0x1344, 0x39f4, 0x12d2, 0x3957, 0x120d, 0x38b5, 0x1122, 0x3817, 0x103c, 0x3703, 0x0ed3, 0x35f0, 0x0d6d,
+	0x3c00, 0x007a, 0x3c00, 0x0089, 0x3bfe, 0x011d, 0x3bfb, 0x027c, 0x3bf0, 0x04fa, 0x3bda, 0x0881, 0x3bb1, 0x0acd, 0x3b6f, 0x0c97, 0x3b10, 0x0d7b, 0x3a93, 0x0df1, 0x39fe, 0x0def, 0x3959, 0x0d8a, 0x38af, 0x0ce9, 0x3808, 0x0c31, 0x36d5, 0x0af0, 0x35b9, 0x09a3,
+	0x3c00, 0x0000, 0x3c00, 0x0001, 0x3bff, 0x0015, 0x3bfb, 0x0059, 0x3bf2, 0x00fd, 0x3bdd, 0x01df, 0x3bb7, 0x031c, 0x3b79, 0x047c, 0x3b1d, 0x05d4, 0x3aa0, 0x06d5, 0x3a08, 0x075a, 0x395d, 0x075e, 0x38aa, 0x06f7, 0x37f4, 0x0648, 0x36ac, 0x0576, 0x3586, 0x049f
+] );
+
+let lut = null;
+
+const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
+
+	if ( lut === null ) {
+
+		lut = new DataTexture( DATA, 16, 16, RGFormat, HalfFloatType );
+		lut.name = 'DFG_LUT';
+		lut.minFilter = LinearFilter;
+		lut.magFilter = LinearFilter;
+		lut.wrapS = ClampToEdgeWrapping;
+		lut.wrapT = ClampToEdgeWrapping;
+		lut.generateMipmaps = false;
+		lut.needsUpdate = true;
+
+	}
+
+	const uv = vec2( roughness, dotNV );
+
+	return texture( lut, uv ).rg;
+
+} );
+
+const EnvironmentBRDF = /*@__PURE__*/ Fn( ( inputs ) => {
+
+	const { dotNV, specularColor, specularF90, roughness } = inputs;
+
+	const fab = DFGLUT( { dotNV, roughness } );
+	return specularColor.mul( fab.x ).add( specularF90.mul( fab.y ) );
+
+} );
+
+const Schlick_to_F0 = /*@__PURE__*/ Fn( ( { f, f90, dotVH } ) => {
+
+	const x = dotVH.oneMinus().saturate();
+	const x2 = x.mul( x );
+	const x5 = x.mul( x2, x2 ).clamp( 0, .9999 );
+
+	return f.sub( vec3( f90 ).mul( x5 ) ).div( x5.oneMinus() );
+
+}, { f: 'vec3', f90: 'float', dotVH: 'float', return: 'vec3' } );
+
+// https://github.com/google/filament/blob/main/shaders/src/surface_brdf.fs
+const D_Charlie = /*@__PURE__*/ Fn( ( { roughness, dotNH } ) => {
+
+	const alpha = roughness.pow2();
+
+	// Estevez and Kulla 2017, "Production Friendly Microfacet Sheen BRDF"
+	const invAlpha = float( 1.0 ).div( alpha );
+	const cos2h = dotNH.pow2();
+	const sin2h = cos2h.oneMinus().max( 0.0078125 ); // 2^(-14/2), so sin2h^2 > 0 in fp16
+
+	return float( 2.0 ).add( invAlpha ).mul( sin2h.pow( invAlpha.mul( 0.5 ) ) ).div( 2.0 * Math.PI );
+
+}, { roughness: 'float', dotNH: 'float', return: 'float' } );
+
+// https://github.com/google/filament/blob/main/shaders/src/surface_brdf.fs
+const V_Neubelt = /*@__PURE__*/ Fn( ( { dotNV, dotNL } ) => {
+
+	// Neubelt and Pettineo 2013, "Crafting a Next-gen Material Pipeline for The Order: 1886"
+	return float( 1.0 ).div( float( 4.0 ).mul( dotNL.add( dotNV ).sub( dotNL.mul( dotNV ) ) ) ).clamp();
+
+}, { dotNV: 'float', dotNL: 'float', return: 'float' } );
+
+const BRDF_Sheen = /*@__PURE__*/ Fn( ( { lightDirection } ) => {
+
+	const halfDir = lightDirection.add( positionViewDirection ).normalize();
+
+	const dotNL = normalView.dot( lightDirection ).clamp();
+	const dotNV = normalView.dot( positionViewDirection ).clamp();
+	const dotNH = normalView.dot( halfDir ).clamp();
+
+	const D = D_Charlie( { roughness: sheenRoughness, dotNH } );
+	const V = V_Neubelt( { dotNV, dotNL } );
+
+	return sheen.mul( D ).mul( V );
+
+} );
+
+// Rect Area Light
+
+// Real-Time Polygonal-Light Shading with Linearly Transformed Cosines
+// by Eric Heitz, Jonathan Dupuy, Stephen Hill and David Neubelt
+// code: https://github.com/selfshadow/ltc_code/
+
+const LTC_Uv = /*@__PURE__*/ Fn( ( { N, V, roughness } ) => {
+
+	const LUT_SIZE = 64.0;
+	const LUT_SCALE = ( LUT_SIZE - 1.0 ) / LUT_SIZE;
+	const LUT_BIAS = 0.5 / LUT_SIZE;
+
+	const dotNV = N.dot( V ).saturate();
+
+	// texture parameterized by sqrt( GGX alpha ) and sqrt( 1 - cos( theta ) )
+	const uv = vec2( roughness, dotNV.oneMinus().sqrt() );
+
+	uv.assign( uv.mul( LUT_SCALE ).add( LUT_BIAS ) );
+
+	return uv;
+
+}, { N: 'vec3', V: 'vec3', roughness: 'float', return: 'vec2' } );
+
+const LTC_ClippedSphereFormFactor = /*@__PURE__*/ Fn( ( { f } ) => {
+
+	// Real-Time Area Lighting: a Journey from Research to Production (p.102)
+	// An approximation of the form factor of a horizon-clipped rectangle.
+
+	const l = f.length();
+
+	return max( l.mul( l ).add( f.z ).div( l.add( 1.0 ) ), 0 );
+
+}, { f: 'vec3', return: 'float' } );
+
+const LTC_EdgeVectorFormFactor = /*@__PURE__*/ Fn( ( { v1, v2 } ) => {
+
+	const x = v1.dot( v2 );
+	const y = x.abs().toVar();
+
+	// rational polynomial approximation to theta / sin( theta ) / 2PI
+	const a = y.mul( 0.0145206 ).add( 0.4965155 ).mul( y ).add( 0.8543985 ).toVar();
+	const b = y.add( 4.1616724 ).mul( y ).add( 3.4175940 ).toVar();
+	const v = a.div( b );
+
+	const theta_sintheta = x.greaterThan( 0.0 ).select( v, max( x.mul( x ).oneMinus(), 1e-7 ).inverseSqrt().mul( 0.5 ).sub( v ) );
+
+	return v1.cross( v2 ).mul( theta_sintheta );
+
+}, { v1: 'vec3', v2: 'vec3', return: 'vec3' } );
+
+const LTC_Evaluate = /*@__PURE__*/ Fn( ( { N, V, P, mInv, p0, p1, p2, p3 } ) => {
+
+	// bail if point is on back side of plane of light
+	// assumes ccw winding order of light vertices
+	const v1 = p1.sub( p0 ).toVar();
+	const v2 = p3.sub( p0 ).toVar();
+
+	const lightNormal = v1.cross( v2 );
+	const result = vec3().toVar();
+
+	If( lightNormal.dot( P.sub( p0 ) ).greaterThanEqual( 0.0 ), () => {
+
+		// construct orthonormal basis around N
+		const T1 = V.sub( N.mul( V.dot( N ) ) ).normalize();
+		const T2 = N.cross( T1 ).negate(); // negated from paper; possibly due to a different handedness of world coordinate system
+
+		// compute transform
+		const mat = mInv.mul( mat3( T1, T2, N ).transpose() ).toVar();
+
+		// transform rect
+		// & project rect onto sphere
+		const coords0 = mat.mul( p0.sub( P ) ).normalize().toVar();
+		const coords1 = mat.mul( p1.sub( P ) ).normalize().toVar();
+		const coords2 = mat.mul( p2.sub( P ) ).normalize().toVar();
+		const coords3 = mat.mul( p3.sub( P ) ).normalize().toVar();
+
+		// calculate vector form factor
+		const vectorFormFactor = vec3( 0 ).toVar();
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords0, v2: coords1 } ) );
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords1, v2: coords2 } ) );
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords2, v2: coords3 } ) );
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords3, v2: coords0 } ) );
+
+		// adjust for horizon clipping
+		result.assign( vec3( LTC_ClippedSphereFormFactor( { f: vectorFormFactor } ) ) );
+
+	} );
+
+	return result;
+
+}, {
+	N: 'vec3',
+	V: 'vec3',
+	P: 'vec3',
+	mInv: 'mat3',
+	p0: 'vec3',
+	p1: 'vec3',
+	p2: 'vec3',
+	p3: 'vec3',
+	return: 'vec3'
+} );
+
+const LTC_Evaluate_Volume = /*@__PURE__*/ Fn( ( { P, p0, p1, p2, p3 } ) => {
+
+	// bail if point is on back side of plane of light
+	// assumes ccw winding order of light vertices
+	const v1 = p1.sub( p0 ).toVar();
+	const v2 = p3.sub( p0 ).toVar();
+
+	const lightNormal = v1.cross( v2 );
+	const result = vec3().toVar();
+
+	If( lightNormal.dot( P.sub( p0 ) ).greaterThanEqual( 0.0 ), () => {
+
+		// transform rect
+		// & project rect onto sphere
+		const coords0 = p0.sub( P ).normalize().toVar();
+		const coords1 = p1.sub( P ).normalize().toVar();
+		const coords2 = p2.sub( P ).normalize().toVar();
+		const coords3 = p3.sub( P ).normalize().toVar();
+
+		// calculate vector form factor
+		const vectorFormFactor = vec3( 0 ).toVar();
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords0, v2: coords1 } ) );
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords1, v2: coords2 } ) );
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords2, v2: coords3 } ) );
+		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords3, v2: coords0 } ) );
+
+		// adjust for horizon clipping
+		result.assign( vec3( LTC_ClippedSphereFormFactor( { f: vectorFormFactor.abs() } ) ) );
+
+	} );
+
+	return result;
+
+}, {
+	P: 'vec3',
+	p0: 'vec3',
+	p1: 'vec3',
+	p2: 'vec3',
+	p3: 'vec3',
+	return: 'vec3'
+} );
+
+// Mipped Bicubic Texture Filtering by N8
+// https://www.shadertoy.com/view/Dl2SDW
+
+const bC = 1.0 / 6.0;
+
+const w0 = ( a ) => mul( bC, mul( a, mul( a, a.negate().add( 3.0 ) ).sub( 3.0 ) ).add( 1.0 ) );
+
+const w1 = ( a ) => mul( bC, mul( a, mul( a, mul( 3.0, a ).sub( 6.0 ) ) ).add( 4.0 ) );
+
+const w2 = ( a ) => mul( bC, mul( a, mul( a, mul( -3, a ).add( 3.0 ) ).add( 3.0 ) ).add( 1.0 ) );
+
+const w3 = ( a ) => mul( bC, pow( a, 3 ) );
+
+const bicubicWeights = ( a ) => {
+
+	const w0a = w0( a );
+	const w1a = w1( a );
+	const w2a = w2( a );
+	const w3a = w3( a );
+
+	const g0a = w0a.add( w1a );
+	const g1a = w2a.add( w3a );
+
+	// h0 and h1 are the two offset functions.
+	const h0a = add( -1, w1a.div( g0a ) );
+	const h1a = add( 1.0, w3a.div( g1a ) );
+
+	return { g0: g0a, g1: g1a, h0: h0a, h1: h1a };
+
+};
+
+const bicubic = ( textureNode, p0, p3, g0, g1, lod ) => {
+
+	const p1 = vec2( p3.x, p0.y );
+	const p2 = vec2( p0.x, p3.y );
+
+	const a = g0.y.mul( add( g0.x.mul( textureNode.sample( p0 ).level( lod ) ), g1.x.mul( textureNode.sample( p1 ).level( lod ) ) ) );
+	const b = g1.y.mul( add( g0.x.mul( textureNode.sample( p2 ).level( lod ) ), g1.x.mul( textureNode.sample( p3 ).level( lod ) ) ) );
+
+	return a.add( b );
+
+};
+
+/**
+ * Applies mipped bicubic texture filtering to the given texture node.
+ *
+ * @tsl
+ * @function
+ * @param {TextureNode} textureNode - The texture node that should be filtered.
+ * @param {Node<float>} lodNode - Defines the LOD to sample from.
+ * @return {Node} The filtered texture sample.
+ */
+const textureBicubicLevel = /*@__PURE__*/ Fn( ( [ textureNode, lodNode ] ) => {
+
+	const fLodSize = vec2( textureNode.size( int( lodNode ) ) );
+	const cLodSize = vec2( textureNode.size( int( lodNode.add( 1.0 ) ) ) );
+	const lodSize = vec4( fLodSize, cLodSize );
+	const lodSizeInv = div( 1.0, lodSize );
+	const uvScaled = textureNode.uvNode.xyxy.mul( lodSize ).add( 0.5 );
+	const iuv = floor( uvScaled );
+	const fuv = fract( uvScaled );
+
+	const { g0, g1, h0, h1 } = bicubicWeights( fuv );
+
+	const p0 = iuv.add( h0 ).sub( 0.5 ).mul( lodSizeInv );
+	const p3 = iuv.add( h1 ).sub( 0.5 ).mul( lodSizeInv );
+
+	const fSample = bicubic( textureNode, p0.xy, p3.xy, g0.xy, g1.xy, floor( lodNode ) );
+	const cSample = bicubic( textureNode, p0.zw, p3.zw, g0.zw, g1.zw, ceil( lodNode ) );
+
+	return fract( lodNode ).mix( fSample, cSample );
+
+} );
+
+/**
+ * Applies mipped bicubic texture filtering to the given texture node.
+ *
+ * @tsl
+ * @function
+ * @param {TextureNode} textureNode - The texture node that should be filtered.
+ * @param {Node<float>} [strength] - Defines the strength of the bicubic filtering.
+ * @return {Node} The filtered texture sample.
+ */
+const textureBicubic = /*@__PURE__*/ Fn( ( [ textureNode, strength ] ) => {
+
+	const lod = strength.mul( maxMipLevel( textureNode ) );
+
+	return textureBicubicLevel( textureNode, lod );
+
+} );
+
+const GOLDEN_ANGLE = 2.399963229728653;
+
+/**
+ * Returns the mip level of a PMREM that has been prefiltered for the given roughness.
+ * Uses the inverse of `PMREMGenerator.lodToRoughness()`.
+ *
+ * @tsl
+ * @function
+ * @param {Node<float>} roughness - The roughness.
+ * @param {Node<float>} maxLod - The last mip level of the PMREM.
+ * @return {Node<float>} The mip level.
+ * @see {@link https://github.com/google/filament/blob/main/shaders/src/surface_light_indirect.fs | Filament: perceptualRoughnessToLod()}
+ */
+const roughnessToMip = ( roughness, maxLod ) => {
+
+	roughness = float( roughness ).clamp();
+
+	return float( maxLod ).mul( roughness ).mul( float( 2.0 ).sub( roughness ) );
+
+};
+
+// Gaussian blur using stratified inverse-CDF samples on a golden-angle spiral.
+const sphericalGaussianBlur = /*@__PURE__*/ Fn( ( { SAMPLES, sigma, direction, envMap } ) => {
+
+	const outputDirection = vec3( direction ).toVar();
+
+	const up = select( abs( outputDirection.z ).lessThan( 0.999 ), vec3( 0.0, 0.0, 1.0 ), vec3( 1.0, 0.0, 0.0 ) );
+	const tangent = normalize( cross( up, outputDirection ) ).toVar();
+	const bitangent = cross( outputDirection, tangent ).toVar();
+
+	// Truncate the kernel at three standard deviations or at the antipode.
+	const thetaMax = min( sigma.mul( 3.0 ), Math.PI );
+	const truncation = exp( thetaMax.mul( thetaMax ).mul( -0.5 ).div( sigma.mul( sigma ) ) ).oneMinus().toVar();
+
+	const color = vec3( 0.0 ).toVar();
+	const accumWeight = float( 0.0 ).toVar();
+
+	Loop( { start: int( 0 ), end: SAMPLES }, ( { i } ) => {
+
+		// Stratified inverse-CDF sampling of the Gaussian, placed on a golden-angle spiral.
+		const stratum = float( i ).add( 0.5 ).div( float( SAMPLES ) );
+		const theta = sigma.mul( sqrt( log( stratum.mul( truncation ).oneMinus() ).mul( -2 ) ) ).toVar();
+		const phi = float( i ).mul( GOLDEN_ANGLE ).toVar();
+
+		const offset = tangent.mul( cos( phi ) ).add( bitangent.mul( sin( phi ) ) );
+		const sampleDirection = outputDirection.mul( cos( theta ) ).add( offset.mul( sin( theta ) ) );
+
+		// Correct the planar sample density to solid angle.
+		const weight = sin( theta ).div( theta ).toVar();
+
+		color.addAssign( envMap.sample( sampleDirection ).level( 0 ).rgb.mul( weight ) );
+		accumWeight.addAssign( weight );
+
+	} );
+
+	return vec4( color.div( accumWeight ), 1.0 );
+
+} );
+
+// Van der Corput radical inverse.
+const radicalInverse_VdC = /*@__PURE__*/ Fn( ( [ bits_immutable ] ) => {
+
+	const bits = uint( bits_immutable ).toVar();
+	bits.assign( bits.shiftLeft( uint( 16 ) ).bitOr( bits.shiftRight( uint( 16 ) ) ) );
+	bits.assign( bits.bitAnd( uint( 0x55555555 ) ).shiftLeft( uint( 1 ) ).bitOr( bits.bitAnd( uint( 0xAAAAAAAA ) ).shiftRight( uint( 1 ) ) ) );
+	bits.assign( bits.bitAnd( uint( 0x33333333 ) ).shiftLeft( uint( 2 ) ).bitOr( bits.bitAnd( uint( 0xCCCCCCCC ) ).shiftRight( uint( 2 ) ) ) );
+	bits.assign( bits.bitAnd( uint( 0x0F0F0F0F ) ).shiftLeft( uint( 4 ) ).bitOr( bits.bitAnd( uint( 0xF0F0F0F0 ) ).shiftRight( uint( 4 ) ) ) );
+	bits.assign( bits.bitAnd( uint( 0x00FF00FF ) ).shiftLeft( uint( 8 ) ).bitOr( bits.bitAnd( uint( 0xFF00FF00 ) ).shiftRight( uint( 8 ) ) ) );
+	return float( bits ).mul( 2.3283064365386963e-10 ); // / 0x100000000
+
+} );
+
+// Hammersley sequence.
+const hammersley = /*@__PURE__*/ Fn( ( [ i, N ] ) => {
+
+	return vec2( float( i ).div( float( N ) ), radicalInverse_VdC( i ) );
+
+} );
+
+// GGX convolution using VNDF importance sampling. Each sample reads the mip level of the
+// source cube map that matches its solid angle (filtered importance sampling), which keeps
+// the estimate smooth even for tiny, very bright light sources.
+const ggxConvolution = /*@__PURE__*/ Fn( ( { roughness, lodBias, envMap, direction, GGX_SAMPLES } ) => {
+
+	const N = vec3( direction ).toVar();
+
+	const prefilteredColor = vec3( 0.0 ).toVar();
+
+	// For very low roughness, just sample the environment directly
+	If( roughness.lessThan( 0.001 ), () => {
+
+		prefilteredColor.assign( envMap.sample( N ).level( 0 ).rgb );
+
+	} ).Else( () => {
+
+		const alpha = roughness.mul( roughness ).toConst();
+		const alpha2 = alpha.mul( alpha ).toConst();
+
+		// Tangent space basis for VNDF sampling
+		const up = select( abs( N.z ).lessThan( 0.999 ), vec3( 0.0, 0.0, 1.0 ), vec3( 1.0, 0.0, 0.0 ) );
+		const tangent = normalize( cross( up, N ) ).toVar();
+		const bitangent = cross( N, tangent ).toVar();
+
+		const totalWeight = float( 0.0 ).toVar();
+
+		Loop( { start: uint( 0 ), end: GGX_SAMPLES }, ( { i } ) => {
+
+			const Xi = hammersley( i, GGX_SAMPLES );
+
+			// With V = N, sample the reflected direction directly.
+			const invQ = float( 1.0 ).div( Xi.x.oneMinus().add( alpha2.mul( Xi.x ) ) ).toConst();
+			const NdotL = Xi.x.oneMinus().sub( alpha2.mul( Xi.x ) ).mul( invQ ).toConst();
+
+			If( NdotL.greaterThan( 0.0 ), () => {
+
+				const phi = Xi.y.mul( 2.0 * Math.PI ).toConst();
+				const sinTheta = alpha.mul( 2.0 ).mul( sqrt( Xi.x.mul( Xi.x.oneMinus() ) ) ).mul( invQ ).toConst();
+				const L = N.mul( NdotL ).add( tangent.mul( cos( phi ) ).add( bitangent.mul( sin( phi ) ) ).mul( sinTheta ) ).toConst();
+
+				// Match the source mip to the sample's solid angle; see lodBias.
+				const d = alpha2.mul( invQ );
+				const lod = max( log2( d ).add( lodBias ), 0.0 );
+
+				// Weight by NdotL for the split-sum approximation
+				prefilteredColor.addAssign( envMap.sample( L ).level( lod ).rgb.mul( NdotL ) );
+				totalWeight.addAssign( NdotL );
+
+			} );
+
+		} );
+
+		prefilteredColor.divAssign( totalWeight );
+
+	} );
+
+	return vec4( prefilteredColor, 1.0 );
+
+} );
+
+// GGX convolution that weights every texel of a small source mip. Noise free and,
+// for the wide lobes of the rough mip levels, cheaper than importance sampling.
+const ggxIntegration = /*@__PURE__*/ Fn( ( { roughness, sourceLod, sourceSize, envMap, direction } ) => {
+
+	const N = vec3( direction ).toVar();
+
+	const alpha = roughness.mul( roughness ).toConst();
+	const alpha2 = alpha.mul( alpha ).toConst();
+
+	const texelSize = float( 2.0 ).div( float( sourceSize ) ).toConst();
+
+	const prefilteredColor = vec3( 0.0 ).toVar();
+	const totalWeight = float( 0.0 ).toVar();
+
+	// Pair opposite texels: only the one in N's hemisphere contributes.
+	Loop( { start: int( 0 ), end: int( 3 ), name: 'face' }, ( { face } ) => {
+
+		Loop( { start: int( 0 ), end: sourceSize, name: 'y' }, ( { y } ) => {
+
+			Loop( { start: int( 0 ), end: sourceSize, name: 'x' }, ( { x } ) => {
+
+				const uv = vec2( x, y ).add( 0.5 ).mul( texelSize ).sub( 1.0 ).toConst();
+				const texelDirection = select( face.equal( 0 ), vec3( 1.0, uv ), select( face.equal( 1 ), vec3( uv.x, 1.0, uv.y ), vec3( uv, 1.0 ) ) ).toVar();
+
+				const invDistance = inverseSqrt( dot( uv, uv ).add( 1.0 ) ).toConst();
+				const NdotL = dot( N, texelDirection ).toVar();
+				texelDirection.mulAssign( select( NdotL.lessThan( 0.0 ), -1, 1.0 ) );
+				NdotL.assign( abs( NdotL ).mul( invDistance ) );
+
+				// With V = N, NdotH squared is ( 1 + NdotL ) / 2. Common factors
+				// in the GGX distribution and texel solid angle cancel when normalized.
+				const d = alpha2.add( 1.0 ).add( alpha2.sub( 1.0 ).mul( NdotL ) );
+				const weight = NdotL.mul( invDistance ).mul( invDistance ).mul( invDistance ).div( d.mul( d ) ).toConst();
+
+				prefilteredColor.addAssign( envMap.sample( texelDirection ).level( sourceLod ).rgb.mul( weight ) );
+				totalWeight.addAssign( weight );
+
+			} );
+
+		} );
+
+	} );
+
+	return vec4( prefilteredColor.div( totalWeight ), 1.0 );
+
+} );
+
+// Smaller inputs are upsampled so that every PMREM has enough mip levels.
+const MIN_SIZE = 256;
+
+// Log2 of the face size of the roughest mip level. Smaller faces can't
+// represent the diffuse irradiance that is stored in this level.
+const LOD_MIN = 3;
+
+// Spiral samples per pass of the initial fromScene() blur.
+const BLUR_SAMPLES = 20;
+
+// GGX VNDF samples for the sharp mip levels.
+const GGX_SAMPLES = 256;
+
+// Integrate a small source mip for the rough levels to avoid sampling noise.
+const INTEGRATION_SIZE = 16;
+const INTEGRATION_LEVELS = 3;
+
+const _origin = /*@__PURE__*/ new Vector3();
+const _clearColor$1 = /*@__PURE__*/ new Color();
+
+// maps materials to their uniforms dictionary
+
+const _uniformsMap = new WeakMap();
+
+/**
+ * Generates a Prefiltered, Mipmapped Radiance Environment Map (PMREM) for
+ * image-based lighting. The result is a cube render target whose mip levels
+ * store GGX-filtered radiance at increasing roughness, from a mirror at level 0
+ * to roughness 1. See {@link PMREMGenerator.lodToRoughness} for the mapping.
+ *
+ * Filtering assumes the view direction equals the surface normal. Sharp levels
+ * use GGX visible normal sampling (Heitz, 2018), while rough levels integrate a
+ * lower-resolution source cubemap.
+ *
+ * @see {@link https://jcgt.org/published/0007/04/01/ | Sampling the GGX Distribution of Visible Normals}
+ */
+class PMREMGenerator {
+
+	/**
+	 * Constructs a new PMREM generator.
+	 *
+	 * @param {Renderer} renderer - The renderer.
+	 */
+	constructor( renderer ) {
+
+		this._renderer = renderer;
+
+		this._cubeSize = 0;
+		this._sourceTarget = null;
+
+		this._cubeCamera = new CubeCamera( 1, 10, null );
+		this._boxMesh = new Mesh( new BoxGeometry( 5, 5, 5 ), null );
+
+		this._cubemapMaterial = null;
+		this._equirectMaterial = null;
+
+		this._blurMaterial = null;
+		this._ggxMaterial = null;
+		this._integrationMaterial = null;
+
+	}
+
+	/**
+	 * Generates a PMREM from a scene, optionally applying a Gaussian blur before
+	 * GGX filtering.
+	 *
+	 * @param {Scene} scene - The scene to be captured.
+	 * @param {number} [sigma=0] - The blur radius in radians.
+	 * @param {number} [near=0.1] - The near plane distance.
+	 * @param {number} [far=100] - The far plane distance.
+	 * @param {Object} [options={}] - The configuration options.
+	 * @param {number} [options.size=256] - The texture size of the PMREM, rounded down to a power of two and at least 256.
+	 * @param {Vector3} [options.position=origin] - The position of the internal cube camera that renders the scene.
+	 * @param {?CubeRenderTarget} [options.renderTarget=null] - The render target to use.
+	 * @return {CubeRenderTarget} The resulting PMREM.
+	 */
+	fromScene( scene, sigma = 0, near = 0.1, far = 100, options = {} ) {
+
+		const {
+			size = 256,
+			position = _origin,
+			renderTarget = null,
+		} = options;
+
+		const renderer = this._renderer;
+
+		this._setSize( size );
+
+		if ( renderer.hasInitialized() === false ) {
+
+			throw new Error( 'THREE.PMREMGenerator: .fromScene() called before the backend is initialized. Use "await renderer.init();" before using this method.' );
+
+		}
+
+		const pmremTarget = renderTarget || this._allocateTarget();
+		const sourceTarget = this._getSourceTarget( true );
+
+		if ( sigma > 0 ) {
+
+			sourceTarget.texture.mipmapsAutoUpdate = false;
+
+		}
+
+		// Clear every captured face, independent of the application's clear settings.
+
+		const autoClear = renderer.autoClear;
+		const autoClearColor = renderer.autoClearColor;
+		const autoClearDepth = renderer.autoClearDepth;
+		const autoClearStencil = renderer.autoClearStencil;
+		const background = scene.background;
+
+		renderer.autoClear = true;
+		renderer.autoClearColor = true;
+		renderer.autoClearDepth = true;
+		renderer.autoClearStencil = true;
+
+		if ( background === null ) scene.background = renderer.getClearColor( _clearColor$1 );
+
+		const cubeCamera = new CubeCamera( near, far, sourceTarget );
+		cubeCamera.position.copy( position );
+		cubeCamera.update( renderer, scene );
+
+		renderer.autoClear = autoClear;
+		renderer.autoClearColor = autoClearColor;
+		renderer.autoClearDepth = autoClearDepth;
+		renderer.autoClearStencil = autoClearStencil;
+
+		scene.background = background;
+
+		if ( sigma > 0 ) {
+
+			sourceTarget.texture.mipmapsAutoUpdate = true;
+			this._blur( pmremTarget, sigma );
+
+		}
+
+		this._applyPMREM( pmremTarget );
+
+		return pmremTarget;
+
+	}
+
+	/**
+	 * Asynchronous version of {@link PMREMGenerator#fromScene}.
+	 *
+	 * @deprecated
+	 * @param {Scene} scene - The scene to be captured.
+	 * @param {number} [sigma=0] - The blur radius in radians.
+	 * @param {number} [near=0.1] - The near plane distance.
+	 * @param {number} [far=100] - The far plane distance.
+	 * @param {Object} [options={}] - The configuration options.
+	 * @param {number} [options.size=256] - The texture size of the PMREM, rounded down to a power of two and at least 256.
+	 * @param {Vector3} [options.position=origin] - The position of the internal cube camera that renders the scene.
+	 * @param {?CubeRenderTarget} [options.renderTarget=null] - The render target to use.
+	 * @return {Promise<CubeRenderTarget>} A Promise that resolves with the PMREM.
+	 * @see {@link PMREMGenerator#fromScene}
+	 */
+	async fromSceneAsync( scene, sigma = 0, near = 0.1, far = 100, options = {} ) {
+
+		warnOnce( 'PMREMGenerator: ".fromSceneAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
+
+		await this._renderer.init();
+
+		return this.fromScene( scene, sigma, near, far, options );
+
+	}
+
+	/**
+	 * Generates a PMREM from an LDR or HDR equirectangular texture. The cube face
+	 * size is one quarter of the image width, rounded down to a power of two and
+	 * at least 256.
+	 *
+	 * @param {Texture} equirectangular - The equirectangular texture to be converted.
+	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
+	 * @return {CubeRenderTarget} The resulting PMREM.
+	 * @see {@link PMREMGenerator#fromEquirectangularAsync}
+	 */
+	fromEquirectangular( equirectangular, renderTarget = null ) {
+
+		if ( this._renderer.hasInitialized() === false ) {
+
+			throw new Error( 'THREE.PMREMGenerator: .fromEquirectangular() called before the backend is initialized. Use "await renderer.init();" before using this method.' );
+
+		}
+
+		return this._fromTexture( equirectangular, renderTarget );
+
+	}
+
+	/**
+	 * Asynchronous version of {@link PMREMGenerator#fromEquirectangular}.
+	 *
+	 * @deprecated
+	 * @param {Texture} equirectangular - The equirectangular texture to be converted.
+	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
+	 * @return {Promise<CubeRenderTarget>} The resulting PMREM.
+	 * @see {@link PMREMGenerator#fromEquirectangular}
+	 */
+	async fromEquirectangularAsync( equirectangular, renderTarget = null ) {
+
+		warnOnce( 'PMREMGenerator: ".fromEquirectangularAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
+
+		await this._renderer.init();
+
+		return this._fromTexture( equirectangular, renderTarget );
+
+	}
+
+	/**
+	 * Generates a PMREM from an LDR or HDR cubemap. The cube face size matches
+	 * the input, rounded down to a power of two and at least 256.
+	 *
+	 * @param {Texture} cubemap - The cubemap texture to be converted.
+	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
+	 * @return {CubeRenderTarget} The resulting PMREM.
+	 * @see {@link PMREMGenerator#fromCubemapAsync}
+	 */
+	fromCubemap( cubemap, renderTarget = null ) {
+
+		if ( this._renderer.hasInitialized() === false ) {
+
+			throw new Error( 'THREE.PMREMGenerator: .fromCubemap() called before the backend is initialized. Use "await renderer.init();" before using this method.' );
+
+		}
+
+		return this._fromTexture( cubemap, renderTarget );
+
+	}
+
+	/**
+	 * Asynchronous version of {@link PMREMGenerator#fromCubemap}.
+	 *
+	 * @deprecated
+	 * @param {Texture} cubemap - The cubemap texture to be converted.
+	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
+	 * @return {Promise<CubeRenderTarget>} The resulting PMREM.
+	 * @see {@link PMREMGenerator#fromCubemap}
+	 */
+	async fromCubemapAsync( cubemap, renderTarget = null ) {
+
+		warnOnce( 'PMREMGenerator: ".fromCubemapAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
+
+		await this._renderer.init();
+
+		return this._fromTexture( cubemap, renderTarget );
+
+	}
+
+	/**
+	 * Pre-compiles the cubemap shader. You can get faster start-up by invoking this method during
+	 * your texture's network fetch for increased concurrency.
+	 *
+	 * @returns {Promise}
+	 */
+	async compileCubemapShader() {
+
+		if ( this._cubemapMaterial === null ) {
+
+			this._cubemapMaterial = _getCubemapMaterial();
+			await this._compileMaterial( this._cubemapMaterial );
+
+		}
+
+	}
+
+	/**
+	 * Pre-compiles the equirectangular shader. You can get faster start-up by invoking this method during
+	 * your texture's network fetch for increased concurrency.
+	 *
+	 * @returns {Promise}
+	 */
+	async compileEquirectangularShader() {
+
+		if ( this._equirectMaterial === null ) {
+
+			this._equirectMaterial = _getEquirectMaterial();
+			await this._compileMaterial( this._equirectMaterial );
+
+		}
+
+	}
+
+	/**
+	 * Disposes of the PMREMGenerator's internal memory. The PMREMs it returned
+	 * belong to the caller and are not disposed.
+	 */
+	dispose() {
+
+		if ( this._sourceTarget !== null ) this._sourceTarget.dispose();
+
+		if ( this._cubemapMaterial !== null ) this._cubemapMaterial.dispose();
+		if ( this._equirectMaterial !== null ) this._equirectMaterial.dispose();
+		if ( this._blurMaterial !== null ) this._blurMaterial.dispose();
+		if ( this._ggxMaterial !== null ) this._ggxMaterial.dispose();
+		if ( this._integrationMaterial !== null ) this._integrationMaterial.dispose();
+
+		this._boxMesh.geometry.dispose();
+
+	}
+
+	/**
+	 * Returns the roughness a mip level of a PMREM has been prefiltered for.
+	 * The inverse mapping is used by the renderers when sampling a PMREM.
+	 *
+	 * @param {number} lod - The mip level.
+	 * @param {number} maxLod - The last mip level of the PMREM.
+	 * @return {number} The roughness.
+	 */
+	static lodToRoughness( lod, maxLod ) {
+
+		return maxLod > 0 ? 1 - Math.sqrt( 1 - lod / maxLod ) : 0;
+
+	}
+
+	// private interface
+
+	_setSize( cubeSize ) {
+
+		this._cubeSize = Math.max( MIN_SIZE, floorPowerOfTwo( cubeSize ) );
+
+	}
+
+	_fromTexture( texture, renderTarget ) {
+
+		if ( texture.mapping === CubeReflectionMapping || texture.mapping === CubeRefractionMapping ) {
+
+			this._setSize( texture.image.length === 0 ? MIN_SIZE : ( texture.image[ 0 ].width || texture.image[ 0 ].image.width ) );
+
+		} else { // Equirectangular
+
+			this._setSize( texture.image.width / 4 );
+
+		}
+
+		const pmremTarget = renderTarget || this._allocateTarget();
+
+		this._textureToCubemap( texture );
+		this._applyPMREM( pmremTarget );
+
+		return pmremTarget;
+
+	}
+
+	_allocateTarget() {
+
+		const size = this._cubeSize;
+
+		const pmremTarget = _createRenderTarget( size, false, false );
+
+		// Allocate only the prefiltered mip levels without automatic mipmap generation.
+
+		const maxLod = Math.log2( size ) - LOD_MIN;
+
+		for ( let lod = 0; lod <= maxLod; lod ++ ) {
+
+			pmremTarget.texture.mipmaps.push( { width: size >> lod, height: size >> lod } );
+
+		}
+
+		pmremTarget.texture.name = 'PMREM';
+		pmremTarget.texture.isPMREMTexture = true;
+
+		return pmremTarget;
+
+	}
+
+	_getSourceTarget( depthBuffer = false ) {
+
+		const size = this._cubeSize;
+		const sourceTarget = this._sourceTarget;
+
+		if ( sourceTarget === null || sourceTarget.width !== size || ( depthBuffer && sourceTarget.depthBuffer === false ) ) {
+
+			if ( sourceTarget !== null ) sourceTarget.dispose();
+
+			this._sourceTarget = _createRenderTarget( size, true, depthBuffer );
+
+		}
+
+		return this._sourceTarget;
+
+	}
+
+	async _compileMaterial( material ) {
+
+		this._boxMesh.material = material;
+		await this._renderer.compile( this._boxMesh, this._cubeCamera.children[ 0 ] );
+
+	}
+
+	/**
+	 * Renders the box mesh with the given material into all six faces of a cube render target.
+	 *
+	 * @private
+	 * @param {CubeRenderTarget} target - The render target.
+	 * @param {number} lod - The mip level to render into.
+	 * @param {NodeMaterial} material - The material.
+	 */
+	_renderCube( target, lod, material ) {
+
+		const boxMesh = this._boxMesh;
+		const cubeCamera = this._cubeCamera;
+
+		boxMesh.material = material;
+
+		cubeCamera.renderTarget = target;
+		cubeCamera.activeMipmapLevel = lod;
+		cubeCamera.update( this._renderer, boxMesh );
+
+	}
+
+	_textureToCubemap( texture ) {
+
+		let material;
+
+		if ( texture.mapping === CubeReflectionMapping || texture.mapping === CubeRefractionMapping ) {
+
+			if ( this._cubemapMaterial === null ) {
+
+				this._cubemapMaterial = _getCubemapMaterial();
+
+			}
+
+			material = this._cubemapMaterial;
+
+		} else {
+
+			if ( this._equirectMaterial === null ) {
+
+				this._equirectMaterial = _getEquirectMaterial();
+
+			}
+
+			material = this._equirectMaterial;
+
+		}
+
+		_uniformsMap.get( material ).envMap.value = texture;
+
+		this._renderCube( this._getSourceTarget(), 0, material );
+
+	}
+
+	/**
+	 * Prefilters the source cubemap into the mip levels of the PMREM. The sharp levels
+	 * integrate the GGX lobe of their roughness with VNDF importance sampling, reading the
+	 * mip level of the source that matches the solid angle of each sample. The rough
+	 * levels weight every texel of a small source mip with the GGX lobe instead.
+	 *
+	 * @private
+	 * @param {CubeRenderTarget} pmremTarget - The PMREM.
+	 */
+	_applyPMREM( pmremTarget ) {
+
+		if ( this._ggxMaterial === null ) {
+
+			this._ggxMaterial = _getGGXMaterial();
+			this._integrationMaterial = _getIntegrationMaterial();
+
+		}
+
+		const size = this._cubeSize;
+		const maxLod = pmremTarget.texture.mipmaps.length - 1;
+
+		const ggxUniforms = _uniformsMap.get( this._ggxMaterial );
+		ggxUniforms.envMap.value = this._sourceTarget.texture;
+
+		const integrationUniforms = _uniformsMap.get( this._integrationMaterial );
+		integrationUniforms.envMap.value = this._sourceTarget.texture;
+		integrationUniforms.sourceLod.value = Math.log2( size / INTEGRATION_SIZE );
+
+		for ( let lod = 0; lod <= maxLod; lod ++ ) {
+
+			const roughness = PMREMGenerator.lodToRoughness( lod, maxLod );
+
+			if ( lod > maxLod - INTEGRATION_LEVELS ) {
+
+				integrationUniforms.roughness.value = roughness;
+
+				this._renderCube( pmremTarget, lod, this._integrationMaterial );
+
+			} else {
+
+				// For V = N, pdf( L ) = D( H ) / 4. Match the source texel solid angle to
+				// 1 / ( GGX_SAMPLES * pdf ), with a half-mip bias to reduce sampling noise.
+				// The shader supplies log2 of the GGX denominator.
+				const lodBias = roughness > 0 ? Math.log2( size ) + 0.5 * Math.log2( 6 / ( GGX_SAMPLES * Math.pow( roughness, 4 ) ) ) + 0.5 : 0;
+
+				ggxUniforms.roughness.value = roughness;
+				ggxUniforms.lodBias.value = lodBias;
+
+				this._renderCube( pmremTarget, lod, this._ggxMaterial );
+
+			}
+
+		}
+
+	}
+
+	/**
+	 * Applies the initial fromScene() blur in two passes using a golden-angle
+	 * spiral kernel. Level 0 of the PMREM serves as the intermediate target.
+	 *
+	 * @private
+	 * @param {CubeRenderTarget} pmremTarget - The PMREM.
+	 * @param {number} sigma - The blur radius in radians.
+	 */
+	_blur( pmremTarget, sigma ) {
+
+		if ( this._blurMaterial === null ) {
+
+			this._blurMaterial = _getBlurMaterial();
+
+		}
+
+		const material = this._blurMaterial;
+		const uniforms = _uniformsMap.get( material );
+
+		const sourceTarget = this._sourceTarget;
+
+		// Split the blur variance between two passes. Clamp sigma to the sphere's
+		// maximum angular distance.
+		uniforms.sigma.value = Math.min( sigma, Math.PI ) / Math.SQRT2;
+
+		uniforms.envMap.value = sourceTarget.texture;
+		this._renderCube( pmremTarget, 0, material );
+
+		uniforms.envMap.value = pmremTarget.texture;
+		this._renderCube( sourceTarget, 0, material );
+
+	}
+
+}
+
+function _createRenderTarget( size, generateMipmaps, depthBuffer ) {
+
+	return new CubeRenderTarget( size, {
+		minFilter: LinearMipmapLinearFilter,
+		generateMipmaps: generateMipmaps,
+		type: HalfFloatType,
+		colorSpace: LinearSRGBColorSpace,
+		depthBuffer: depthBuffer
+	} );
+
+}
+
+function _getMaterial( type, uniforms, fragmentNode ) {
+
+	const material = new NodeMaterial();
+	material.name = `PMREM_${ type }`;
+	material.fragmentNode = fragmentNode;
+	material.side = BackSide;
+	material.blending = NoBlending;
+	material.depthTest = false;
+	material.depthWrite = false;
+
+	_uniformsMap.set( material, uniforms );
+
+	return material;
+
+}
+
+function _getBlurMaterial() {
+
+	const uniforms = {
+		envMap: cubeTexture(),
+		sigma: uniform( 0 )
+	};
+
+	return _getMaterial( 'blur', uniforms, sphericalGaussianBlur( {
+		...uniforms,
+		direction: positionWorldDirection,
+		SAMPLES: int( BLUR_SAMPLES )
+	} ) );
+
+}
+
+function _getGGXMaterial() {
+
+	const uniforms = {
+		envMap: cubeTexture(),
+		roughness: uniform( 0 ),
+		lodBias: uniform( 0 )
+	};
+
+	return _getMaterial( 'ggx', uniforms, ggxConvolution( {
+		...uniforms,
+		direction: positionWorldDirection,
+		GGX_SAMPLES: uint( GGX_SAMPLES )
+	} ) );
+
+}
+
+function _getIntegrationMaterial() {
+
+	const uniforms = {
+		envMap: cubeTexture(),
+		roughness: uniform( 0 ),
+		sourceLod: uniform( 0 ),
+		sourceSize: uniform( INTEGRATION_SIZE, 'int' ) // a uniform so the loops aren't unrolled
+	};
+
+	return _getMaterial( 'integration', uniforms, ggxIntegration( {
+		...uniforms,
+		direction: positionWorldDirection
+	} ) );
+
+}
+
+function _getCubemapMaterial() {
+
+	const uniforms = {
+		envMap: cubeTexture()
+	};
+
+	return _getMaterial( 'cubemap', uniforms, uniforms.envMap.sample( positionWorldDirection ) );
+
+}
+
+function _getEquirectMaterial() {
+
+	const uniforms = {
+		envMap: texture()
+	};
+
+	const fragmentNode = Fn( () => {
+
+		// Average four subpixel samples to preserve small, bright features.
+		const direction = positionWorldDirection;
+		const dx = direction.dFdx().mul( 0.25 ).toConst();
+		const dy = direction.dFdy().mul( 0.25 ).toConst();
+
+		const color = uniforms.envMap.sample( equirectUV( direction.sub( dx ).sub( dy ).normalize() ) ).level( 0 ).rgb
+			.add( uniforms.envMap.sample( equirectUV( direction.add( dx ).sub( dy ).normalize() ) ).level( 0 ).rgb )
+			.add( uniforms.envMap.sample( equirectUV( direction.sub( dx ).add( dy ).normalize() ) ).level( 0 ).rgb )
+			.add( uniforms.envMap.sample( equirectUV( direction.add( dx ).add( dy ).normalize() ) ).level( 0 ).rgb );
+
+		return vec4( color.mul( 0.25 ), 1.0 );
+
+	} )();
+
+	return _getMaterial( 'equirect', uniforms, fragmentNode );
+
+}
+
+const _cache = new WeakMap();
+
+/**
+ * Generates a PMREM from the given texture.
+ *
+ * @private
+ * @param {Texture} texture - The texture to create the PMREM for.
+ * @param {Renderer} renderer - The renderer.
+ * @param {PMREMGenerator} generator - The PMREM generator.
+ * @return {?Texture} The PMREM.
+ */
+function _getPMREMFromTexture( texture, renderer, generator ) {
+
+	const cache = _getCache( renderer );
+
+	let renderTarget = cache.get( texture );
+
+	const pmremVersion = renderTarget !== undefined ? renderTarget.texture.pmremVersion : -1;
+
+	if ( pmremVersion !== texture.pmremVersion ) {
+
+		const image = texture.image;
+
+		if ( texture.isCubeTexture ) {
+
+			if ( isCubeMapReady( image ) ) {
+
+				renderTarget = generator.fromCubemap( texture, renderTarget );
+
+			} else {
+
+				return null;
+
+			}
+
+
+		} else {
+
+			if ( isEquirectangularMapReady( image ) ) {
+
+				renderTarget = generator.fromEquirectangular( texture, renderTarget );
+
+			} else {
+
+				return null;
+
+			}
+
+		}
+
+		renderTarget.texture.pmremVersion = texture.pmremVersion;
+
+		// add dispose event listener for new PMREMs
+
+		if ( cache.has( texture ) === false ) {
+
+			const onDispose = () => {
+
+				texture.removeEventListener( 'dispose', onDispose );
+
+				const pmrem = cache.get( texture );
+
+				if ( pmrem !== undefined ) {
+
+					pmrem.texture.pmremVersion = -1;
+					pmrem.dispose();
+					cache.delete( texture );
+
+				}
+
+			};
+
+			texture.addEventListener( 'dispose', onDispose );
+
+		}
+
+		//
+
+		cache.set( texture, renderTarget );
+
+	}
+
+	return renderTarget.texture;
+
+}
+
+/**
+ * Returns a cache that stores generated PMREMs for the respective textures.
+ * A cache must be maintained per renderer since PMREMs are render target textures
+ * which can't be shared across render contexts.
+ *
+ * @private
+ * @param {Renderer} renderer - The renderer.
+ * @return {WeakMap<Texture, CubeRenderTarget>} The PMREM cache.
+ */
+function _getCache( renderer ) {
+
+	let rendererCache = _cache.get( renderer );
+
+	if ( rendererCache === undefined ) {
+
+		rendererCache = new WeakMap();
+		_cache.set( renderer, rendererCache );
+
+	}
+
+	return rendererCache;
+
+}
+
+/**
+ * This node represents a PMREM which is a special type of preprocessed
+ * environment map intended for PBR materials.
+ *
+ * ```js
+ * const material = new MeshStandardNodeMaterial();
+ * material.envNode = pmremTexture( envMap );
+ * ```
+ *
+ * @augments Node
+ */
+class PMREMNode extends Node {
+
+	static get type() {
+
+		return 'PMREMNode';
+
+	}
+
+	/**
+	 * Constructs a new PMREM node.
+	 *
+	 * @param {Texture} value - The input texture.
+	 * @param {Node<vec3>} [uvNode=null] - The uv node.
+	 * @param {Node<float>} [levelNode=null] - The level node.
+	 */
+	constructor( value, uvNode = null, levelNode = null ) {
+
+		super( 'vec3' );
+
+		/**
+		 * Reference to the input texture.
+		 *
+		 * @private
+		 * @type {Texture}
+		 */
+		this._value = value;
+
+		/**
+		 * Reference to the generated PMREM.
+		 *
+		 * @private
+		 * @type {Texture | null}
+		 * @default null
+		 */
+		this._pmrem = null;
+
+		/**
+		 *  The uv node.
+		 *
+		 * @type {Node<vec3>}
+		 */
+		this.uvNode = uvNode;
+
+		/**
+		 *  The level node.
+		 *
+		 * @type {Node<float>}
+		 */
+		this.levelNode = levelNode;
+
+		/**
+		 * Reference to a PMREM generator.
+		 *
+		 * @private
+		 * @type {?PMREMGenerator}
+		 * @default null
+		 */
+		this._generator = null;
+
+		const defaultTexture = new CubeTexture();
+		defaultTexture.isRenderTargetTexture = true;
+
+		/**
+		 * The texture node holding the generated PMREM.
+		 *
+		 * @private
+		 * @type {CubeTextureNode}
+		 */
+		this._texture = cubeTexture( defaultTexture );
+
+		/**
+		 * A uniform representing the last mip level of the PMREM.
+		 *
+		 * @private
+		 * @type {UniformNode<float>}
+		 */
+		this._maxLod = uniform( 0 );
+
+		/**
+		 * A uniform representing the width of the sharpest mip level of the PMREM.
+		 *
+		 * @private
+		 * @type {UniformNode<float>}
+		 */
+		this._size = uniform( 0 );
+
+		/**
+		 * The `updateBeforeType` is set to `NodeUpdateType.RENDER`.
+		 *
+		 * @type {string}
+		 * @default 'render'
+		 */
+		this.updateBeforeType = NodeUpdateType.RENDER;
+
+	}
+
+	set value( value ) {
+
+		this._value = value;
+		this._pmrem = null;
+
+	}
+
+	/**
+	 * The node's texture value.
+	 *
+	 * @type {Texture}
+	 */
+	get value() {
+
+		return this._value;
+
+	}
+
+	/**
+	 * Uses the given PMREM texture to update internal values.
+	 *
+	 * @param {Texture} texture - The PMREM texture.
+	 */
+	updateFromTexture( texture ) {
+
+		const mipmaps = texture.isCompressedCubeTexture ? texture.image[ 0 ].mipmaps : texture.mipmaps;
+
+		this._texture.value = texture;
+		this._maxLod.value = mipmaps.length - 1;
+		this._size.value = mipmaps[ 0 ].width;
+
+	}
+
+	updateBefore( frame ) {
+
+		let pmrem = this._pmrem;
+
+		const pmremVersion = pmrem ? pmrem.pmremVersion : -1;
+		const texture = this._value;
+
+		if ( pmremVersion !== texture.pmremVersion ) {
+
+			if ( texture.isPMREMTexture === true ) {
+
+				pmrem = texture;
+
+			} else {
+
+				if ( this._generator === null ) {
+
+					this._generator = new PMREMGenerator( frame.renderer );
+
+				}
+
+				pmrem = _getPMREMFromTexture( texture, frame.renderer, this._generator );
+
+			}
+
+			if ( pmrem !== null ) {
+
+				this._pmrem = pmrem;
+
+				this.updateFromTexture( pmrem );
+
+			}
+
+		}
+
+	}
+
+	setup( builder ) {
+
+		this.updateBefore( builder );
+
+		//
+
+		let uvNode = this.uvNode;
+
+		if ( uvNode === null && builder.context.getUV ) {
+
+			uvNode = builder.context.getUV( this, builder );
+
+		}
+
+		//
+
+		let levelNode = this.levelNode;
+
+		if ( levelNode === null && builder.context.getTextureLevel ) {
+
+			levelNode = builder.context.getTextureLevel( this );
+
+		}
+
+		//
+
+		return this._texture.sample( materialEnvRotation.mul( uvNode ) ).level( roughnessToMip( levelNode, this._maxLod ) ).rgb;
+
+	}
+
+	dispose() {
+
+		super.dispose();
+
+		if ( this._generator !== null ) this._generator.dispose();
+
+	}
+
+}
+
+/**
+ * Returns `true` if the given cube map image has been fully loaded.
+ *
+ * @private
+ * @param {?Array<(Image|Object)>} [image] - The cube map image.
+ * @return {boolean} Whether the given cube map is ready or not.
+ */
+function isCubeMapReady( image ) {
+
+	if ( image === null || image === undefined ) return false;
+
+	let count = 0;
+	const length = 6;
+
+	for ( let i = 0; i < length; i ++ ) {
+
+		if ( image[ i ] !== undefined ) count ++;
+
+	}
+
+	return count === length;
+
+
+}
+
+/**
+ * Returns `true` if the given equirectangular image has been fully loaded.
+ *
+ * @private
+ * @param {(Image|Object)} image - The equirectangular image.
+ * @return {boolean} Whether the given cube map is ready or not.
+ */
+function isEquirectangularMapReady( image ) {
+
+	if ( image === null || image === undefined ) return false;
+
+	return image.height > 0;
+
+}
+
+/**
+ * TSL function for creating a PMREM node.
+ *
+ * @tsl
+ * @function
+ * @param {Texture} value - The input texture.
+ * @param {?Node<vec3>} [uvNode=null] - The uv node.
+ * @param {?Node<float>} [levelNode=null] - The level node.
+ * @returns {PMREMNode}
+ */
+const pmremTexture = /*@__PURE__*/ nodeProxy( PMREMNode ).setParameterLength( 1, 3 );
+
+/**
+ * TSL function for creating a matcap uv node.
+ *
+ * Can be used to compute texture coordinates for projecting a
+ * matcap onto a mesh. Used by {@link MeshMatcapNodeMaterial}.
+ *
+ * @tsl
+ * @function
+ * @returns {Node<vec2>} The matcap UV coordinates.
+ */
+const matcapUV = /*@__PURE__*/ Fn( () => {
+
+	const x = vec3( positionViewDirection.z, 0, positionViewDirection.x.negate() ).normalize();
+	const y = positionViewDirection.cross( x );
+
+	return vec2( x.dot( normalView ), y.dot( normalView ) ).mul( 0.495 ).add( 0.5 ); // 0.495 to remove artifacts caused by undersized matcap disks
+
+} ).once( [ 'NORMAL', 'VERTEX' ] )().toVar( 'matcapUV' );
+
+/**
+ * Applies a rotation to the given position node.
+ *
+ * @augments Node
+ */
+class RotateNode extends Node {
+
+	static get type() {
+
+		return 'RotateNode';
+
+	}
+
+	/**
+	 * Constructs a new rotate node.
+	 *
+	 * @param {Node} positionNode - The position node.
+	 * @param {Node} rotationNode - Represents the rotation that is applied to the position node. Depending
+	 * on whether the position data are 2D or 3D, the rotation is expressed a single float value or an Euler value.
+	 * @param {string} [order='XYZ'] - The Euler rotation order. Only used for 3D rotation.
+	 */
+	constructor( positionNode, rotationNode, order = 'XYZ' ) {
+
+		super();
+
+		/**
+		 * The position node.
+		 *
+		 * @type {Node}
+		 */
+		this.positionNode = positionNode;
+
+		/**
+		 * Represents the rotation that is applied to the position node.
+		 * Depending on whether the position data are 2D or 3D, the rotation is expressed a single float value or an Euler value.
+		 *
+		 * @type {Node}
+		 */
+		this.rotationNode = rotationNode;
+
+		/**
+		 * The Euler rotation order.
+		 *
+		 * @private
+		 * @type {string}
+		 * @default 'XYZ'
+		 */
+		this._order = order;
+
+	}
+
+	/**
+	 * Overwrites the default `customCacheKey()` implementation by including the
+	 * Euler order into the cache key.
+	 *
+	 * @return {number} The hash.
+	 */
+	customCacheKey() {
+
+		return hashString( this._order );
+
+	}
+
+	/**
+	 * Sets the Euler rotation order.
+	 *
+	 * @param {string} value - The Euler rotation order.
+	 * @return {RotateNode} A reference to this node.
+	 */
+	setOrder( value ) {
+
+		this._order = value;
+
+		return this;
+
+	}
+
+	/**
+	 * Gets the Euler rotation order.
+	 *
+	 * @return {string} The Euler rotation order.
+	 */
+	getOrder() {
+
+		return this._order;
+
+	}
+
+	/**
+	 * The type of the {@link RotateNode#positionNode} defines the node's type.
+	 *
+	 * @param {NodeBuilder} builder - The current node builder.
+	 * @return {string} The node's type.
+	 */
+	generateNodeType( builder ) {
+
+		return this.positionNode.getNodeType( builder );
+
+	}
+
+	setup( builder ) {
+
+		const { rotationNode, positionNode } = this;
+
+		const nodeType = this.getNodeType( builder );
+
+		if ( nodeType === 'vec2' ) {
+
+			const cosAngle = rotationNode.cos();
+			const sinAngle = rotationNode.sin();
+
+			const rotationMatrix = mat2(
+				cosAngle, sinAngle,
+				sinAngle.negate(), cosAngle
+			);
+
+			return rotationMatrix.mul( positionNode );
+
+		} else {
+
+			const rotation = rotationNode;
+			const order = this._order;
+
+			const rotationXMatrix = mat4( vec4( 1.0, 0.0, 0.0, 0.0 ), vec4( 0.0, cos( rotation.x ), sin( rotation.x ), 0.0 ), vec4( 0.0, sin( rotation.x ).negate(), cos( rotation.x ), 0.0 ), vec4( 0.0, 0.0, 0.0, 1.0 ) );
+			const rotationYMatrix = mat4( vec4( cos( rotation.y ), 0.0, sin( rotation.y ).negate(), 0.0 ), vec4( 0.0, 1.0, 0.0, 0.0 ), vec4( sin( rotation.y ), 0.0, cos( rotation.y ), 0.0 ), vec4( 0.0, 0.0, 0.0, 1.0 ) );
+			const rotationZMatrix = mat4( vec4( cos( rotation.z ), sin( rotation.z ), 0.0, 0.0 ), vec4( sin( rotation.z ).negate(), cos( rotation.z ), 0.0, 0.0 ), vec4( 0.0, 0.0, 1.0, 0.0 ), vec4( 0.0, 0.0, 0.0, 1.0 ) );
+
+			const matrixMap = {
+				'X': rotationXMatrix,
+				'Y': rotationYMatrix,
+				'Z': rotationZMatrix
+			};
+
+			const matrixChain = matrixMap[ order.charAt( 0 ) ]
+				.mul( matrixMap[ order.charAt( 1 ) ] )
+				.mul( matrixMap[ order.charAt( 2 ) ] );
+
+			return matrixChain.mul( vec4( positionNode, 1.0 ) ).xyz;
+
+		}
+
+	}
+
+	serialize( data ) {
+
+		super.serialize( data );
+
+		data.order = this._order;
+
+	}
+
+	deserialize( data ) {
+
+		super.deserialize( data );
+
+		this._order = data.order;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a rotate node.
+ *
+ * @tsl
+ * @function
+ * @param {Node} positionNode - The position node.
+ * @param {Node} rotationNode - Represents the rotation that is applied to the position node. Depending
+ * on whether the position data are 2D or 3D, the rotation is expressed a single float value or an Euler value.
+ * @param {string} [order='XYZ'] - The Euler rotation order. Only used for 3D rotation.
+ * @returns {RotateNode}
+ */
+const rotate = /*@__PURE__*/ nodeProxy( RotateNode ).setParameterLength( 2, 3 );
+
+/**
+ * Data structure for the renderer. It allows defining values
+ * with chained, hierarchical keys. Keys are meant to be
+ * objects since the module internally works with Weak Maps
+ * for performance reasons.
+ *
+ * @private
+ */
+class ChainMap {
+
+	/**
+	 * Constructs a new Chain Map.
+	 */
+	constructor() {
+
+		/**
+		 * A map of Weak Maps by their key length.
+		 *
+		 * @type {Object<number, WeakMap>}
+		 */
+		this.weakMaps = {};
+
+
+	}
+
+	/**
+	 * Returns the Weak Map for the given keys.
+	 *
+	 * @param {Array<Object>} keys - List of keys.
+	 * @return {WeakMap} The weak map.
+	 */
+	_getWeakMap( keys ) {
+
+		const length = keys.length;
+
+		let weakMap = this.weakMaps[ length ];
+
+		if ( weakMap === undefined ) {
+
+			weakMap = new WeakMap();
+			this.weakMaps[ length ] = weakMap;
+
+		}
+
+		return weakMap;
+
+	}
+
+	/**
+	 * Returns the value for the given array of keys.
+	 *
+	 * @param {Array<Object>} keys - List of keys.
+	 * @return {any} The value. Returns `undefined` if no value was found.
+	 */
+	get( keys ) {
+
+		let map = this._getWeakMap( keys );
+
+		for ( let i = 0; i < keys.length - 1; i ++ ) {
+
+			map = map.get( keys[ i ] );
+
+			if ( map === undefined ) return undefined;
+
+		}
+
+		return map.get( keys[ keys.length - 1 ] );
+
+	}
+
+	/**
+	 * Sets the value for the given keys.
+	 *
+	 * @param {Array<Object>} keys - List of keys.
+	 * @param {any} value - The value to set.
+	 * @return {ChainMap} A reference to this Chain Map.
+	 */
+	set( keys, value ) {
+
+		let map = this._getWeakMap( keys );
+
+		for ( let i = 0; i < keys.length - 1; i ++ ) {
+
+			const key = keys[ i ];
+
+			if ( map.has( key ) === false ) map.set( key, new WeakMap() );
+
+			map = map.get( key );
+
+		}
+
+		map.set( keys[ keys.length - 1 ], value );
+
+		return this;
+
+	}
+
+	/**
+	 * Deletes a value for the given keys.
+	 *
+	 * @param {Array<Object>} keys - The keys.
+	 * @return {boolean} Returns `true` if the value has been removed successfully and `false` if the value has not be found.
+	 */
+	delete( keys ) {
+
+		let map = this._getWeakMap( keys );
+
+		for ( let i = 0; i < keys.length - 1; i ++ ) {
+
+			map = map.get( keys[ i ] );
+
+			if ( map === undefined ) return false;
+
+		}
+
+		return map.delete( keys[ keys.length - 1 ] );
+
+	}
+
+}
+
+/**
+ * A four-component version of {@link Color} which is internally
+ * used by the renderer to represents clear color with alpha as
+ * one object.
+ *
+ * @private
+ * @augments Color
+ */
+class Color4 extends Color {
+
+	/**
+	 * Constructs a new four-component color.
+	 * You can also pass a single THREE.Color, hex or
+	 * string argument to this constructor.
+	 *
+	 * @param {number|string} [r=1] - The red value.
+	 * @param {number} [g=1] - The green value.
+	 * @param {number} [b=1] - The blue value.
+	 * @param {number} [a=1] - The alpha value.
+	 */
+	constructor( r, g, b, a = 1 ) {
+
+		super( r, g, b );
+
+		this.a = a;
+
+	}
+
+	/**
+	 * Overwrites the default to honor alpha.
+	 * You can also pass a single THREE.Color, hex or
+	 * string argument to this method.
+	 *
+	 * @param {number|string|Color} r - The red value.
+	 * @param {number} [g] - The green value.
+	 * @param {number} [b] - The blue value.
+	 * @param {number} [a=1] - The alpha value.
+	 * @return {Color4} A reference to this object.
+	 */
+	set( r, g, b, a = 1 ) {
+
+		this.a = a;
+
+		return super.set( r, g, b );
+
+	}
+
+	/**
+	 * Overwrites the default to honor alpha.
+	 *
+	 * @param {Color4} color - The color to copy.
+	 * @return {Color4} A reference to this object.
+	 */
+	copy( color ) {
+
+		if ( color.a !== undefined ) this.a = color.a;
+
+		return super.copy( color );
+
+	}
+
+	/**
+	 * Overwrites the default to honor alpha.
+	 *
+	 * @return {Color4} The cloned color.
+	 */
+	clone() {
+
+		return new this.constructor( this.r, this.g, this.b, this.a );
+
+	}
+
+	*[ Symbol.iterator ]() {
+
+		yield this.r;
+		yield this.g;
+		yield this.b;
+		yield this.a;
+
+	}
+
+}
+
+/**
  * A specialized context node designed to override specific target nodes within a
  * node sub-graph or flow. This allows replacing specific inputs (e.g., normal
  * and position vectors) dynamically during compilation for a specific flow node,
@@ -13453,89 +27808,6 @@ class BlendMode {
 	clone() {
 
 		return new this.constructor().copy( this );
-
-	}
-
-}
-
-/**
- * A four-component version of {@link Color} which is internally
- * used by the renderer to represents clear color with alpha as
- * one object.
- *
- * @private
- * @augments Color
- */
-class Color4 extends Color {
-
-	/**
-	 * Constructs a new four-component color.
-	 * You can also pass a single THREE.Color, hex or
-	 * string argument to this constructor.
-	 *
-	 * @param {number|string} [r=1] - The red value.
-	 * @param {number} [g=1] - The green value.
-	 * @param {number} [b=1] - The blue value.
-	 * @param {number} [a=1] - The alpha value.
-	 */
-	constructor( r, g, b, a = 1 ) {
-
-		super( r, g, b );
-
-		this.a = a;
-
-	}
-
-	/**
-	 * Overwrites the default to honor alpha.
-	 * You can also pass a single THREE.Color, hex or
-	 * string argument to this method.
-	 *
-	 * @param {number|string|Color} r - The red value.
-	 * @param {number} [g] - The green value.
-	 * @param {number} [b] - The blue value.
-	 * @param {number} [a=1] - The alpha value.
-	 * @return {Color4} A reference to this object.
-	 */
-	set( r, g, b, a = 1 ) {
-
-		this.a = a;
-
-		return super.set( r, g, b );
-
-	}
-
-	/**
-	 * Overwrites the default to honor alpha.
-	 *
-	 * @param {Color4} color - The color to copy.
-	 * @return {Color4} A reference to this object.
-	 */
-	copy( color ) {
-
-		if ( color.a !== undefined ) this.a = color.a;
-
-		return super.copy( color );
-
-	}
-
-	/**
-	 * Overwrites the default to honor alpha.
-	 *
-	 * @return {Color4} The cloned color.
-	 */
-	clone() {
-
-		return new this.constructor( this.r, this.g, this.b, this.a );
-
-	}
-
-	*[ Symbol.iterator ]() {
-
-		yield this.r;
-		yield this.g;
-		yield this.b;
-		yield this.a;
 
 	}
 
@@ -15068,395 +29340,6 @@ const unpackSnorm4x8 = /*@__PURE__*/ nodeProxyAssignable( UnpackFloatNode, 'snor
  */
 const unpackUnorm4x8 = /*@__PURE__*/ nodeProxyAssignable( UnpackFloatNode, 'unorm', null, { layout: '4x8' } ).setParameterLength( 1 );
 
-/**
- * This module offers a variety of ways to implement loops in TSL. In it's basic form it's:
- * ```js
- * Loop( count, ( { i } ) => {
- *
- * } );
- * ```
- * However, it is also possible to define a start and end ranges, data types and loop conditions:
- * ```js
- * Loop( { start: int( 0 ), end: int( 10 ), type: 'int', condition: '<' }, ( { i } ) => {
- *
- * } );
- *```
- * Nested loops can be defined in a compacted form:
- * ```js
- * Loop( 10, 5, ( { i, j } ) => {
- *
- * } );
- * ```
- * Loops that should run backwards can be defined like so:
- * ```js
- * Loop( { start: 10 }, () => {} );
- * ```
- * It is possible to execute with boolean values, similar to the `while` syntax.
- * ```js
- * const value = float( 0 ).toVar();
- *
- * Loop( value.lessThan( 10 ), () => {
- *
- * 	value.addAssign( 1 );
- *
- * } );
- * ```
- * The module also provides `Break()` and `Continue()` TSL expressions for loop control.
- * @augments Node
- */
-class LoopNode extends Node {
-
-	static get type() {
-
-		return 'LoopNode';
-
-	}
-
-	/**
-	 * Constructs a new loop node.
-	 *
-	 * @param {Array<LoopNode~Params|loopBodyCallback>} params - Any number of loop parameters followed by the loop body.
-	 */
-	constructor( params = [] ) {
-
-		super( 'void' );
-
-		this.params = params;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	/**
-	 * Returns a loop variable name based on an index. The pattern is
-	 * `0` = `i`, `1`= `j`, `2`= `k` and so on.
-	 *
-	 * @param {number} index - The index.
-	 * @return {string} The loop variable name.
-	 */
-	getVarName( index ) {
-
-		return String.fromCharCode( 'i'.charCodeAt( 0 ) + index );
-
-	}
-
-	/**
-	 * Returns properties about this node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Object} The node properties.
-	 */
-	getProperties( builder ) {
-
-		const properties = builder.getNodeProperties( this );
-
-		if ( properties.stackNode !== undefined ) return properties;
-
-		//
-
-		const inputs = {};
-		const params = this._getInternalParams();
-
-		for ( let i = 0, l = params.length - 1; i < l; i ++ ) {
-
-			const param = params[ i ];
-
-			const name = ( param.isNode !== true && param.name ) || this.getVarName( i );
-			const type = ( param.isNode !== true && param.type ) || 'int';
-
-			inputs[ name ] = expression( name, type );
-
-		}
-
-		const stack = builder.addStack();
-
-		const fnCall = params[ params.length - 1 ]( inputs );
-
-		properties.returnsNode = fnCall.context( { nodeLoop: this, nodeBlock: builder.createBlock() } );
-		properties.stackNode = stack;
-
-		const baseParam = params[ 0 ];
-
-		if ( baseParam.isNode !== true && typeof baseParam.update === 'function' ) {
-
-			const fnUpdateCall = Fn( baseParam.update )( inputs );
-
-			properties.updateNode = fnUpdateCall.context( { nodeLoop: this } );
-
-		}
-
-		builder.removeStack();
-
-		return properties;
-
-	}
-
-	_getInternalParams() {
-
-		const params = this.params;
-
-		if ( typeof params[ 0 ] === 'function' ) {
-
-			return [ bool( true ), params[ 0 ] ];
-
-		}
-
-		return params;
-
-	}
-
-	setup( builder ) {
-
-		// setup properties
-
-		this.getProperties( builder );
-
-	}
-
-	generate( builder ) {
-
-		const properties = this.getProperties( builder );
-
-		const params = this._getInternalParams();
-		const stackNode = properties.stackNode;
-
-		for ( let i = 0, l = params.length - 1; i < l; i ++ ) {
-
-			const param = params[ i ];
-
-			let isWhile = false, start = null, end = null, name = null, type = null, condition = null, update = null;
-
-			if ( param.isNode ) {
-
-				if ( param.getNodeType( builder ) === 'bool' ) {
-
-					isWhile = true;
-					type = 'bool';
-					end = param.build( builder, type );
-
-				} else {
-
-					type = 'int';
-					name = this.getVarName( i );
-					start = '0';
-					end = param.build( builder, type );
-					condition = '<';
-
-				}
-
-			} else {
-
-				type = param.type || 'int';
-				name = param.name || this.getVarName( i );
-				start = param.start;
-				end = param.end;
-				condition = param.condition;
-				update = param.update;
-
-				if ( typeof start === 'number' ) start = builder.generateConst( type, start );
-				else if ( start && start.isNode ) start = start.build( builder, type );
-
-				if ( typeof end === 'number' ) end = builder.generateConst( type, end );
-				else if ( end && end.isNode ) end = end.build( builder, type );
-
-				if ( start !== undefined && end === undefined ) {
-
-					start = start + ' - 1';
-					end = '0';
-					condition = '>=';
-
-				} else if ( end !== undefined && start === undefined ) {
-
-					start = '0';
-					condition = '<';
-
-				}
-
-				if ( condition === undefined ) {
-
-					if ( Number( start ) > Number( end ) ) {
-
-						condition = '>=';
-
-					} else {
-
-						condition = '<';
-
-					}
-
-				}
-
-			}
-
-			let loopSnippet;
-
-			if ( isWhile ) {
-
-				loopSnippet = `while ( ${ end } )`;
-
-			} else {
-
-				const internalParam = { start, end};
-
-				//
-
-				const startSnippet = internalParam.start;
-				const endSnippet = internalParam.end;
-
-				let updateSnippet;
-
-				const deltaOperator = () => condition.includes( '<' ) ? '+=' : '-=';
-
-				if ( update !== undefined && update !== null ) {
-
-					switch ( typeof update ) {
-
-						case 'function':
-
-							const flow = builder.flowStagesNode( properties.updateNode, 'void' );
-							const snippet = flow.code.replace( /\t|;/g, '' );
-
-							updateSnippet = snippet;
-
-							break;
-
-						case 'number':
-
-							updateSnippet = name + ' ' + deltaOperator() + ' ' + builder.generateConst( type, update );
-
-							break;
-
-						case 'string':
-
-							updateSnippet = name + ' ' + update;
-
-							break;
-
-						default:
-
-							if ( update.isNode ) {
-
-								updateSnippet = name + ' ' + deltaOperator() + ' ' + update.build( builder );
-
-							} else {
-
-								error( 'TSL: \'Loop( { update: ... } )\' is not a function, string or number.', this.stackTrace );
-
-								updateSnippet = 'break /* invalid update */';
-
-							}
-
-					}
-
-				} else {
-
-					if ( type === 'int' || type === 'uint' ) {
-
-						update = condition.includes( '<' ) ? '++' : '--';
-
-					} else {
-
-						update = deltaOperator() + ' 1.';
-
-					}
-
-					updateSnippet = name + ' ' + update;
-
-				}
-
-				const declarationSnippet = builder.getVar( type, name ) + ' = ' + startSnippet;
-				const conditionalSnippet = name + ' ' + condition + ' ' + endSnippet;
-
-				loopSnippet = `for ( ${ declarationSnippet }; ${ conditionalSnippet }; ${ updateSnippet } )`;
-
-			}
-
-			builder.addFlowCode( ( i === 0 ? '\n' : '' ) + builder.tab + loopSnippet + ' {\n\n' ).addFlowTab();
-
-		}
-
-		const flowBlock = builder.flowBlock;
-
-		builder.flowBlock = { parent: flowBlock };
-
-		const stackSnippet = stackNode.build( builder, 'void' );
-
-		properties.returnsNode.build( builder, 'void' );
-
-		builder.flowBlock = flowBlock;
-
-		builder.removeFlowTab().addFlowCode( '\n' + builder.tab + stackSnippet );
-
-		for ( let i = 0, l = params.length - 1; i < l; i ++ ) {
-
-			builder.addFlowCode( ( i === 0 ? '' : builder.tab ) + '}\n\n' ).removeFlowTab();
-
-		}
-
-		builder.addFlowTab();
-
-	}
-
-}
-
-/**
- * TSL function for creating a loop node.
- *
- * @tsl
- * @function
- * @param {...(LoopNode~Params|loopBodyCallback)} params - Any number of loop parameters followed by the loop body.
- * @returns {LoopNode}
- */
-const Loop = ( ...params ) => new LoopNode( nodeArray( params, 'int' ) ).toStack();
-
-/**
- * TSL function for inserting a `continue` expression into the shader.
- *
- * @tsl
- * @function
- * @returns {ExpressionNode}
- */
-const Continue = () => expression( 'continue' ).toStack();
-
-/**
- * TSL function for inserting a `break` expression into the shader.
- *
- * @tsl
- * @function
- * @returns {ExpressionNode}
- */
-const Break = () => expression( 'break' ).toStack();
-
-/**
- * The parameters of a loop. A number or int/uint node defines the loop's end value,
- * a bool node defines a `while` loop and an object allows a more detailed configuration.
- *
- * @typedef {number|Node<int>|Node<uint>|Node<bool>|LoopNode~ObjectParams} LoopNode~Params
- */
-
-/**
- * A detailed loop configuration.
- *
- * @typedef {Object} LoopNode~ObjectParams
- * @property {number|Node<int>|Node<uint>} [start=0] - The initial value of the loop variable.
- * @property {number|Node<int>|Node<uint>} [end] - The value the loop variable is compared against. If omitted, the loop counts down from `start - 1` to `0`.
- * @property {string} [name] - The name of the loop variable. Defaults to `i`, `j`, `k` and so on.
- * @property {string} [type='int'] - The data type of the loop variable.
- * @property {('<'|'<='|'>'|'>=')} [condition] - The comparison operator. The loop runs as long as the comparison is true. Inferred from `start` and `end` if not set.
- * @property {string|number|Function|Node} [update] - Defines how the loop variable is updated after each iteration. Inferred from `condition` and `type` if not set.
- */
-
-/**
- * The loop body.
- *
- * @callback loopBodyCallback
- * @param {Object<string, Node>} inputs - The loop variables of the current `Loop()` call, keyed by their name.
- */
-
 // https://github.com/cabbibo/glsl-tri-noise-3d
 
 
@@ -15506,1900 +29389,6 @@ const triNoise3D = /*@__PURE__*/ Fn( ( [ position, speed, time ] ) => {
 	return rz;
 
 }, { position: 'vec3', speed: 'float', time: 'float', return: 'float' } );
-
-const _sphere = /*@__PURE__*/ new Sphere();
-
-/**
- * This node can be used to access transformation related metrics of 3D objects.
- * Depending on the selected scope, a different metric is represented as a uniform
- * in the shader. The following scopes are supported:
- *
- * - `POSITION`: The object's position in world space.
- * - `VIEW_POSITION`: The object's position in view/camera space.
- * - `DIRECTION`: The object's direction in world space.
- * - `SCALE`: The object's scale in world space.
- * - `WORLD_MATRIX`: The object's matrix in world space.
- *
- * @augments Node
- */
-class Object3DNode extends Node {
-
-	static get type() {
-
-		return 'Object3DNode';
-
-	}
-
-	/**
-	 * Constructs a new object 3D node.
-	 *
-	 * @param {('position'|'viewPosition'|'direction'|'scale'|'worldMatrix')} scope - The node represents a different type of transformation depending on the scope.
-	 * @param {?Object3D} [object3d=null] - The 3D object.
-	 */
-	constructor( scope, object3d = null ) {
-
-		super();
-
-		/**
-		 * The node reports a different type of transformation depending on the scope.
-		 *
-		 * @type {('position'|'viewPosition'|'direction'|'scale'|'worldMatrix')}
-		 */
-		this.scope = scope;
-
-		/**
-		 * The 3D object.
-		 *
-		 * @type {?Object3D}
-		 * @default null
-		 */
-		this.object3d = object3d;
-
-		/**
-		 * Overwritten since this type of node is updated per object.
-		 *
-		 * @type {string}
-		 * @default 'object'
-		 */
-		this.updateType = NodeUpdateType.OBJECT;
-
-		/**
-		 * Holds the value of the node as a uniform.
-		 *
-		 * @type {UniformNode}
-		 */
-		this.uniformNode = new UniformNode( null );
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	/**
-	 * Overwritten since the node type is inferred from the scope.
-	 *
-	 * @return {('mat4'|'vec3'|'float')} The node type.
-	 */
-	generateNodeType() {
-
-		const scope = this.scope;
-
-		if ( scope === Object3DNode.WORLD_MATRIX ) {
-
-			return 'mat4';
-
-		} else if ( scope === Object3DNode.POSITION || scope === Object3DNode.VIEW_POSITION || scope === Object3DNode.DIRECTION || scope === Object3DNode.SCALE ) {
-
-			return 'vec3';
-
-		} else if ( scope === Object3DNode.RADIUS ) {
-
-			return 'float';
-
-		}
-
-	}
-
-	/**
-	 * Updates the uniform value depending on the scope.
-	 *
-	 * @param {NodeFrame} frame - The current node frame.
-	 */
-	update( frame ) {
-
-		const object = this.object3d;
-		const uniformNode = this.uniformNode;
-		const scope = this.scope;
-
-		if ( scope === Object3DNode.WORLD_MATRIX ) {
-
-			uniformNode.value = object.matrixWorld;
-
-		} else if ( scope === Object3DNode.POSITION ) {
-
-			uniformNode.value = uniformNode.value || new Vector3();
-
-			uniformNode.value.setFromMatrixPosition( object.matrixWorld );
-
-		} else if ( scope === Object3DNode.SCALE ) {
-
-			uniformNode.value = uniformNode.value || new Vector3();
-
-			uniformNode.value.setFromMatrixScale( object.matrixWorld );
-
-		} else if ( scope === Object3DNode.DIRECTION ) {
-
-			uniformNode.value = uniformNode.value || new Vector3();
-
-			object.getWorldDirection( uniformNode.value );
-
-		} else if ( scope === Object3DNode.VIEW_POSITION ) {
-
-			const camera = frame.camera;
-
-			uniformNode.value = uniformNode.value || new Vector3();
-			uniformNode.value.setFromMatrixPosition( object.matrixWorld );
-
-			uniformNode.value.applyMatrix4( camera.matrixWorldInverse );
-
-		} else if ( scope === Object3DNode.RADIUS ) {
-
-			const geometry = frame.object.geometry;
-
-			if ( geometry.boundingSphere === null ) geometry.computeBoundingSphere();
-
-			_sphere.copy( geometry.boundingSphere ).applyMatrix4( object.matrixWorld );
-
-			uniformNode.value = _sphere.radius;
-
-		}
-
-	}
-
-	/**
-	 * Generates the code snippet of the uniform node. The node type of the uniform
-	 * node also depends on the selected scope.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The generated code snippet.
-	 */
-	generate( builder ) {
-
-		const scope = this.scope;
-
-		if ( scope === Object3DNode.WORLD_MATRIX ) {
-
-			this.uniformNode.nodeType = 'mat4';
-
-		} else if ( scope === Object3DNode.POSITION || scope === Object3DNode.VIEW_POSITION || scope === Object3DNode.DIRECTION || scope === Object3DNode.SCALE ) {
-
-			this.uniformNode.nodeType = 'vec3';
-
-		} else if ( scope === Object3DNode.RADIUS ) {
-
-			this.uniformNode.nodeType = 'float';
-
-		}
-
-		return this.uniformNode.build( builder );
-
-	}
-
-	serialize( data ) {
-
-		super.serialize( data );
-
-		data.scope = this.scope;
-
-	}
-
-	deserialize( data ) {
-
-		super.deserialize( data );
-
-		this.scope = data.scope;
-
-	}
-
-}
-
-Object3DNode.WORLD_MATRIX = 'worldMatrix';
-Object3DNode.POSITION = 'position';
-Object3DNode.SCALE = 'scale';
-Object3DNode.VIEW_POSITION = 'viewPosition';
-Object3DNode.DIRECTION = 'direction';
-Object3DNode.RADIUS = 'radius';
-
-/**
- * TSL function for creating an object 3D node that represents the object's direction in world space.
- *
- * @tsl
- * @function
- * @param {?Object3D} [object3d] - The 3D object.
- * @returns {Object3DNode<vec3>}
- */
-const objectDirection = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.DIRECTION ).setParameterLength( 1 );
-
-/**
- * TSL function for creating an object 3D node that represents the object's world matrix.
- *
- * @tsl
- * @function
- * @param {?Object3D} [object3d] - The 3D object.
- * @returns {Object3DNode<mat4>}
- */
-const objectWorldMatrix = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.WORLD_MATRIX ).setParameterLength( 1 );
-
-/**
- * TSL function for creating an object 3D node that represents the object's position in world space.
- *
- * @tsl
- * @function
- * @param {?Object3D} [object3d] - The 3D object.
- * @returns {Object3DNode<vec3>}
- */
-const objectPosition = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.POSITION ).setParameterLength( 1 );
-
-/**
- * TSL function for creating an object 3D node that represents the object's scale in world space.
- *
- * @tsl
- * @function
- * @param {?Object3D} [object3d] - The 3D object.
- * @returns {Object3DNode<vec3>}
- */
-const objectScale = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.SCALE ).setParameterLength( 1 );
-
-/**
- * TSL function for creating an object 3D node that represents the object's position in view/camera space.
- *
- * @tsl
- * @function
- * @param {?Object3D} [object3d] - The 3D object.
- * @returns {Object3DNode<vec3>}
- */
-const objectViewPosition = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.VIEW_POSITION ).setParameterLength( 1 );
-
-/**
- * TSL function for creating an object 3D node that represents the object's radius.
- *
- * @tsl
- * @function
- * @param {?Object3D} [object3d] - The 3D object.
- * @returns {Object3DNode<float>}
- */
-const objectRadius = /*@__PURE__*/ nodeProxy( Object3DNode, Object3DNode.RADIUS ).setParameterLength( 1 );
-
-/**
- * The node allows to set values for built-in shader variables. That is
- * required for features like hardware-accelerated vertex clipping.
- *
- * @augments Node
- */
-class BuiltinNode extends Node {
-
-	/**
-	 * Constructs a new builtin node.
-	 *
-	 * @param {string} name - The name of the built-in shader variable.
-	 */
-	constructor( name ) {
-
-		super( 'float' );
-
-		/**
-		 * The name of the built-in shader variable.
-		 *
-		 * @type {string}
-		 */
-		this.name = name;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isBuiltinNode = true;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	/**
-	 * Generates the code snippet of the builtin node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The generated code snippet.
-	 */
-	generate( /* builder */ ) {
-
-		return this.name;
-
-	}
-
-}
-
-/**
- * TSL function for creating a builtin node.
- *
- * @tsl
- * @function
- * @param {string} name - The name of the built-in shader variable.
- * @returns {BuiltinNode}
- */
-const builtin = /*@__PURE__*/ nodeProxy( BuiltinNode ).setParameterLength( 1 );
-
-/**
- * A special type of uniform node which represents array-like data
- * as uniform buffers. The access usually happens via `element()`
- * which returns an instance of {@link ArrayElementNode}. For example:
- *
- * ```js
- * const bufferNode = buffer( array, 'mat4', count );
- * const matrixNode = bufferNode.element( index ); // access a matrix from the buffer
- * ```
- * In general, it is recommended to use the more managed {@link UniformArrayNode}
- * since it handles more input types and automatically cares about buffer paddings.
- *
- * @augments UniformNode
- */
-class BufferNode extends UniformNode {
-
-	static get type() {
-
-		return 'BufferNode';
-
-	}
-
-	/**
-	 * Constructs a new buffer node.
-	 *
-	 * @param {Array<number>} value - Array-like buffer data.
-	 * @param {string} bufferType - The data type of the buffer.
-	 * @param {number} [bufferCount=0] - The count of buffer elements.
-	 */
-	constructor( value, bufferType, bufferCount = 0 ) {
-
-		super( value, bufferType );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isBufferNode = true;
-
-		/**
-		 * The data type of the buffer.
-		 *
-		 * @type {string}
-		 */
-		this.bufferType = bufferType;
-
-		/**
-		 * The uniform node that holds the value of the reference node.
-		 *
-		 * @type {number}
-		 * @default 0
-		 */
-		this.bufferCount = bufferCount;
-
-		/**
-		 * An array of update ranges.
-		 *
-		 * @type {Array<{start: number, count: number}>}
-		 */
-		this.updateRanges = [];
-
-	}
-
-	/**
-	 * Adds a range of data in the data array to be updated on the GPU.
-	 *
-	 * @param {number} start - Position at which to start update.
-	 * @param {number} count - The number of components to update.
-	 */
-	addUpdateRange( start, count ) {
-
-		this.updateRanges.push( { start, count } );
-
-	}
-
-	/**
-	 * Clears the update ranges.
-	 */
-	clearUpdateRanges() {
-
-		this.updateRanges.length = 0;
-
-	}
-
-	/**
-	 * The data type of the buffer elements.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The element type.
-	 */
-	getElementType( builder ) {
-
-		return this.getNodeType( builder );
-
-	}
-
-	/**
-	 * Overwrites the default implementation to return a fixed value `'buffer'`.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The input type.
-	 */
-	getInputType( /*builder*/ ) {
-
-		return 'buffer';
-
-	}
-
-}
-
-/**
- * TSL function for creating a buffer node.
- *
- * @tsl
- * @function
- * @param {Array<number>} value - Array-like buffer data.
- * @param {string} type - The data type of a buffer element.
- * @param {number} count - The count of buffer elements.
- * @returns {BufferNode}
- */
-const buffer = ( value, type, count ) => new BufferNode( value, type, count );
-
-/**
- * Represents the element access on uniform array nodes.
- *
- * @augments ArrayElementNode
- */
-class UniformArrayElementNode extends ArrayElementNode {
-
-	static get type() {
-
-		return 'UniformArrayElementNode';
-
-	}
-
-	/**
-	 * Constructs a new buffer node.
-	 *
-	 * @param {UniformArrayNode} uniformArrayNode - The uniform array node to access.
-	 * @param {IndexNode} indexNode - The index data that define the position of the accessed element in the array.
-	 */
-	constructor( uniformArrayNode, indexNode ) {
-
-		super( uniformArrayNode, indexNode );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isArrayBufferElementNode = true;
-
-	}
-
-	generate( builder ) {
-
-		const snippet = super.generate( builder );
-		const type = this.getNodeType( builder );
-		const paddedType = this.node.getPaddedType( builder );
-
-		return builder.format( snippet, paddedType, type );
-
-	}
-
-}
-
-/**
- * Similar to {@link BufferNode} this module represents array-like data as
- * uniform buffers. Unlike {@link BufferNode}, it can handle more common
- * data types in the array (e.g `three.js` primitives) and automatically
- * manage buffer padding. It should be the first choice when working with
- * uniforms buffers.
- * ```js
- * const tintColors = uniformArray( [
- * 	new Color( 1, 0, 0 ),
- * 	new Color( 0, 1, 0 ),
- * 	new Color( 0, 0, 1 )
- * ], 'color' );
- *
- * const redColor = tintColors.element( 0 );
- *
- * @augments BufferNode
- */
-class UniformArrayNode extends BufferNode {
-
-	static get type() {
-
-		return 'UniformArrayNode';
-
-	}
-
-	/**
-	 * Constructs a new uniform array node.
-	 *
-	 * @param {Array<any>} value - Array holding the buffer data.
-	 * @param {?string} [elementType=null] - The data type of a buffer element.
-	 */
-	constructor( value, elementType = null ) {
-
-		super( null );
-
-		/**
-		 * Array holding the buffer data. Unlike {@link BufferNode}, the array can
-		 * hold number primitives as well as three.js objects like vectors, matrices
-		 * or colors.
-		 *
-		 * @type {Array<any>}
-		 */
-		this.array = value;
-
-		/**
-		 * The data type of an array element.
-		 *
-		 * @type {string}
-		 */
-		this.elementType = elementType === null ? getValueType( value[ 0 ] ) : elementType;
-
-		/**
-		 * Overwritten since uniform array nodes are updated per render.
-		 *
-		 * @type {string}
-		 * @default 'render'
-		 */
-		this.updateType = NodeUpdateType.RENDER;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isArrayBufferNode = true;
-
-	}
-
-	/**
-	 * This method is overwritten since the node type is inferred from the
-	 * padded type.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The node type.
-	 */
-	generateNodeType( builder ) {
-
-		return this.getPaddedType( builder );
-
-	}
-
-	/**
-	 * The data type of the array elements.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The element type.
-	 */
-	getElementType() {
-
-		return this.elementType;
-
-	}
-
-	/**
-	 * Returns the padded type based on the element type.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The padded type.
-	 */
-	getPaddedType( builder ) {
-
-		const elementType = this.elementType;
-
-		let paddedType = 'vec4';
-
-		if ( elementType === 'mat2' ) {
-
-			paddedType = builder.renderer.backend.isWebGLBackend === true ? 'vec4' : 'mat2';
-
-		} else if ( /mat/.test( elementType ) === true ) {
-
-			paddedType = 'mat4';
-
-		} else if ( elementType.charAt( 0 ) === 'i' ) {
-
-			paddedType = 'ivec4';
-
-		} else if ( elementType.charAt( 0 ) === 'u' ) {
-
-			paddedType = 'uvec4';
-
-		}
-
-		return paddedType;
-
-	}
-
-	update( /*frame*/ ) {
-
-		this.updateBuffer();
-
-	}
-
-	/**
-	 * Composes a user-defined update with the buffer transfer.
-	 *
-	 * @param {Function} callback - The update function.
-	 * @param {string} updateType - The update type.
-	 * @return {UniformArrayNode} A reference to this node.
-	 */
-	onUpdate( callback, updateType ) {
-
-		callback = callback.bind( this );
-
-		return super.onUpdate( ( frame, self ) => {
-
-			callback( frame, self );
-
-			this.updateBuffer();
-
-		}, updateType );
-
-	}
-
-	/**
-	 * The method makes sure to correctly transfer the data from the (complex) objects
-	 * in the array to the internal, correctly padded value buffer.
-	 */
-	updateBuffer() {
-
-		const { array, value } = this;
-
-		const elementType = this.elementType;
-
-		if ( elementType === 'float' || elementType === 'int' || elementType === 'uint' ) {
-
-			for ( let i = 0; i < array.length; i ++ ) {
-
-				const index = i * 4;
-
-				value[ index ] = array[ i ];
-
-			}
-
-		} else if ( elementType === 'color' ) {
-
-			for ( let i = 0; i < array.length; i ++ ) {
-
-				const index = i * 4;
-				const vector = array[ i ];
-
-				value[ index ] = vector.r;
-				value[ index + 1 ] = vector.g;
-				value[ index + 2 ] = vector.b || 0;
-				//value[ index + 3 ] = vector.a || 0;
-
-			}
-
-		} else if ( elementType === 'mat2' ) {
-
-			for ( let i = 0; i < array.length; i ++ ) {
-
-				const index = i * 4;
-				const matrix = array[ i ];
-
-				value[ index ] = matrix.elements[ 0 ];
-				value[ index + 1 ] = matrix.elements[ 1 ];
-				value[ index + 2 ] = matrix.elements[ 2 ];
-				value[ index + 3 ] = matrix.elements[ 3 ];
-
-			}
-
-		} else if ( elementType === 'mat3' ) {
-
-			for ( let i = 0; i < array.length; i ++ ) {
-
-				const index = i * 16;
-				const matrix = array[ i ];
-
-				value[ index ] = matrix.elements[ 0 ];
-				value[ index + 1 ] = matrix.elements[ 1 ];
-				value[ index + 2 ] = matrix.elements[ 2 ];
-
-				value[ index + 4 ] = matrix.elements[ 3 ];
-				value[ index + 5 ] = matrix.elements[ 4 ];
-				value[ index + 6 ] = matrix.elements[ 5 ];
-
-				value[ index + 8 ] = matrix.elements[ 6 ];
-				value[ index + 9 ] = matrix.elements[ 7 ];
-				value[ index + 10 ] = matrix.elements[ 8 ];
-
-				value[ index + 15 ] = 1;
-
-			}
-
-		} else if ( elementType === 'mat4' ) {
-
-			for ( let i = 0; i < array.length; i ++ ) {
-
-				const index = i * 16;
-				const matrix = array[ i ];
-
-				for ( let i = 0; i < matrix.elements.length; i ++ ) {
-
-					value[ index + i ] = matrix.elements[ i ];
-
-				}
-
-			}
-
-		} else {
-
-			for ( let i = 0; i < array.length; i ++ ) {
-
-				const index = i * 4;
-				const vector = array[ i ];
-
-				value[ index ] = vector.x;
-				value[ index + 1 ] = vector.y;
-				value[ index + 2 ] = vector.z || 0;
-				value[ index + 3 ] = vector.w || 0;
-
-			}
-
-		}
-
-	}
-
-	/**
-	 * Implement the value buffer creation based on the array data.
-	 *
-	 * @param {NodeBuilder} builder - A reference to the current node builder.
-	 * @return {null}
-	 */
-	setup( builder ) {
-
-		const length = this.array.length;
-		const elementType = this.elementType;
-
-		let arrayType = Float32Array;
-
-		const paddedType = this.getPaddedType( builder );
-		const paddedElementLength = builder.getTypeLength( paddedType );
-
-		if ( elementType.charAt( 0 ) === 'i' ) arrayType = Int32Array;
-		if ( elementType.charAt( 0 ) === 'u' ) arrayType = Uint32Array;
-
-		this.value = new arrayType( length * paddedElementLength );
-		this.bufferCount = length;
-		this.bufferType = paddedType;
-
-		this.updateBuffer(); // initialize the buffer values
-
-		return super.setup( builder );
-
-	}
-
-	/**
-	 * Overwrites the default `element()` method to provide element access
-	 * based on {@link UniformArrayNode}.
-	 *
-	 * @param {IndexNode} indexNode - The index node.
-	 * @return {UniformArrayElementNode}
-	 */
-	element( indexNode ) {
-
-		return new UniformArrayElementNode( this, nodeObject( indexNode ) );
-
-	}
-
-}
-
-/**
- * TSL function for creating an uniform array node.
- *
- * @tsl
- * @function
- * @param {Array<any>} values - Array-like data.
- * @param {?string} [nodeType] - The data type of the array elements.
- * @returns {UniformArrayNode}
- */
-const uniformArray = ( values, nodeType ) => new UniformArrayNode( values, nodeType );
-
-let _screenSizeVec, _viewportVec;
-
-/**
- * This node provides a collection of screen related metrics.
- * Depending on {@link ScreenNode#scope}, the nodes can represent
- * resolution or viewport data as well as fragment or uv coordinates.
- *
- * @augments Node
- */
-class ScreenNode extends Node {
-
-	static get type() {
-
-		return 'ScreenNode';
-
-	}
-
-	/**
-	 * Constructs a new screen node.
-	 *
-	 * @param {('coordinate'|'viewport'|'size'|'uv')} scope - The node's scope.
-	 */
-	constructor( scope ) {
-
-		super();
-
-		/**
-		 * The node represents different metric depending on which scope is selected.
-		 *
-		 * - `ScreenNode.COORDINATE`: Window-relative coordinates of the current fragment according to WebGPU standards.
-		 * - `ScreenNode.VIEWPORT`: The current viewport defined as a four-dimensional vector.
-		 * - `ScreenNode.SIZE`: The dimensions of the current bound framebuffer.
-		 * - `ScreenNode.UV`: Normalized coordinates.
-		 *
-		 * @type {('coordinate'|'viewport'|'size'|'uv')}
-		 */
-		this.scope = scope;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isViewportNode = true;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	/**
-	 * This method is overwritten since the node type depends on the selected scope.
-	 *
-	 * @return {('vec2'|'vec4')} The node type.
-	 */
-	generateNodeType() {
-
-		if ( this.scope === ScreenNode.VIEWPORT ) return 'vec4';
-		else return 'vec2';
-
-	}
-
-	/**
-	 * `ScreenNode` implements {@link Node#update} to retrieve viewport and size information
-	 * from the current renderer.
-	 *
-	 * @param {NodeFrame} frame - A reference to the current node frame.
-	 */
-	update( { renderer } ) {
-
-		const renderTarget = renderer.getRenderTarget();
-
-		if ( this.scope === ScreenNode.VIEWPORT ) {
-
-			if ( renderTarget !== null ) {
-
-				_viewportVec.copy( renderTarget.viewport );
-
-			} else {
-
-				renderer.getViewport( _viewportVec );
-
-				_viewportVec.multiplyScalar( renderer.getPixelRatio() );
-
-			}
-
-		} else {
-
-			if ( renderTarget !== null ) {
-
-				_screenSizeVec.width = renderTarget.width;
-				_screenSizeVec.height = renderTarget.height;
-
-			} else {
-
-				renderer.getDrawingBufferSize( _screenSizeVec );
-
-			}
-
-		}
-
-	}
-
-	setup( /*builder*/ ) {
-
-		const scope = this.scope;
-
-		let output = null;
-
-		if ( scope === ScreenNode.SIZE ) {
-
-			output = uniform( _screenSizeVec || ( _screenSizeVec = new Vector2() ) ).setGroup( renderGroup );
-
-		} else if ( scope === ScreenNode.VIEWPORT ) {
-
-			output = uniform( _viewportVec || ( _viewportVec = new Vector4() ) ).setGroup( renderGroup );
-
-		} else {
-
-			output = vec2( screenCoordinate.div( screenSize ) );
-
-		}
-
-		//
-
-		let updateType = NodeUpdateType.NONE;
-
-		if ( this.scope === ScreenNode.SIZE || this.scope === ScreenNode.VIEWPORT ) {
-
-			updateType = NodeUpdateType.RENDER;
-
-		}
-
-		this.updateType = updateType;
-
-		//
-
-		return output;
-
-	}
-
-	generate( builder ) {
-
-		if ( this.scope === ScreenNode.COORDINATE ) {
-
-			let coord = builder.getFragCoord();
-
-			if ( builder.isFlipY() ) {
-
-				// follow webgpu standards
-
-				const size = builder.getNodeProperties( screenSize ).outputNode.build( builder );
-
-				coord = `${ builder.getType( 'vec2' ) }( ${ coord }.x, ${ size }.y - ${ coord }.y )`;
-
-			}
-
-			return coord;
-
-		}
-
-		return super.generate( builder );
-
-	}
-
-}
-
-ScreenNode.COORDINATE = 'coordinate';
-ScreenNode.VIEWPORT = 'viewport';
-ScreenNode.SIZE = 'size';
-ScreenNode.UV = 'uv';
-
-// Screen
-
-/**
- * TSL object that represents the current DPR.
- *
- * @tsl
- * @type {UniformNode<float>}
- */
-const screenDPR = /*@__PURE__*/ uniform( 1 ).setGroup( renderGroup ).onRenderUpdate( ( { renderer } ) => renderer.getPixelRatio() );
-
-/**
- * TSL object that represents normalized screen coordinates, unitless in `[0, 1]`.
- *
- * @tsl
- * @type {ScreenNode<vec2>}
- */
-const screenUV = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.UV );
-
-/**
- * TSL object that represents the screen resolution in physical pixel units.
- *
- * @tsl
- * @type {ScreenNode<vec2>}
- */
-const screenSize = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.SIZE );
-
-/**
- * TSL object that represents the current `x`/`y` pixel position on the screen in physical pixel units.
- *
- * @tsl
- * @type {ScreenNode<vec2>}
- */
-const screenCoordinate = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.COORDINATE );
-
-// Viewport
-
-/**
- * TSL object that represents the viewport rectangle as `x`, `y`, `width` and `height` in physical pixel units.
- *
- * @tsl
- * @type {ScreenNode<vec4>}
- */
-const viewport = /*@__PURE__*/ nodeImmutable( ScreenNode, ScreenNode.VIEWPORT );
-
-/**
- * TSL object that represents the viewport resolution in physical pixel units.
- *
- * @tsl
- * @type {ScreenNode<vec2>}
- */
-const viewportSize = viewport.zw;
-
-/**
- * TSL object that represents the current `x`/`y` pixel position on the viewport in physical pixel units.
- *
- * @tsl
- * @type {ScreenNode<vec2>}
- */
-const viewportCoordinate = /*@__PURE__*/ screenCoordinate.sub( viewport.xy );
-
-/**
- * TSL object that represents normalized viewport coordinates, unitless in `[0, 1]`.
- *
- * @tsl
- * @type {ScreenNode<vec2>}
- */
-const viewportUV = /*@__PURE__*/ viewportCoordinate.div( viewportSize );
-
-// Cache single-camera uniforms globally. Array uniforms are cached per renderer and
-// camera count so cameras with different array sizes cannot overwrite each other's
-// buffers, while builders with matching counts still share them.
-
-const _cameraArrays = /*@__PURE__*/ new WeakMap();
-
-function getCameraArray( renderer, camera, name, create ) {
-
-	let arrays = _cameraArrays.get( renderer );
-
-	if ( arrays === undefined ) {
-
-		arrays = new Map();
-		_cameraArrays.set( renderer, arrays );
-
-	}
-
-	const key = name + ':' + camera.cameras.length;
-
-	let array = arrays.get( key );
-
-	if ( array === undefined ) {
-
-		array = create( camera );
-		arrays.set( key, array );
-
-	}
-
-	return array;
-
-}
-
-let _cameraProjectionMatrixBase = null;
-
-let _cameraProjectionMatrixInverseBase = null;
-
-let _cameraViewMatrixBase = null;
-
-let _cameraWorldMatrixBase = null;
-
-let _cameraNormalMatrixBase = null;
-
-let _cameraPositionBase = null;
-
-let _cameraViewportBase = null;
-
-/**
- * TSL object that represents the current `index` value of the camera if used ArrayCamera.
- *
- * @tsl
- * @type {UniformNode<uint>}
- */
-const cameraIndex = /*@__PURE__*/ uniform( 0, 'uint' ).setName( 'u_cameraIndex' ).setGroup( sharedUniformGroup( 'cameraIndex' ) ).toVarying( 'v_cameraIndex' );
-
-/**
- * TSL object that represents the `near` value of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<float>}
- */
-const cameraNear = /*@__PURE__*/ uniform( 'float' ).setName( 'cameraNear' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.near );
-
-/**
- * TSL object that represents the `far` value of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<float>}
- */
-const cameraFar = /*@__PURE__*/ uniform( 'float' ).setName( 'cameraFar' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.far );
-
-/**
- * TSL object that represents the projection matrix of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<mat4>}
- */
-const cameraProjectionMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
-
-	let cameraProjectionMatrix;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const cameraArray = getCameraArray( renderer, camera, 'cameraProjectionMatrices', ( camera ) => {
-
-			const values = camera.cameras.map( ( subCamera ) => subCamera.projectionMatrix );
-
-			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraProjectionMatrices' ).onRenderUpdate( ( { camera }, self ) => {
-
-				for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-					self.array[ i ] = camera.cameras[ i ].projectionMatrix;
-
-				}
-
-			} );
-
-		} );
-
-		cameraProjectionMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		if ( _cameraProjectionMatrixBase === null ) {
-
-			_cameraProjectionMatrixBase = uniform( camera.projectionMatrix ).setName( 'cameraProjectionMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.projectionMatrix );
-
-		}
-
-		cameraProjectionMatrix = _cameraProjectionMatrixBase;
-
-	}
-
-	return cameraProjectionMatrix;
-
-} ).once() )();
-
-/**
- * TSL object that represents the inverse projection matrix of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<mat4>}
- */
-const cameraProjectionMatrixInverse = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
-
-	let cameraProjectionMatrixInverse;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const cameraArray = getCameraArray( renderer, camera, 'cameraProjectionMatricesInverse', ( camera ) => {
-
-			const values = camera.cameras.map( ( subCamera ) => subCamera.projectionMatrixInverse );
-
-			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraProjectionMatricesInverse' ).onRenderUpdate( ( { camera }, self ) => {
-
-				for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-					self.array[ i ] = camera.cameras[ i ].projectionMatrixInverse;
-
-				}
-
-			} );
-
-		} );
-
-		cameraProjectionMatrixInverse = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		if ( _cameraProjectionMatrixInverseBase === null ) {
-
-			_cameraProjectionMatrixInverseBase = uniform( camera.projectionMatrixInverse ).setName( 'cameraProjectionMatrixInverse' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.projectionMatrixInverse );
-
-		}
-
-		cameraProjectionMatrixInverse = _cameraProjectionMatrixInverseBase;
-
-	}
-
-	return cameraProjectionMatrixInverse;
-
-} ).once() )();
-
-/**
- * TSL object that represents the view matrix of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<mat4>}
- */
-const cameraViewMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
-
-	let cameraViewMatrix;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const cameraArray = getCameraArray( renderer, camera, 'cameraViewMatrices', ( camera ) => {
-
-			const values = camera.cameras.map( ( subCamera ) => subCamera.matrixWorldInverse );
-
-			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraViewMatrices' ).onRenderUpdate( ( { camera }, self ) => {
-
-				for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-					self.array[ i ] = camera.cameras[ i ].matrixWorldInverse;
-
-				}
-
-			} );
-
-		} );
-
-		cameraViewMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		if ( _cameraViewMatrixBase === null ) {
-
-			_cameraViewMatrixBase = uniform( camera.matrixWorldInverse ).setName( 'cameraViewMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.matrixWorldInverse );
-
-		}
-
-		cameraViewMatrix = _cameraViewMatrixBase;
-
-	}
-
-	return cameraViewMatrix;
-
-} ).once() )();
-
-/**
- * TSL object that represents the world matrix of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<mat4>}
- */
-const cameraWorldMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
-
-	let cameraWorldMatrix;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const cameraArray = getCameraArray( renderer, camera, 'cameraWorldMatrices', ( camera ) => {
-
-			const values = camera.cameras.map( ( subCamera ) => subCamera.matrixWorld );
-
-			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraWorldMatrices' ).onRenderUpdate( ( { camera }, self ) => {
-
-				for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-					self.array[ i ] = camera.cameras[ i ].matrixWorld;
-
-				}
-
-			} );
-
-		} );
-
-		cameraWorldMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		if ( _cameraWorldMatrixBase === null ) {
-
-			_cameraWorldMatrixBase = uniform( camera.matrixWorld ).setName( 'cameraWorldMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.matrixWorld );
-
-		}
-
-		cameraWorldMatrix = _cameraWorldMatrixBase;
-
-	}
-
-	return cameraWorldMatrix;
-
-} ).once() )();
-
-/**
- * TSL object that represents the normal matrix of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<mat3>}
- */
-const cameraNormalMatrix = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
-
-	let cameraNormalMatrix;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const cameraArray = getCameraArray( renderer, camera, 'cameraNormalMatrices', ( camera ) => {
-
-			const values = camera.cameras.map( ( subCamera ) => subCamera.normalMatrix );
-
-			return uniformArray( values ).setGroup( renderGroup ).setName( 'cameraNormalMatrices' ).onRenderUpdate( ( { camera }, self ) => {
-
-				for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-					self.array[ i ] = camera.cameras[ i ].normalMatrix;
-
-				}
-
-			} );
-
-		} );
-
-		cameraNormalMatrix = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		if ( _cameraNormalMatrixBase === null ) {
-
-			_cameraNormalMatrixBase = uniform( camera.normalMatrix ).setName( 'cameraNormalMatrix' ).setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.normalMatrix );
-
-		}
-
-		cameraNormalMatrix = _cameraNormalMatrixBase;
-
-	}
-
-	return cameraNormalMatrix;
-
-} ).once() )();
-
-/**
- * TSL object that represents the position in world space of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<vec3>}
- */
-const cameraPosition = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
-
-	let cameraPosition;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const cameraArray = getCameraArray( renderer, camera, 'cameraPositions', ( camera ) => {
-
-			const positions = [];
-
-			for ( let i = 0, l = camera.cameras.length; i < l; i ++ ) {
-
-				positions.push( new Vector3() );
-
-			}
-
-			return uniformArray( positions ).setGroup( renderGroup ).setName( 'cameraPositions' ).onRenderUpdate( ( { camera }, self ) => {
-
-				const subCameras = camera.cameras;
-				const array = self.array;
-
-				for ( let i = 0, l = subCameras.length; i < l; i ++ ) {
-
-					array[ i ].setFromMatrixPosition( subCameras[ i ].matrixWorld );
-
-				}
-
-			} );
-
-		} );
-
-		cameraPosition = cameraArray.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		if ( _cameraPositionBase === null ) {
-
-			_cameraPositionBase = uniform( new Vector3() ).setName( 'cameraPosition' ).setGroup( renderGroup ).onRenderUpdate( ( { camera }, self ) => self.value.setFromMatrixPosition( camera.matrixWorld ) );
-
-		}
-
-		cameraPosition = _cameraPositionBase;
-
-	}
-
-	return cameraPosition;
-
-} ).once() )();
-
-
-/**
- * TSL object that represents the viewport of the camera used for the current render.
- *
- * @tsl
- * @type {UniformNode<vec4>}
- */
-const cameraViewport = /*@__PURE__*/ ( Fn( ( { camera, renderer } ) => {
-
-	let cameraViewport;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const cameraArray = getCameraArray( renderer, camera, 'cameraViewports', ( camera ) => {
-
-			const values = camera.cameras.map( ( subCamera ) => subCamera.viewport );
-
-			return uniformArray( values, 'vec4' ).setGroup( renderGroup ).setName( 'cameraViewports' ).onRenderUpdate( ( { camera }, self ) => {
-
-				for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-					self.array[ i ] = camera.cameras[ i ].viewport;
-
-				}
-
-			} );
-
-		} );
-
-		cameraViewport = cameraArray.element( cameraIndex );
-
-	} else {
-
-		if ( _cameraViewportBase === null ) {
-
-			// Fallback for single camera
-			_cameraViewportBase = vec4( 0, 0, screenSize.x, screenSize.y ).toConst( 'cameraViewport' );
-
-		}
-
-		cameraViewport = _cameraViewportBase;
-
-	}
-
-	return cameraViewport;
-
-} ).once() )();
-
-const _modelViewMatrix = /*@__PURE__*/ new Matrix4();
-
-/**
- * This type of node is a specialized version of `Object3DNode`
- * with larger set of model related metrics. Unlike `Object3DNode`,
- * `ModelNode` extracts the reference to the 3D object from the
- * current node frame state.
- *
- * @augments Object3DNode
- */
-class ModelNode extends Object3DNode {
-
-	static get type() {
-
-		return 'ModelNode';
-
-	}
-
-	/**
-	 * Constructs a new object model node.
-	 *
-	 * @param {('position'|'viewPosition'|'direction'|'scale'|'worldMatrix')} scope - The node represents a different type of transformation depending on the scope.
-	 */
-	constructor( scope ) {
-
-		super( scope );
-
-	}
-
-	/**
-	 * Extracts the model reference from the frame state and then
-	 * updates the uniform value depending on the scope.
-	 *
-	 * @param {NodeFrame} frame - The current node frame.
-	 */
-	update( frame ) {
-
-		this.object3d = frame.object;
-
-		super.update( frame );
-
-	}
-
-}
-
-/**
- * TSL object that represents the object's direction in world space.
- *
- * @tsl
- * @type {ModelNode<vec3>}
- */
-const modelDirection = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.DIRECTION );
-
-/**
- * TSL object that represents the object's world matrix.
- *
- * @tsl
- * @type {ModelNode<mat4>}
- */
-const modelWorldMatrix = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.WORLD_MATRIX );
-
-/**
- * TSL object that represents the object's position in world space.
- *
- * @tsl
- * @type {ModelNode<vec3>}
- */
-const modelPosition = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.POSITION );
-
-/**
- * TSL object that represents the object's scale in world space.
- *
- * @tsl
- * @type {ModelNode<vec3>}
- */
-const modelScale = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.SCALE );
-
-/**
- * TSL object that represents the object's position in view/camera space.
- *
- * @tsl
- * @type {ModelNode<vec3>}
- */
-const modelViewPosition = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.VIEW_POSITION );
-
-/**
- * TSL object that represents the object's radius.
- *
- * @tsl
- * @type {ModelNode<float>}
- */
-const modelRadius = /*@__PURE__*/ nodeImmutable( ModelNode, ModelNode.RADIUS );
-
-/**
- * TSL object that represents the object's normal matrix.
- *
- * @tsl
- * @type {UniformNode<mat3>}
- */
-const modelNormalMatrix = /*@__PURE__*/ uniform( new Matrix3() ).onObjectUpdate( ( { object }, self ) => self.value.getNormalMatrix( object.matrixWorld ) );
-
-/**
- * TSL object that represents the object's inverse world matrix.
- *
- * @tsl
- * @type {UniformNode<mat4>}
- */
-const modelWorldMatrixInverse = /*@__PURE__*/ uniform( new Matrix4() ).onObjectUpdate( ( { object }, self ) => self.value.copy( object.matrixWorld ).invert() );
-
-/**
- * TSL object that represents the object's model view matrix.
- *
- * @tsl
- * @type {Node<mat4>}
- */
-const modelViewMatrix = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	return builder.context.modelViewMatrix || mediumpModelViewMatrix;
-
-} ).once() )().toVar( 'modelViewMatrix' );
-
-// GPU Precision
-
-/**
- * TSL object that represents the object's model view in `mediump` precision.
- *
- * @tsl
- * @type {Node<mat4>}
- */
-const mediumpModelViewMatrix = /*@__PURE__*/ cameraViewMatrix.mul( modelWorldMatrix );
-
-// CPU Precision
-
-/**
- * TSL object that represents the object's model view in `highp` precision
- * which is achieved by computing the matrix in JS and not in the shader.
- *
- * @tsl
- * @type {Node<mat4>}
- */
-const highpModelViewMatrix = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	builder.context.isHighPrecisionModelViewMatrix = true;
-
-	const camera = builder.camera;
-
-	let highpModelViewMatrix;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const matrices = [];
-
-		for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-			matrices.push( new Matrix4() );
-
-		}
-
-		const modelViewMatrices = uniformArray( matrices ).onObjectUpdate( ( { object, camera }, self ) => {
-
-			const subCameras = camera.cameras;
-			const array = self.array;
-
-			for ( let i = 0, l = subCameras.length; i < l; i ++ ) {
-
-				array[ i ].multiplyMatrices( subCameras[ i ].matrixWorldInverse, object.matrixWorld );
-
-			}
-
-		} );
-
-		highpModelViewMatrix = modelViewMatrices.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		highpModelViewMatrix = uniform( 'mat4' ).onObjectUpdate( ( { object, camera } ) => {
-
-			return object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
-
-		} );
-
-	}
-
-	return highpModelViewMatrix;
-
-} ).once() )().toVar( 'highpModelViewMatrix' );
-
-/**
- * TSL object that represents the object's model normal view in `highp` precision
- * which is achieved by computing the matrix in JS and not in the shader.
- *
- * @tsl
- * @type {Node<mat3>}
- */
-const highpModelNormalViewMatrix = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	const isHighPrecisionModelViewMatrix = builder.context.isHighPrecisionModelViewMatrix;
-
-	const camera = builder.camera;
-
-	let highpModelNormalViewMatrix;
-
-	if ( camera.isArrayCamera && camera.cameras.length > 0 ) {
-
-		const matrices = [];
-
-		for ( let i = 0; i < camera.cameras.length; i ++ ) {
-
-			matrices.push( new Matrix3() );
-
-		}
-
-		const normalViewMatrices = uniformArray( matrices ).onObjectUpdate( ( { object, camera }, self ) => {
-
-			const subCameras = camera.cameras;
-			const array = self.array;
-
-			for ( let i = 0, l = subCameras.length; i < l; i ++ ) {
-
-				_modelViewMatrix.multiplyMatrices( subCameras[ i ].matrixWorldInverse, object.matrixWorld );
-
-				array[ i ].getNormalMatrix( _modelViewMatrix );
-
-			}
-
-		} );
-
-		highpModelNormalViewMatrix = normalViewMatrices.element( camera.isMultiViewCamera ? builtin( 'gl_ViewID_OVR' ) : cameraIndex );
-
-	} else {
-
-		highpModelNormalViewMatrix = uniform( 'mat3' ).onObjectUpdate( ( { object, camera } ) => {
-
-			if ( isHighPrecisionModelViewMatrix !== true ) {
-
-				object.modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, object.matrixWorld );
-
-			}
-
-			return object.normalMatrix.getNormalMatrix( object.modelViewMatrix );
-
-		} );
-
-	}
-
-	return highpModelNormalViewMatrix;
-
-} ).once() )().toVar( 'highpModelNormalViewMatrix' );
-
-/**
- * TSL object that represents the clip space position of the current rendered object.
- *
- * @tsl
- * @type {VaryingNode<vec4>}
- */
-const clipSpace = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	if ( builder.shaderStage !== 'fragment' ) {
-
-		warnOnce( 'TSL: `clipSpace` is only available in fragment stage.' );
-
-		return vec4();
-
-	}
-
-	return builder.context.clipSpace.toVarying( 'v_clipSpace' );
-
-} ).once() )();
-
-/**
- * TSL object that represents the position attribute of the current rendered object.
- *
- * @tsl
- * @type {AttributeNode<vec3>}
- */
-const positionGeometry = /*@__PURE__*/ attribute( 'position', 'vec3' );
-
-/**
- * TSL object that represents the transformed vertex position in local space of the current rendered object.
- *
- * The term "transformed" indicates that an object or material's properties, such as skinning, batch,
- * instancing, or displacement mapping, will change the vertex position of the node when present.
- * To use the pre-transformed local space position of the object, use {@link positionGeometry}.
- *
- * @tsl
- * @type {AttributeNode<vec3>}
- */
-const positionLocal = /*@__PURE__*/ positionGeometry.toVarying( 'positionLocal' );
-
-/**
- * TSL object that represents the previous vertex position in local space of the current rendered object.
- * Used in context of {@link VelocityNode} for rendering motion vectors.
- *
- * @tsl
- * @type {AttributeNode<vec3>}
- */
-const positionPrevious = /*@__PURE__*/ positionGeometry.toVarying( 'positionPrevious' );
-
-/**
- * TSL object that represents the vertex position in world space of the current rendered object.
- *
- * @tsl
- * @type {VaryingNode<vec3>}
- */
-const positionWorld = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	return modelWorldMatrix.mul( positionLocal ).xyz.toVarying( builder.getSubBuildProperty( 'v_positionWorld' ) );
-
-}, 'vec3' ).once( [ 'POSITION' ] ) )();
-
-/**
- * TSL object that represents the position world direction of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const positionWorldDirection = /*@__PURE__*/ ( Fn( () => {
-
-	const vertexPWD = positionLocal.transformDirection( modelWorldMatrix ).toVarying( 'v_positionWorldDirection' );
-
-	return vertexPWD.normalize().toVar( 'positionWorldDirection' );
-
-}, 'vec3' ).once( [ 'POSITION' ] ) )();
-
-/**
- * TSL object that represents the vertex position in view space of the current rendered object.
- *
- * @tsl
- * @type {VaryingNode<vec3>}
- */
-const positionView = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	if ( builder.shaderStage === 'fragment' && builder.material.vertexNode ) {
-
-		// reconstruct view position from clip space
-
-		const viewPos = cameraProjectionMatrixInverse.mul( clipSpace );
-
-		return viewPos.xyz.div( viewPos.w ).toVar( 'positionView' );
-
-	}
-
-	return builder.context.setupPositionView().toVarying( 'v_positionView' );
-
-}, 'vec3' ).once( [ 'POSITION', 'VERTEX' ] ) )();
-
-/**
- * TSL object that represents the position view direction of the current rendered object.
- *
- * @tsl
- * @type {VaryingNode<vec3>}
- */
-const positionViewDirection = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	let output;
-
-	if ( builder.camera.isOrthographicCamera ) {
-
-		output = vec3( 0, 0, 1 );
-
-	} else {
-
-		output = positionView.negate().toVarying( 'v_positionViewDirection' ).normalize();
-
-	}
-
-	return output.toVar( 'positionViewDirection' );
-
-}, 'vec3' ).once( [ 'POSITION' ] ) )();
-
-/**
- * TSL function for creating an uv attribute node with the given index.
- *
- * @tsl
- * @function
- * @param {number} [index=0] - The uv index.
- * @return {AttributeNode<vec2>} The uv attribute node.
- */
-const uv$1 = ( index = 0 ) => attribute( 'uv' + ( index > 0 ? index : '' ), 'vec2' );
-
-/**
- * TSL function for creating an equirect uv node.
- *
- * Can be used to compute texture coordinates for projecting an
- * equirectangular texture onto a mesh for using it as the scene's
- * background.
- *
- * ```js
- * scene.backgroundNode = texture( equirectTexture, equirectUV() );
- * ```
- *
- * @tsl
- * @function
- * @param {?Node<vec3>} [direction=positionWorldDirection] - A direction vector for sampling which is by default `positionWorldDirection`.
- * @returns {Node<vec2>}
- */
-const equirectUV = /*@__PURE__*/ Fn( ( [ direction = positionWorldDirection ] ) => {
-
-	const u = direction.z.atan( direction.x ).mul( 1 / ( Math.PI * 2 ) ).add( 0.5 );
-	const v = direction.y.clamp( -1, 1.0 ).asin().mul( 1 / Math.PI ).add( 0.5 );
-
-	return vec2( u, v );
-
-} );
-
-/**
- * TSL function for creating an equirect direction node.
- *
- * Can be used to compute a direction vector from the given equirectangular
- * UV coordinates.
- *
- * @tsl
- * @function
- * @param {?Node<vec2>} [uv=UV()] - The equirectangular UV coordinates.
- * @returns {Node<vec3>} The computed direction vector.
- */
-const equirectDirection = /*@__PURE__*/ Fn( ( [ uv = uv$1() ] ) => {
-
-	const theta = uv.x.sub( 0.5 ).mul( Math.PI * 2 );
-	const phi = uv.y.sub( 0.5 ).mul( Math.PI );
-	const cosPhi = phi.cos();
-	const x = cosPhi.mul( theta.cos() );
-	const y = phi.sin();
-	const z = cosPhi.mul( theta.sin() );
-
-	return vec3( x, y, z );
-
-} );
 
 /**
  * This class allows to define multiple overloaded versions
@@ -17574,444 +29563,6 @@ const overloadingBaseFn = /*@__PURE__*/ nodeProxy( FunctionOverloadingNode );
 const overloadingFn = ( functionNodes ) => ( ...params ) => overloadingBaseFn( functionNodes, ...params );
 
 /**
- * This node can be used to evaluate whether a primitive is front or back facing.
- *
- * @augments Node
- */
-class FrontFacingNode extends Node {
-
-	static get type() {
-
-		return 'FrontFacingNode';
-
-	}
-
-	/**
-	 * Constructs a new front facing node.
-	 */
-	constructor() {
-
-		super( 'bool' );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isFrontFacingNode = true;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	generate( builder ) {
-
-		if ( builder.shaderStage !== 'fragment' ) return 'true';
-
-		//
-
-		const { material } = builder;
-
-		if ( material.side === BackSide ) {
-
-			return 'false';
-
-		}
-
-		return builder.getFrontFacing();
-
-	}
-
-}
-
-/**
- * TSL object that represents whether a primitive is front or back facing
- *
- * @tsl
- * @type {FrontFacingNode<bool>}
- */
-const frontFacing = /*@__PURE__*/ nodeImmutable( FrontFacingNode );
-
-/**
- * TSL object that represents the front facing status as a number instead of a bool.
- * `1` means front facing, `-1` means back facing.
- *
- * @tsl
- * @type {Node<float>}
- */
-const faceDirection = /*@__PURE__*/ float( frontFacing ).mul( 2.0 ).sub( 1.0 );
-
-/**
- * Negates a vector if the rendering occurs on the back side of a face,
- * based on the material's side configuration.
- *
- * - If the material's side is `BackSide`, the vector is inverted (negated).
- * - If the material's side is `DoubleSide`, the vector is multiplied by `faceDirection`
- *   (negated only for back-facing fragments).
- * - If the material's side is `FrontSide` (default), the vector remains unchanged.
- *
- * @tsl
- * @function
- * @param {Node<vec3>} vector - The vector to process.
- * @returns {Node<vec3>} The processed vector.
- */
-const negateOnBackSide = /*@__PURE__*/ Fn( ( [ vector ], { material } ) => {
-
-	const side = material.side;
-
-	if ( side === BackSide ) {
-
-		vector = vector.mul( -1 );
-
-	} else if ( side === DoubleSide ) {
-
-		vector = vector.mul( faceDirection );
-
-	}
-
-	return vector;
-
-} );
-
-/**
- * Negates a vector if the rendering occurs on the back side of a face,
- * based on the material's side configuration.
- *
- * - If the material's side is `BackSide`, the vector is inverted (negated).
- * - If the material's side is `DoubleSide`, the vector is multiplied by `faceDirection`
- *   (negated only for back-facing fragments).
- * - If the material's side is `FrontSide` (default), the vector remains unchanged.
- *
- * @tsl
- * @function
- * @deprecated since r185. Use {@link negateOnBackSide} instead.
- * @param {Node<vec3>} vector - The vector to convert.
- * @returns {Node<vec3>} The converted vector.
- */
-const directionToFaceDirection = ( vector ) => {
-
-	warnOnce( 'TSL: "directionToFaceDirection()" has been renamed to "negateOnBackSide()".' ); // @deprecated r185
-
-	return negateOnBackSide( vector );
-
-};
-
-/**
- * TSL object that represents the normal attribute of the current rendered object in local space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const normalGeometry = /*@__PURE__*/ attribute( 'normal', 'vec3' );
-
-/**
- * TSL object that represents the vertex normal of the current rendered object in local space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const normalLocal = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	if ( builder.geometry.hasAttribute( 'normal' ) === false ) {
-
-		warn( 'TSL: Vertex attribute "normal" not found on geometry.' );
-
-		return vec3( 0, 1, 0 );
-
-	}
-
-	return normalGeometry;
-
-}, 'vec3' ).once() )().toVar( 'normalLocal' );
-
-/**
- * TSL object that represents the flat vertex normal of the current rendered object in view space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const normalFlat = /*@__PURE__*/ positionView.dFdx().cross( positionView.dFdy() ).normalize().toVar( 'normalFlat' );
-
-/**
- * TSL object that represents the vertex normal of the current rendered object in view space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const normalViewGeometry = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	let node;
-
-	if ( builder.isFlatShading() ) {
-
-		node = normalFlat;
-
-	} else {
-
-		node = transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry' ).normalize();
-
-	}
-
-	return node;
-
-}, 'vec3' ).once() )().toVar( 'normalViewGeometry' );
-
-/**
- * TSL object that represents the vertex normal of the current rendered object in world space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const normalWorldGeometry = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	let normal = normalViewGeometry.transformNormalByInverseViewMatrix( cameraViewMatrix );
-
-	if ( builder.isFlatShading() !== true ) {
-
-		normal = normal.toVarying( 'v_normalWorldGeometry' );
-
-	}
-
-	return normal.normalize().toVar( 'normalWorldGeometry' );
-
-}, 'vec3' ).once() )();
-
-/**
- * TSL object that represents the vertex normal of the current rendered object in view space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const normalView = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	let node;
-
-	if ( builder.subBuildFn === 'NORMAL' || builder.subBuildFn === 'VERTEX' ) {
-
-		node = normalViewGeometry;
-
-		if ( builder.isFlatShading() !== true ) {
-
-			node = negateOnBackSide( node );
-
-		}
-
-	} else {
-
-		// Use custom context to avoid side effects from nodes overwriting getUV, getTextureLevel in the context (e.g. EnvironmentNode)
-
-		node = builder.context.setupNormal().context( { getUV: null, getTextureLevel: null } );
-
-	}
-
-	return node;
-
-}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'normalView' );
-
-/**
- * TSL object that represents the vertex normal of the current rendered object in world space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const normalWorld = /*@__PURE__*/ normalView.transformNormalByInverseViewMatrix( cameraViewMatrix ).toVar( 'normalWorld' );
-
-/**
- * TSL object that represents the clearcoat vertex normal of the current rendered object in view space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const clearcoatNormalView = /*@__PURE__*/ ( Fn( ( { subBuildFn, context } ) => {
-
-	let node;
-
-	if ( subBuildFn === 'NORMAL' || subBuildFn === 'VERTEX' ) {
-
-		node = normalView;
-
-	} else {
-
-		// Use custom context to avoid side effects from nodes overwriting getUV, getTextureLevel in the context (e.g. EnvironmentNode)
-
-		node = context.setupClearcoatNormal().context( { getUV: null, getTextureLevel: null } );
-
-	}
-
-	return node;
-
-}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'clearcoatNormalView' );
-
-/**
- * Transforms the normal by the normal matrix of the given matrix and then normalizes the result.
- *
- * @tsl
- * @function
- * @param {Node<vec3>} normal - The normal.
- * @param {Node<mat3|mat4>} [matrix=modelWorldMatrix] - The matrix.
- * @return {Node<vec3>} The transformed normal.
- */
-const transformNormal = /*@__PURE__*/ Fn( ( [ normal, matrix = modelWorldMatrix ] ) => {
-
-	const normalMatrix = mat3( matrix ).inverse().transpose();
-
-	return normalMatrix.mul( normal ).normalize();
-
-} );
-
-addMethodChaining( 'transformNormal', transformNormal );
-
-/**
- * Transforms the given normal from local to view space.
- *
- * @tsl
- * @function
- * @param {Node<vec3>} normal - The normal.
- * @param {NodeBuilder} builder - The current node builder.
- * @return {Node<vec3>} The transformed normal.
- */
-const transformNormalToView = /*@__PURE__*/ Fn( ( [ normal ], builder ) => {
-
-	const modelNormalViewMatrix = builder.context.modelNormalViewMatrix;
-
-	if ( modelNormalViewMatrix ) {
-
-		return normal.transformNormalByViewMatrix( modelNormalViewMatrix );
-
-	}
-
-	//
-
-	const transformedNormal = modelNormalMatrix.mul( normal );
-
-	return transformedNormal.transformNormalByViewMatrix( cameraViewMatrix );
-
-} );
-
-/**
- * TSL function for creating a matcap uv node.
- *
- * Can be used to compute texture coordinates for projecting a
- * matcap onto a mesh. Used by {@link MeshMatcapNodeMaterial}.
- *
- * @tsl
- * @function
- * @returns {Node<vec2>} The matcap UV coordinates.
- */
-const matcapUV = /*@__PURE__*/ Fn( () => {
-
-	const x = vec3( positionViewDirection.z, 0, positionViewDirection.x.negate() ).normalize();
-	const y = positionViewDirection.cross( x );
-
-	return vec2( x.dot( normalView ), y.dot( normalView ) ).mul( 0.495 ).add( 0.5 ); // 0.495 to remove artifacts caused by undersized matcap disks
-
-} ).once( [ 'NORMAL', 'VERTEX' ] )().toVar( 'matcapUV' );
-
-/**
- * A special type of uniform node that computes the
- * maximum mipmap level for a given texture node.
- *
- * ```js
- * const level = maxMipLevel( textureNode );
- * ```
- *
- * @augments UniformNode
- */
-class MaxMipLevelNode extends UniformNode {
-
-	static get type() {
-
-		return 'MaxMipLevelNode';
-
-	}
-
-	/**
-	 * Constructs a new max mip level node.
-	 *
-	 * @param {TextureNode} textureNode - The texture node to compute the max mip level for.
-	 */
-	constructor( textureNode ) {
-
-		super( 0 );
-
-		/**
-		 * The texture node to compute the max mip level for.
-		 *
-		 * @private
-		 * @type {TextureNode}
-		 */
-		this._textureNode = textureNode;
-
-		/**
-		 * The `updateType` is set to `NodeUpdateType.FRAME` since the node updates
-		 * the texture once per frame in its {@link MaxMipLevelNode#update} method.
-		 *
-		 * @type {string}
-		 * @default 'frame'
-		 */
-		this.updateType = NodeUpdateType.FRAME;
-
-	}
-
-	/**
-	 * The texture node to compute the max mip level for.
-	 *
-	 * @readonly
-	 * @type {TextureNode}
-	 */
-	get textureNode() {
-
-		return this._textureNode;
-
-	}
-
-	/**
-	 * The texture.
-	 *
-	 * @readonly
-	 * @type {Texture}
-	 */
-	get texture() {
-
-		return this._textureNode.value;
-
-	}
-
-	update() {
-
-		const texture = this.texture;
-		const images = texture.images;
-		const image = ( images && images.length > 0 ) ? ( ( images[ 0 ] && images[ 0 ].image ) || images[ 0 ] ) : texture.image;
-
-		if ( image && image.width !== undefined ) {
-
-			const { width, height } = image;
-
-			this.value = Math.log2( Math.max( width, height ) );
-
-		}
-
-	}
-
-}
-
-/**
- * TSL function for creating a max mip level node.
- *
- * @tsl
- * @function
- * @param {TextureNode} textureNode - The texture node to compute the max mip level for.
- * @returns {MaxMipLevelNode}
- */
-const maxMipLevel = /*@__PURE__*/ nodeProxy( MaxMipLevelNode ).setParameterLength( 1 );
-
-/**
  * Represents the elapsed time in seconds.
  *
  * @tsl
@@ -18074,241 +29625,6 @@ const oscTriangle = ( t = time ) => t.add( 0.5 ).fract().mul( 2 ).sub( 1 ).abs()
  * @return {Node<float>} The oscillation node.
  */
 const oscSawtooth = ( t = time ) => t.fract();
-
-/**
- * Packs a normal vector into a color value.
- *
- * @tsl
- * @function
- * @param {Node<vec3>} node - The direction to pack.
- * @return {Node<vec3>} The color.
- */
-const packNormalToRGB = ( node ) => nodeObject( node ).mul( 0.5 ).add( 0.5 );
-
-/**
- * Unpacks a color value into a normal vector.
- *
- * @tsl
- * @function
- * @param {Node<vec3>} node - The color to unpack.
- * @return {Node<vec3>} The direction.
- */
-const unpackRGBToNormal = ( node ) => nodeObject( node ).mul( 2.0 ).sub( 1 );
-
-/**
- * Unpacks a tangent space normal, reconstructing the Z component by projecting the X,Y coordinates onto the hemisphere.
- * The X,Y coordinates are expected to be in the [-1, 1] range.
- *
- * @tsl
- * @function
- * @param {Node<vec2>} xy - The X,Y coordinates of the normal.
- * @return {Node<vec3>} The resulting normal.
- */
-const unpackNormal = ( xy ) => vec3( xy, sqrt( saturate( float( 1.0 ).sub( dot( xy, xy ) ) ) ) );
-
-/**
- * @tsl
- * @function
- * @deprecated since r185. Use {@link packNormalToRGB} instead.
- * @param {Node<vec3>} node - The direction to pack.
- * @returns {Node<vec3>}
- */
-const directionToColor = ( node ) => {
-
-	warnOnce( 'TSL: "directionToColor()" has been renamed to "packNormalToRGB()".' ); // @deprecated r185
-
-	return packNormalToRGB( node );
-
-};
-
-/**
- * @tsl
- * @function
- * @deprecated since r185. Use {@link unpackRGBToNormal} instead.
- * @param {Node<vec3>} node - The color to unpack.
- * @returns {Node<vec3>}
- */
-const colorToDirection = ( node ) => {
-
-	warnOnce( 'TSL: "colorToDirection()" has been renamed to "unpackRGBToNormal()".' ); // @deprecated r185
-
-	return unpackRGBToNormal( node );
-
-};
-
-/**
- * Applies a rotation to the given position node.
- *
- * @augments Node
- */
-class RotateNode extends Node {
-
-	static get type() {
-
-		return 'RotateNode';
-
-	}
-
-	/**
-	 * Constructs a new rotate node.
-	 *
-	 * @param {Node} positionNode - The position node.
-	 * @param {Node} rotationNode - Represents the rotation that is applied to the position node. Depending
-	 * on whether the position data are 2D or 3D, the rotation is expressed a single float value or an Euler value.
-	 * @param {string} [order='XYZ'] - The Euler rotation order. Only used for 3D rotation.
-	 */
-	constructor( positionNode, rotationNode, order = 'XYZ' ) {
-
-		super();
-
-		/**
-		 * The position node.
-		 *
-		 * @type {Node}
-		 */
-		this.positionNode = positionNode;
-
-		/**
-		 * Represents the rotation that is applied to the position node.
-		 * Depending on whether the position data are 2D or 3D, the rotation is expressed a single float value or an Euler value.
-		 *
-		 * @type {Node}
-		 */
-		this.rotationNode = rotationNode;
-
-		/**
-		 * The Euler rotation order.
-		 *
-		 * @private
-		 * @type {string}
-		 * @default 'XYZ'
-		 */
-		this._order = order;
-
-	}
-
-	/**
-	 * Overwrites the default `customCacheKey()` implementation by including the
-	 * Euler order into the cache key.
-	 *
-	 * @return {number} The hash.
-	 */
-	customCacheKey() {
-
-		return hashString( this._order );
-
-	}
-
-	/**
-	 * Sets the Euler rotation order.
-	 *
-	 * @param {string} value - The Euler rotation order.
-	 * @return {RotateNode} A reference to this node.
-	 */
-	setOrder( value ) {
-
-		this._order = value;
-
-		return this;
-
-	}
-
-	/**
-	 * Gets the Euler rotation order.
-	 *
-	 * @return {string} The Euler rotation order.
-	 */
-	getOrder() {
-
-		return this._order;
-
-	}
-
-	/**
-	 * The type of the {@link RotateNode#positionNode} defines the node's type.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The node's type.
-	 */
-	generateNodeType( builder ) {
-
-		return this.positionNode.getNodeType( builder );
-
-	}
-
-	setup( builder ) {
-
-		const { rotationNode, positionNode } = this;
-
-		const nodeType = this.getNodeType( builder );
-
-		if ( nodeType === 'vec2' ) {
-
-			const cosAngle = rotationNode.cos();
-			const sinAngle = rotationNode.sin();
-
-			const rotationMatrix = mat2(
-				cosAngle, sinAngle,
-				sinAngle.negate(), cosAngle
-			);
-
-			return rotationMatrix.mul( positionNode );
-
-		} else {
-
-			const rotation = rotationNode;
-			const order = this._order;
-
-			const rotationXMatrix = mat4( vec4( 1.0, 0.0, 0.0, 0.0 ), vec4( 0.0, cos( rotation.x ), sin( rotation.x ), 0.0 ), vec4( 0.0, sin( rotation.x ).negate(), cos( rotation.x ), 0.0 ), vec4( 0.0, 0.0, 0.0, 1.0 ) );
-			const rotationYMatrix = mat4( vec4( cos( rotation.y ), 0.0, sin( rotation.y ).negate(), 0.0 ), vec4( 0.0, 1.0, 0.0, 0.0 ), vec4( sin( rotation.y ), 0.0, cos( rotation.y ), 0.0 ), vec4( 0.0, 0.0, 0.0, 1.0 ) );
-			const rotationZMatrix = mat4( vec4( cos( rotation.z ), sin( rotation.z ), 0.0, 0.0 ), vec4( sin( rotation.z ).negate(), cos( rotation.z ), 0.0, 0.0 ), vec4( 0.0, 0.0, 1.0, 0.0 ), vec4( 0.0, 0.0, 0.0, 1.0 ) );
-
-			const matrixMap = {
-				'X': rotationXMatrix,
-				'Y': rotationYMatrix,
-				'Z': rotationZMatrix
-			};
-
-			const matrixChain = matrixMap[ order.charAt( 0 ) ]
-				.mul( matrixMap[ order.charAt( 1 ) ] )
-				.mul( matrixMap[ order.charAt( 2 ) ] );
-
-			return matrixChain.mul( vec4( positionNode, 1.0 ) ).xyz;
-
-		}
-
-	}
-
-	serialize( data ) {
-
-		super.serialize( data );
-
-		data.order = this._order;
-
-	}
-
-	deserialize( data ) {
-
-		super.deserialize( data );
-
-		this._order = data.order;
-
-	}
-
-}
-
-/**
- * TSL function for creating a rotate node.
- *
- * @tsl
- * @function
- * @param {Node} positionNode - The position node.
- * @param {Node} rotationNode - Represents the rotation that is applied to the position node. Depending
- * on whether the position data are 2D or 3D, the rotation is expressed a single float value or an Euler value.
- * @param {string} [order='XYZ'] - The Euler rotation order. Only used for 3D rotation.
- * @returns {RotateNode}
- */
-const rotate = /*@__PURE__*/ nodeProxy( RotateNode ).setParameterLength( 2, 3 );
 
 /**
  * Replaces the default UV coordinates used in texture lookups.
@@ -18467,1878 +29783,6 @@ const billboarding = /*@__PURE__*/ Fn( ( { position = null, horizontal = true, v
 	return cameraProjectionMatrix.mul( modelViewMatrix ).mul( positionGeometry );
 
 } );
-
-/**
- * A node that represents the dimensions of a texture. The texture size is
- * retrieved in the shader via built-in shader functions like `textureDimensions()`
- * or `textureSize()`.
- *
- * @augments Node
- */
-class TextureSizeNode extends Node {
-
-	static get type() {
-
-		return 'TextureSizeNode';
-
-	}
-
-	/**
-	 * Constructs a new texture size node.
-	 *
-	 * @param {TextureNode} textureNode - A texture node which size should be retrieved.
-	 * @param {?Node<int>} [levelNode=null] - A level node which defines the requested mip.
-	 */
-	constructor( textureNode, levelNode = null ) {
-
-		super( 'uvec2' );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isTextureSizeNode = true;
-
-		/**
-		 * A texture node which size should be retrieved.
-		 *
-		 * @type {TextureNode}
-		 */
-		this.textureNode = textureNode;
-
-		/**
-		 * A level node which defines the requested mip.
-		 *
-		 * @type {Node<int>}
-		 * @default null
-		 */
-		this.levelNode = levelNode;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	generate( builder ) {
-
-		const textureProperty = this.textureNode.build( builder, 'property' );
-		const level = this.levelNode === null ? '0' : this.levelNode.build( builder, 'int' );
-
-		const snippet = builder.generateTextureSize( this.textureNode.value, textureProperty, level );
-
-		return builder.format( snippet, this.getNodeType( builder ) );
-
-	}
-
-}
-
-/**
- * TSL function for creating a texture size node.
- *
- * @tsl
- * @function
- * @param {TextureNode} textureNode - A texture node which size should be retrieved.
- * @param {?Node<int>} [levelNode=null] - A level node which defines the requested mip.
- * @returns {TextureSizeNode}
- */
-const textureSize = /*@__PURE__*/ nodeProxy( TextureSizeNode ).setParameterLength( 1, 2 );
-
-const EmptyTexture$1 = /*@__PURE__*/ new Texture();
-
-/**
- * This type of uniform node represents a 2D texture.
- *
- * @augments UniformNode
- */
-class TextureNode extends UniformNode {
-
-	static get type() {
-
-		return 'TextureNode';
-
-	}
-
-	/**
-	 * Constructs a new texture node.
-	 *
-	 * @param {Texture} [value=EmptyTexture] - The texture.
-	 * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
-	 * @param {?Node<int>} [levelNode=null] - The level node.
-	 * @param {?Node<float>} [biasNode=null] - The bias node.
-	 */
-	constructor( value = EmptyTexture$1, uvNode = null, levelNode = null, biasNode = null ) {
-
-		super( value );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isTextureNode = true;
-
-		/**
-		 * Represents the texture coordinates.
-		 *
-		 * @type {?Node<vec2|vec3>}
-		 * @default null
-		 */
-		this.uvNode = uvNode;
-
-		/**
-		 * Represents the mip level that should be selected.
-		 *
-		 * @type {?Node<int>}
-		 * @default null
-		 */
-		this.levelNode = levelNode;
-
-		/**
-		 * Represents the bias to be applied during level-of-detail computation.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.biasNode = biasNode;
-
-		/**
-		 * Represents a reference value a texture sample is compared to.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.compareNode = null;
-
-		/**
-		 * When using texture arrays, the depth node defines the layer to select.
-		 *
-		 * @type {?Node<int>}
-		 * @default null
-		 */
-		this.depthNode = null;
-
-		/**
-		 * When defined, a texture is sampled using explicit gradients.
-		 *
-		 * @type {?Array<Node<vec2>>}
-		 * @default null
-		 */
-		this.gradNode = null;
-
-		/**
-		 * Represents the optional index constant of the channel to gather.
-		 * This must be in range [0, 3] and a compile-time constant.
-		 *
-		 * @type {?Node<int>}
-		 * @default null
-		 */
-		this.gatherNode = null;
-
-		/**
-		 * Represents the optional texel offset applied to the unnormalized texture
-		 * coordinate before sampling the texture.
-		 *
-		 * @type {?Node<ivec2|ivec3>}
-		 * @default null
-		 */
-		this.offsetNode = null;
-
-		/**
-		 * Whether texture values should be sampled or fetched.
-		 *
-		 * @type {boolean}
-		 * @default true
-		 */
-		this.sampler = true;
-
-		/**
-		 * Whether the uv transformation matrix should be
-		 * automatically updated or not. Use `setUpdateMatrix()`
-		 * if you want to change the value of the property.
-		 *
-		 * @type {boolean}
-		 * @default false
-		 */
-		this.updateMatrix = false;
-
-		/**
-		 * The reference node.
-		 *
-		 * @type {?Node}
-		 * @default null
-		 */
-		this.referenceNode = null;
-
-		/**
-		 * The mergeable value is stored in a private property.
-		 *
-		 * @private
-		 * @type {boolean}
-		 * @default true
-		 */
-		this._mergeable = true;
-
-		/**
-		 * The texture value is stored in a private property.
-		 *
-		 * @private
-		 * @type {Texture}
-		 */
-		this._value = value;
-
-		/**
-		 * The uniform node that represents the uv transformation matrix.
-		 *
-		 * @private
-		 * @type {?UniformNode<mat3>}
-		 * @default null
-		 */
-		this._matrixUniform = null;
-
-		/**
-		 * The uniform node that represents the y-flip. Only required for WebGL.
-		 *
-		 * @private
-		 * @type {?UniformNode<bool>}
-		 * @default null
-		 */
-		this._flipYUniform = null;
-
-		/**
-		 * Whether the node is used as a comparison sampler, e.g. via `samplerComparison()`.
-		 *
-		 * @private
-		 * @type {boolean}
-		 * @default false
-		 */
-		this._samplerComparison = false;
-
-		this.setUpdateMatrix( uvNode === null );
-
-	}
-
-	set mergeable( value ) {
-
-		if ( this.referenceNode ) {
-
-			this.referenceNode.mergeable = value;
-
-		} else {
-
-			this._mergeable = value;
-
-		}
-
-	}
-
-	/**
-	 * Whether the uniform may be merged with other uniforms at compile-time.
-	 *
-	 * @type {boolean}
-	 * @default true
-	 */
-	get mergeable() {
-
-		return this.referenceNode ? this.referenceNode.mergeable : this._mergeable;
-
-	}
-
-	set value( value ) {
-
-		if ( this.referenceNode ) {
-
-			this.referenceNode.value = value;
-
-		} else {
-
-			this._value = value;
-
-		}
-
-	}
-
-	/**
-	 * The texture value.
-	 *
-	 * @type {Texture}
-	 */
-	get value() {
-
-		return this.referenceNode ? this.referenceNode.value : this._value;
-
-	}
-
-	/**
-	 * Overwritten since the uniform hash is defined by the texture's UUID - if mergeable - and the hash of its reference node otherwise.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The uniform hash.
-	 */
-	getUniformHash( builder ) {
-
-		if ( this.referenceNode && ! this.referenceNode.mergeable ) {
-
-			return this.referenceNode.getHash( builder );
-
-		}
-
-		if ( ! this._mergeable ) {
-
-			return this.getHash( builder );
-
-		}
-
-		return this.value.uuid;
-
-	}
-
-	/**
-	 * Overwritten since the texture's type and filters influence the generated shader code.
-	 *
-	 * @return {number} The custom cache key.
-	 */
-	customCacheKey() {
-
-		const { type, minFilter, magFilter } = this.value;
-
-		return hash$1( this.id, type, minFilter, magFilter );
-
-	}
-
-	/**
-	 * Overwritten since the node type is inferred from the texture type.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The node type.
-	 */
-	generateNodeType( /*builder*/ ) {
-
-		if ( this.gatherNode !== null ) {
-
-			return 'vec4';
-
-		}
-
-		return getTextureType( this.value );
-
-	}
-
-	/**
-	 * Overwrites the default implementation to return a fixed value `'texture'`.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The input type.
-	 */
-	getInputType( /*builder*/ ) {
-
-		return 'texture';
-
-	}
-
-	/**
-	 * Returns a default uvs based on the current texture's channel.
-	 *
-	 * @return {AttributeNode<vec2>} The default uvs.
-	 */
-	getDefaultUV() {
-
-		return uv$1( this.value.channel );
-
-	}
-
-	/**
-	 * Overwritten to always return the texture reference of the node.
-	 *
-	 * @param {any} state - This method can be invocated in different contexts so `state` can refer to any object type.
-	 * @return {Texture} The texture reference.
-	 */
-	updateReference( /*state*/ ) {
-
-		return this.value;
-
-	}
-
-	/**
-	 * Transforms the given uv node with the texture transformation matrix.
-	 *
-	 * @param {Node} uvNode - The uv node to transform.
-	 * @return {Node} The transformed uv node.
-	 */
-	getTransformedUV( uvNode ) {
-
-		return this._getMatrixUniform().mul( vec3( uvNode, 1 ) ).xy;
-
-	}
-
-	/**
-	 * Transforms the given uv gradient with the linear part of the texture matrix.
-	 *
-	 * @private
-	 * @param {Node<vec2>} gradientNode - The uv gradient.
-	 * @return {Node<vec2>} The transformed gradient.
-	 */
-	_getTransformedGradient( gradientNode ) {
-
-		return this._getMatrixUniform().mul( vec3( gradientNode, 0 ) ).xy;
-
-	}
-
-	/**
-	 * Returns the uniform of the texture matrix shared by all nodes of the same base texture node.
-	 *
-	 * @private
-	 * @return {UniformNode<mat3>} The texture matrix uniform.
-	 */
-	_getMatrixUniform() {
-
-		const baseNode = this.getBase();
-
-		if ( baseNode._matrixUniform === null ) {
-
-			baseNode._matrixUniform = uniform( baseNode.value.matrix ).onObjectUpdate( () => {
-
-				const texture = baseNode.value;
-
-				if ( texture.matrixAutoUpdate === true ) texture.updateMatrix();
-
-				return texture.matrix;
-
-			} );
-
-		}
-
-		return baseNode._matrixUniform;
-
-	}
-
-	/**
-	 * Defines whether the uv transformation matrix should automatically be updated or not.
-	 *
-	 * @param {boolean} value - The update toggle.
-	 * @return {TextureNode} A reference to this node.
-	 */
-	setUpdateMatrix( value ) {
-
-		this.updateMatrix = value;
-
-		return this;
-
-	}
-
-	/**
-	 * Setups the uv node. Depending on the backend as well as texture's image and type, it might be necessary
-	 * to modify the uv node for correct sampling.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node} uvNode - The uv node to setup.
-	 * @return {Node} The updated uv node.
-	 */
-	setupUV( builder, uvNode ) {
-
-		if ( builder.isFlipY() ) {
-
-			const baseNode = this.getBase();
-
-			if ( baseNode._flipYUniform === null ) {
-
-				baseNode._flipYUniform = uniform( false ).onObjectUpdate( () => {
-
-					const texture = baseNode.value;
-
-					return ( texture.image instanceof ImageBitmap && texture.flipY === true ) || texture.isRenderTargetTexture === true || texture.isFramebufferTexture === true || texture.isDepthTexture === true;
-
-				} );
-
-			}
-
-			uvNode = uvNode.toVar();
-
-			if ( this.sampler ) {
-
-				uvNode = baseNode._flipYUniform.select( uvNode.flipY(), uvNode );
-
-			} else {
-
-				uvNode = baseNode._flipYUniform.select( uvNode.setY( int( textureSize( this, this.levelNode ).y ).sub( int( uvNode.y ) ).sub( 1 ) ), uvNode );
-
-			}
-
-		}
-
-		return uvNode;
-
-	}
-
-	/**
-	 * Setups texture node by preparing the internal nodes for code generation.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	setup( builder ) {
-
-		const properties = builder.getNodeProperties( this );
-		properties.referenceNode = this.referenceNode;
-
-		//
-
-		const texture = this.value;
-
-		if ( ! texture || texture.isTexture !== true ) {
-
-			throw new NodeError( 'THREE.TSL: `texture( value )` function expects a valid instance of THREE.Texture().', this.stackTrace );
-
-		}
-
-		//
-
-		const uvNode = Fn( () => {
-
-			let uvNode = this.uvNode;
-
-			if ( ( uvNode === null || builder.context.forceUVContext === true ) && builder.context.getUV ) {
-
-				uvNode = builder.context.getUV( this, builder );
-
-			}
-
-			if ( ! uvNode ) uvNode = this.getDefaultUV();
-
-			if ( this.updateMatrix === true ) {
-
-				uvNode = this.getTransformedUV( uvNode );
-
-			}
-
-			uvNode = this.setupUV( builder, uvNode );
-
-			return uvNode;
-
-		} )();
-
-		//
-
-		let levelNode = this.levelNode;
-
-		if ( levelNode === null && builder.context.getTextureLevel ) {
-
-			levelNode = builder.context.getTextureLevel( this );
-
-		}
-
-		//
-
-		let compareNode = null;
-		let compareStepNode = null;
-
-		if ( this.compareNode !== null ) {
-
-			if ( builder.renderer.hasCompatibility( Compatibility.TEXTURE_COMPARE ) ) {
-
-				compareNode = this.compareNode;
-
-			} else {
-
-				const compareFunction = texture.compareFunction;
-
-				if ( compareFunction === null || compareFunction === LessCompare || compareFunction === LessEqualCompare || compareFunction === GreaterCompare || compareFunction === GreaterEqualCompare ) {
-
-					compareStepNode = this.compareNode;
-
-				} else {
-
-					compareNode = this.compareNode;
-
-					warnOnce( 'TSL: Only "LessCompare", "LessEqualCompare", "GreaterCompare" and "GreaterEqualCompare" are supported for depth texture comparison fallback.' );
-
-				}
-
-			}
-
-		}
-
-		// the context can provide analytic gradients of the default uv, e.g. if the uv is reconstructed per fragment
-
-		let gradNode = this.gradNode;
-
-		if ( gradNode === null && this.uvNode === null && levelNode === null && this.biasNode === null && this.sampler === true && builder.context.getTextureGradient ) {
-
-			const gradient = builder.context.getTextureGradient( this, builder );
-
-			if ( gradient ) {
-
-				gradNode = this.updateMatrix === true ? gradient.map( ( node ) => this._getTransformedGradient( node ) ) : gradient;
-
-			}
-
-		}
-
-		properties.uvNode = uvNode;
-		properties.levelNode = levelNode;
-		properties.biasNode = this.biasNode;
-		properties.compareNode = compareNode;
-		properties.compareStepNode = compareStepNode;
-		properties.gradNode = gradNode;
-		properties.gatherNode = this.gatherNode;
-		properties.depthNode = this.depthNode;
-		properties.offsetNode = this.offsetNode;
-
-	}
-
-	/**
-	 * Generates the uv code snippet.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node} uvNode - The uv node to generate code for.
-	 * @return {string} The generated code snippet.
-	 */
-	generateUV( builder, uvNode ) {
-
-		return uvNode.build( builder, this.sampler === true ? 'vec2' : 'ivec2' );
-
-	}
-
-	/**
-	 * Generates the offset code snippet.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node} offsetNode - The offset node to generate code for.
-	 * @return {string} The generated code snippet.
-	 */
-	generateOffset( builder, offsetNode ) {
-
-		return offsetNode.build( builder, 'ivec2' );
-
-	}
-
-	/**
-	 * Generates the snippet for the texture sampling.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {string} textureProperty - The texture property.
-	 * @param {string} uvSnippet - The uv snippet.
-	 * @param {?string} levelSnippet - The level snippet.
-	 * @param {?string} biasSnippet - The bias snippet.
-	 * @param {?string} depthSnippet - The depth snippet.
-	 * @param {?string} compareSnippet - The compare snippet.
-	 * @param {?Array<string>} gradSnippet - The grad snippet.
-	 * @param {?string} gatherSnippet - The gather snippet.
-	 * @param {?string} offsetSnippet - The offset snippet.
-	 * @param {?string} flipYSnippet - The y-flip snippet. Only used for WebGL.
-	 * @return {string} The generated code snippet.
-	 */
-	generateSnippet( builder, textureProperty, uvSnippet, levelSnippet, biasSnippet, depthSnippet, compareSnippet, gradSnippet, gatherSnippet, offsetSnippet, flipYSnippet ) {
-
-		const texture = this.value;
-
-		let snippet;
-
-		if ( biasSnippet ) {
-
-			snippet = builder.generateTextureBias( texture, textureProperty, uvSnippet, biasSnippet, depthSnippet, offsetSnippet );
-
-		} else if ( gradSnippet ) {
-
-			snippet = builder.generateTextureGrad( texture, textureProperty, uvSnippet, gradSnippet, depthSnippet, offsetSnippet );
-
-		} else if ( gatherSnippet ) {
-
-			if ( compareSnippet ) {
-
-				snippet = builder.generateTextureGatherCompare( texture, textureProperty, uvSnippet, compareSnippet, depthSnippet, offsetSnippet, flipYSnippet );
-
-			} else {
-
-				snippet = builder.generateTextureGather( texture, textureProperty, uvSnippet, gatherSnippet, depthSnippet, offsetSnippet, flipYSnippet );
-
-			}
-
-		} else if ( compareSnippet ) {
-
-			snippet = builder.generateTextureCompare( texture, textureProperty, uvSnippet, compareSnippet, depthSnippet, offsetSnippet );
-
-		} else if ( this.sampler === false ) {
-
-			snippet = builder.generateTextureLoad( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
-
-		} else if ( levelSnippet ) {
-
-			snippet = builder.generateTextureLevel( texture, textureProperty, uvSnippet, levelSnippet, depthSnippet, offsetSnippet );
-
-		} else {
-
-			snippet = builder.generateTexture( texture, textureProperty, uvSnippet, depthSnippet, offsetSnippet );
-
-		}
-
-		return snippet;
-
-	}
-
-	/**
-	 * Generates the code snippet of the texture node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {string} output - The current output.
-	 * @return {string} The generated code snippet.
-	 */
-	generate( builder, output ) {
-
-		const texture = this.value;
-
-		const properties = builder.getNodeProperties( this );
-		const textureProperty = super.generate( builder, 'property' );
-
-		if ( output === 'samplerComparison' || properties.compareNode !== null ) {
-
-			// make sure the texture node creates a binding with a comparison sampler if necessary
-
-			this.getSharedNode( builder )._samplerComparison = true;
-
-		}
-
-		if ( /^sampler/.test( output ) ) {
-
-			return textureProperty + '_sampler';
-
-		} else if ( builder.isReference( output ) ) {
-
-			return textureProperty;
-
-		} else {
-
-			const nodeData = builder.getDataFromNode( this );
-
-			const nodeType = this.getNodeType( builder );
-
-			let propertyName = nodeData.propertyName;
-
-			if ( propertyName === undefined ) {
-
-				const { uvNode, levelNode, biasNode, compareNode, compareStepNode, depthNode, gradNode, gatherNode, offsetNode } = properties;
-
-				const uvSnippet = this.generateUV( builder, uvNode );
-				const levelSnippet = levelNode ? levelNode.build( builder, 'float' ) : null;
-				const biasSnippet = biasNode ? biasNode.build( builder, 'float' ) : null;
-				const depthSnippet = depthNode ? depthNode.build( builder, 'int' ) : null;
-				const compareSnippet = compareNode ? compareNode.build( builder, 'float' ) : null;
-				const compareStepSnippet = compareStepNode ? compareStepNode.build( builder, 'float' ) : null;
-				const gradSnippet = gradNode ? [ gradNode[ 0 ].build( builder, 'vec2' ), gradNode[ 1 ].build( builder, 'vec2' ) ] : null;
-				const gatherSnippet = gatherNode ? gatherNode.build( builder, 'int' ) : null;
-				const offsetSnippet = offsetNode ? this.generateOffset( builder, offsetNode ) : null;
-
-				const flipYUniform = this.getBase()._flipYUniform;
-				const flipYSnippet = flipYUniform ? flipYUniform.build( builder, 'bool' ) : null;
-
-				let finalDepthSnippet = depthSnippet;
-
-				if ( finalDepthSnippet === null && texture.isArrayTexture && this.isTexture3DNode !== true ) {
-
-					finalDepthSnippet = '0';
-
-				}
-
-				const nodeVar = builder.getVarFromNode( this );
-
-				propertyName = builder.getPropertyName( nodeVar );
-
-				let snippet = this.generateSnippet( builder, textureProperty, uvSnippet, levelSnippet, biasSnippet, finalDepthSnippet, compareSnippet, gradSnippet, gatherSnippet, offsetSnippet, flipYSnippet );
-
-				let snippetType;
-
-				if ( texture.isDepthTexture === true && gatherSnippet === null ) {
-
-					snippetType = 'float';
-
-				} else {
-
-					snippetType = texture.type === UnsignedIntType ? 'uvec4' : ( texture.type === IntType ? 'ivec4' : 'vec4' );
-
-				}
-
-				snippet = builder.format( snippet, snippetType, nodeType );
-
-				if ( compareStepSnippet !== null ) {
-
-					const compareFunction = texture.compareFunction;
-
-					if ( compareFunction === GreaterCompare || compareFunction === GreaterEqualCompare ) {
-
-						snippet = step( expression( snippet, nodeType ), expression( compareStepSnippet, 'float' ) ).build( builder, nodeType );
-
-					} else {
-
-						snippet = step( expression( compareStepSnippet, 'float' ), expression( snippet, nodeType ) ).build( builder, nodeType );
-
-					}
-
-				}
-
-				builder.addLineFlowCode( `${propertyName} = ${snippet}`, this );
-
-				nodeData.snippet = snippet;
-				nodeData.propertyName = propertyName;
-
-			}
-
-			let snippet = propertyName;
-
-			if ( builder.needsToWorkingColorSpace( texture ) ) {
-
-				snippet = colorSpaceToWorking( expression( snippet, nodeType ), texture.colorSpace ).setup( builder ).build( builder, nodeType );
-
-			}
-
-			return builder.format( snippet, nodeType, output );
-
-		}
-
-	}
-
-	/**
-	 * Sets the sampler value.
-	 *
-	 * @param {boolean} value - The sampler value to set.
-	 * @return {TextureNode} A reference to this texture node.
-	 */
-	setSampler( value ) {
-
-		this.sampler = value;
-
-		return this;
-
-	}
-
-	/**
-	 * Returns the sampler value.
-	 *
-	 * @return {boolean} The sampler value.
-	 */
-	getSampler() {
-
-		return this.sampler;
-
-	}
-
-	// @TODO: Move to TSL
-
-	/**
-	 * Samples the texture with the given uv node.
-	 *
-	 * @param {Node} uvNode - The uv node.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	sample( uvNode ) {
-
-		const textureNode = this.clone();
-		textureNode.uvNode = nodeObject( uvNode );
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	/**
-	 * TSL function for creating a texture node that fetches/loads texels without interpolation.
-	 *
-	 * @param {Node<uvec2>} uvNode - The uv node.
-	 * @returns {TextureNode} A texture node representing the texture load.
-	 */
-	load( uvNode ) {
-
-		return this.sample( uvNode ).setSampler( false );
-
-	}
-
-	/**
-	 * Samples a blurred version of the texture by defining an internal bias.
-	 *
-	 * @param {Node<float>} amountNode - How blurred the texture should be.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	blur( amountNode ) {
-
-		const textureNode = this.clone();
-		textureNode.biasNode = nodeObject( amountNode ).mul( maxMipLevel( textureNode ) );
-		textureNode.referenceNode = this.getBase();
-
-		const map = textureNode.value;
-
-		if ( textureNode.generateMipmaps === false && ( map && map.generateMipmaps === false || map.minFilter === NearestFilter || map.magFilter === NearestFilter ) ) {
-
-			warn( 'TSL: texture().blur() requires mipmaps and sampling. Use .generateMipmaps=true and .minFilter/.magFilter=THREE.LinearFilter in the Texture.' );
-
-			textureNode.biasNode = null;
-
-		}
-
-		return textureNode;
-
-	}
-
-	/**
-	 * Samples a specific mip of the texture.
-	 *
-	 * @param {Node<int>} levelNode - The mip level to sample.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	level( levelNode ) {
-
-		const textureNode = this.clone();
-		textureNode.levelNode = nodeObject( levelNode );
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	/**
-	 * Returns the texture size of the requested level.
-	 *
-	 * @param {Node<int>} levelNode - The level to compute the size for.
-	 * @return {TextureSizeNode} The texture size.
-	 */
-	size( levelNode ) {
-
-		return textureSize( this, levelNode );
-
-	}
-
-	/**
-	 * Samples the texture with the given bias.
-	 *
-	 * @param {Node<float>} biasNode - The bias node.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	bias( biasNode ) {
-
-		const textureNode = this.clone();
-		textureNode.biasNode = nodeObject( biasNode );
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	/**
-	 * Returns the base texture of this node.
-	 * @return {TextureNode} The base texture node.
-	 */
-	getBase() {
-
-		return this.referenceNode ? this.referenceNode.getBase() : this;
-
-	}
-
-	/**
-	 * Samples the texture by executing a compare operation.
-	 *
-	 * @param {Node<float>} compareNode - The node that defines the compare value.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	compare( compareNode ) {
-
-		const textureNode = this.clone();
-		textureNode.compareNode = nodeObject( compareNode );
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	/**
-	 * Samples the texture using an explicit gradient.
-	 *
-	 * @param {Node<vec2>} gradNodeX - The gradX node.
-	 * @param {Node<vec2>} gradNodeY - The gradY node.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	grad( gradNodeX, gradNodeY ) {
-
-		const textureNode = this.clone();
-		textureNode.gradNode = [ nodeObject( gradNodeX ), nodeObject( gradNodeY ) ];
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	/**
-	 * Gathers four texels from the texture.
-	 *
-	 * @param {Node<int>} gatherNode - The index of the channel to read. This must be in range [0, 3] and a compile-time constant.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	gather( gatherNode = 0 ) {
-
-		const textureNode = this.clone();
-		textureNode.gatherNode = nodeObject( gatherNode );
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	/**
-	 * Returns `true` if the texture is sampled with a depth comparison,
-	 * meaning the node must be bound with a comparison sampler.
-	 *
-	 * @return {boolean} Whether comparison sampling is used or not.
-	 */
-	isSampleCompare() {
-
-		return this.compareNode !== null || this._samplerComparison === true;
-
-	}
-
-	/**
-	 * Samples the texture by defining a depth node.
-	 *
-	 * @param {Node<int>} depthNode - The depth node.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	depth( depthNode ) {
-
-		const textureNode = this.clone();
-		textureNode.depthNode = nodeObject( depthNode );
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	/**
-	 * Samples the texture by defining an offset node.
-	 *
-	 * @param {Node<ivec2>} offsetNode - The offset node.
-	 * @return {TextureNode} A texture node representing the texture sample.
-	 */
-	offset( offsetNode ) {
-
-		const textureNode = this.clone();
-		textureNode.offsetNode = nodeObject( offsetNode );
-		textureNode.referenceNode = this.getBase();
-
-		return textureNode;
-
-	}
-
-	// --
-
-	serialize( data ) {
-
-		super.serialize( data );
-
-		data.value = this.value.toJSON( data.meta ).uuid;
-		data.sampler = this.sampler;
-		data.updateMatrix = this.updateMatrix;
-
-	}
-
-	deserialize( data ) {
-
-		super.deserialize( data );
-
-		this.value = data.meta.textures[ data.value ];
-		this.sampler = data.sampler;
-		this.updateMatrix = data.updateMatrix;
-
-	}
-
-	/**
-	 * Clones the texture node.
-	 *
-	 * @return {TextureNode} The cloned texture node.
-	 */
-	clone() {
-
-		const newNode = new this.constructor( this.value, this.uvNode, this.levelNode, this.biasNode );
-		newNode.sampler = this.sampler;
-		newNode.depthNode = this.depthNode;
-		newNode.compareNode = this.compareNode;
-		newNode.gradNode = this.gradNode;
-		newNode.gatherNode = this.gatherNode;
-		newNode.offsetNode = this.offsetNode;
-
-		return newNode;
-
-	}
-
-}
-
-/**
- * TSL function for creating a texture node.
- *
- * @tsl
- * @function
- * @param {?Texture} value - The texture.
- * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
- * @param {?Node<int>} [levelNode=null] - The level node.
- * @param {?Node<float>} [biasNode=null] - The bias node.
- * @returns {TextureNode}
- */
-const textureBase = /*@__PURE__*/ nodeProxy( TextureNode ).setParameterLength( 1, 4 ).setName( 'texture' );
-
-/**
- * TSL function for creating a texture node or sample a texture node already existing.
- *
- * @tsl
- * @function
- * @param {?(Texture|TextureNode)} [value=EmptyTexture] - The texture.
- * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
- * @param {?Node<int>} [levelNode=null] - The level node.
- * @param {?Node<float>} [biasNode=null] - The bias node.
- * @returns {TextureNode}
- */
-const texture = ( value = EmptyTexture$1, uvNode = null, levelNode = null, biasNode = null ) => {
-
-	let textureNode;
-
-	if ( value && value.isTextureNode === true ) {
-
-		textureNode = value.clone();
-		textureNode.referenceNode = value.getBase(); // Ensure the reference is set to the original node
-
-		if ( uvNode !== null ) textureNode.uvNode = nodeObject( uvNode );
-		if ( levelNode !== null ) textureNode.levelNode = nodeObject( levelNode );
-		if ( biasNode !== null ) textureNode.biasNode = nodeObject( biasNode );
-
-	} else {
-
-		textureNode = textureBase( value, uvNode, levelNode, biasNode );
-
-	}
-
-	return textureNode;
-
-};
-
-/**
- * TSL function for creating a non-mergeable uniform texture node.
- *
- * @tsl
- * @function
- * @param {?Texture} value - The texture.
- * @returns {TextureNode}
- */
-const uniformTexture = ( value = EmptyTexture$1 ) => {
-
-	const textureNode = texture( value );
-
-	textureNode.mergeable = false;
-
-	return textureNode;
-
-};
-
-/**
- * TSL function for creating a texture node that fetches/loads texels without interpolation.
- *
- * @tsl
- * @function
- * @param {?(Texture|TextureNode)} [value=EmptyTexture] - The texture.
- * @param {?Node<vec2|vec3>} [uvNode=null] - The uv node.
- * @param {?Node<int>} [levelNode=null] - The level node.
- * @param {?Node<float>} [biasNode=null] - The bias node.
- * @returns {TextureNode}
- */
-const textureLoad = ( ...params ) => texture( ...params ).setSampler( false );
-
-const textureLevel = ( value, uv, level ) => texture( value, uv ).level( level );
-
-/**
- * Converts a texture or texture node to a sampler.
- *
- * @tsl
- * @function
- * @param {TextureNode|Texture} value - The texture or texture node to convert.
- * @returns {Node}
- */
-const sampler = ( value ) => ( value.isNode === true ? value : texture( value ) ).convert( 'sampler' );
-
-/**
- * Converts a texture or texture node to a sampler comparison.
- *
- * @tsl
- * @function
- * @param {TextureNode|Texture} value - The texture or texture node to convert.
- * @returns {Node}
- */
-const samplerComparison = ( value ) => ( value.isNode === true ? value : texture( value ) ).convert( 'samplerComparison' );
-
-const _size$3 = /*@__PURE__*/ new Vector2();
-
-/**
- * A special type of texture node which represents the data of the current viewport
- * as a texture. The module extracts data from the current bound framebuffer with
- * a copy operation so no extra render pass is required to produce the texture data
- * (which is good for performance). `ViewportTextureNode` can be used as an input for a
- * variety of effects like refractive or transmissive materials.
- *
- * @augments TextureNode
- */
-class ViewportTextureNode extends TextureNode {
-
-	static get type() {
-
-		return 'ViewportTextureNode';
-
-	}
-
-	/**
-	 * Constructs a new viewport texture node.
-	 *
-	 * @param {Node} [uvNode=screenUV] - The uv node.
-	 * @param {?Node} [levelNode=null] - The level node.
-	 * @param {?Texture} [framebufferTexture=null] - A framebuffer texture holding the viewport data. If not provided, a framebuffer texture is created automatically.
-	 */
-	constructor( uvNode = screenUV, levelNode = null, framebufferTexture = null ) {
-
-		let defaultFramebuffer = null;
-
-		if ( framebufferTexture === null ) {
-
-			defaultFramebuffer = new FramebufferTexture();
-			defaultFramebuffer.minFilter = LinearMipmapLinearFilter;
-
-			framebufferTexture = defaultFramebuffer;
-
-		} else {
-
-			defaultFramebuffer = framebufferTexture;
-
-		}
-
-		super( framebufferTexture, uvNode, levelNode );
-
-		/**
-		 * Whether to generate mipmaps or not.
-		 *
-		 * @type {boolean}
-		 * @default false
-		 */
-		this.generateMipmaps = false;
-
-		/**
-		 * The reference framebuffer texture. This is used to store the framebuffer texture
-		 * for the current render target. If the render target changes, a new framebuffer texture
-		 * is created automatically.
-		 *
-		 * @type {FramebufferTexture}
-		 * @default null
-		 */
-		this.defaultFramebuffer = defaultFramebuffer;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isOutputTextureNode = true;
-
-		/**
-		 * The `updateBeforeType` is set to `NodeUpdateType.RENDER` since the node should extract
-		 * the current contents of the bound framebuffer for each render call.
-		 *
-		 * @type {string}
-		 * @default 'render'
-		 */
-		this.updateBeforeType = NodeUpdateType.RENDER;
-
-		/**
-		 * The framebuffer texture for the current renderer context.
-		 *
-		 * @type {WeakMap<RenderTarget, FramebufferTexture>}
-		 * @private
-		 */
-		this._cacheTextures = new WeakMap();
-
-	}
-
-	/**
-	 * This methods returns a texture for the given render target or canvas target reference.
-	 *
-	 * To avoid rendering errors, `ViewportTextureNode` must use unique framebuffer textures
-	 * for different render contexts.
-	 *
-	 * @param {?(RenderTarget|CanvasTarget)} [reference=null] - The render target or canvas target reference.
-	 * @return {Texture} The framebuffer texture.
-	 */
-	getTextureForReference( reference = null ) {
-
-		let defaultFramebuffer;
-		let cacheTextures;
-
-		if ( this.referenceNode ) {
-
-			defaultFramebuffer = this.referenceNode.defaultFramebuffer;
-			cacheTextures = this.referenceNode._cacheTextures;
-
-		} else {
-
-			defaultFramebuffer = this.defaultFramebuffer;
-			cacheTextures = this._cacheTextures;
-
-		}
-
-		if ( reference === null ) {
-
-			return defaultFramebuffer;
-
-		}
-
-		if ( cacheTextures.has( reference ) === false ) {
-
-			const framebufferTexture = defaultFramebuffer.clone();
-
-			cacheTextures.set( reference, framebufferTexture );
-
-		}
-
-		return cacheTextures.get( reference );
-
-	}
-
-	updateReference( frame ) {
-
-		const renderer = frame.renderer;
-		const renderTarget = renderer.getRenderTarget();
-		const canvasTarget = renderer.getCanvasTarget();
-
-		const reference = renderTarget ? renderTarget : canvasTarget;
-
-		this.value = this.getTextureForReference( reference );
-
-		return this.value;
-
-	}
-
-	updateBefore( frame ) {
-
-		const renderer = frame.renderer;
-		const renderTarget = renderer.getRenderTarget();
-		const canvasTarget = renderer.getCanvasTarget();
-
-		const reference = renderTarget ? renderTarget : canvasTarget;
-
-		if ( reference === null ) {
-
-			renderer.getDrawingBufferSize( _size$3 );
-
-		} else if ( reference.getDrawingBufferSize ) {
-
-			reference.getDrawingBufferSize( _size$3 );
-
-		} else {
-
-			_size$3.set( reference.width, reference.height );
-
-		}
-
-		//
-
-		const framebufferTexture = this.getTextureForReference( reference );
-
-		if ( framebufferTexture.image.width !== _size$3.width || framebufferTexture.image.height !== _size$3.height ) {
-
-			framebufferTexture.image.width = _size$3.width;
-			framebufferTexture.image.height = _size$3.height;
-			framebufferTexture.needsUpdate = true;
-
-		}
-
-		//
-
-		const currentGenerateMipmaps = framebufferTexture.generateMipmaps;
-		framebufferTexture.generateMipmaps = this.generateMipmaps;
-
-		renderer.copyFramebufferToTexture( framebufferTexture );
-
-		framebufferTexture.generateMipmaps = currentGenerateMipmaps;
-
-	}
-
-	clone() {
-
-		const viewportTextureNode = new this.constructor( this.uvNode, this.levelNode, this.value );
-		viewportTextureNode.generateMipmaps = this.generateMipmaps;
-
-		return viewportTextureNode;
-
-	}
-
-}
-
-/**
- * TSL function for creating a viewport texture node.
- *
- * @tsl
- * @function
- * @param {?Node} [uvNode=screenUV] - The uv node.
- * @param {?Node} [levelNode=null] - The level node.
- * @param {?Texture} [framebufferTexture=null] - A framebuffer texture holding the viewport data. If not provided, a framebuffer texture is created automatically.
- * @returns {ViewportTextureNode}
- */
-const viewportTexture = /*@__PURE__*/ nodeProxy( ViewportTextureNode ).setParameterLength( 0, 3 );
-
-/**
- * TSL function for creating a viewport texture node with enabled mipmap generation.
- *
- * @tsl
- * @function
- * @param {?Node} [uvNode=screenUV] - The uv node.
- * @param {?Node} [levelNode=null] - The level node.
- * @param {?Texture} [framebufferTexture=null] - A framebuffer texture holding the viewport data. If not provided, a framebuffer texture is created automatically.
- * @returns {ViewportTextureNode}
- */
-const viewportMipTexture = /*@__PURE__*/ nodeProxy( ViewportTextureNode, null, null, { generateMipmaps: true } ).setParameterLength( 0, 3 );
-
-// Singleton instances for common usage
-const _singletonOpaqueViewportTextureNode = /*@__PURE__*/ viewportMipTexture();
-
-/**
- * TSL function for creating a viewport texture node with enabled mipmap generation.
- * The texture should only contain the opaque rendering objects.
- *
- * This should be used just in transparent or transmissive materials.
- *
- * @tsl
- * @function
- * @param {?Node} [uv=screenUV] - The uv node.
- * @param {?Node} [level=null] - The level node.
- * @returns {ViewportTextureNode}
- */
-const viewportOpaqueMipTexture = ( uv = screenUV, level = null ) => _singletonOpaqueViewportTextureNode.sample( uv, level ); // TODO: Use once() when sample() supports it
-
-let _sharedDepthbuffer = null;
-
-/**
- * Represents the depth of the current viewport as a texture. This module
- * can be used in combination with viewport texture to achieve effects
- * that require depth evaluation.
- *
- * @augments ViewportTextureNode
- */
-class ViewportDepthTextureNode extends ViewportTextureNode {
-
-	static get type() {
-
-		return 'ViewportDepthTextureNode';
-
-	}
-
-	/**
-	 * Constructs a new viewport depth texture node.
-	 *
-	 * @param {Node} [uvNode=screenUV] - The uv node.
-	 * @param {?Node} [levelNode=null] - The level node.
-	 * @param {?DepthTexture} [depthTexture=null] - A depth texture. If not provided, uses a shared depth texture.
-	 */
-	constructor( uvNode = screenUV, levelNode = null, depthTexture = null ) {
-
-		if ( depthTexture === null ) {
-
-			if ( _sharedDepthbuffer === null ) {
-
-				_sharedDepthbuffer = new DepthTexture();
-
-			}
-
-			depthTexture = _sharedDepthbuffer;
-
-		}
-
-		super( uvNode, levelNode, depthTexture );
-
-	}
-
-}
-
-/**
- * TSL function for a viewport depth texture node.
- *
- * @tsl
- * @function
- * @param {?Node} [uvNode=screenUV] - The uv node.
- * @param {?Node} [levelNode=null] - The level node.
- * @param {?DepthTexture} [depthTexture=null] - A depth texture. If not provided, a depth texture is created automatically.
- * @returns {ViewportDepthTextureNode}
- */
-const viewportDepthTexture = /*@__PURE__*/ nodeProxy( ViewportDepthTextureNode ).setParameterLength( 0, 3 );
-
-/**
- * This node offers a collection of features in context of the depth logic in the fragment shader.
- * Depending on {@link ViewportDepthNode#scope}, it can be used to define a depth value for the current
- * fragment or for depth evaluation purposes.
- *
- * @augments Node
- */
-class ViewportDepthNode extends Node {
-
-	static get type() {
-
-		return 'ViewportDepthNode';
-
-	}
-
-	/**
-	 * Constructs a new viewport depth node.
-	 *
-	 * @param {('depth'|'depthBase'|'linearDepth')} scope - The node's scope.
-	 * @param {?Node} [valueNode=null] - The value node.
-	 */
-	constructor( scope, valueNode = null ) {
-
-		super( 'float' );
-
-		/**
-		 * The node behaves differently depending on which scope is selected.
-		 *
-		 * - `ViewportDepthNode.DEPTH_BASE`: Allows to define a value for the current fragment's depth.
-		 * - `ViewportDepthNode.DEPTH`: Represents the depth value for the current fragment (`valueNode` is ignored).
-		 * - `ViewportDepthNode.LINEAR_DEPTH`: Represents the linear (orthographic) depth value of the current fragment.
-		 * If a `valueNode` is set, the scope can be used to convert perspective depth data to linear data.
-		 *
-		 * @type {('depth'|'depthBase'|'linearDepth')}
-		 */
-		this.scope = scope;
-
-		/**
-		 * Can be used to define a custom depth value.
-		 * The property is ignored in the `ViewportDepthNode.DEPTH` scope.
-		 *
-		 * @type {?Node}
-		 * @default null
-		 */
-		this.valueNode = valueNode;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isViewportDepthNode = true;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	generate( builder ) {
-
-		const { scope } = this;
-
-		if ( scope === ViewportDepthNode.DEPTH_BASE ) {
-
-			return builder.getFragDepth();
-
-		}
-
-		return super.generate( builder );
-
-	}
-
-	setup( { camera } ) {
-
-		const { scope } = this;
-		const value = this.valueNode;
-
-		let node = null;
-
-		if ( scope === ViewportDepthNode.DEPTH_BASE ) {
-
-			if ( value !== null ) {
-
-				node = depthBase().assign( value );
-
-			}
-
-		} else if ( scope === ViewportDepthNode.DEPTH ) {
-
-			if ( camera.isOrthographicCamera !== true ) {
-
-				node = viewZToPerspectiveDepth( positionView.z, cameraNear, cameraFar );
-
-			} else {
-
-				node = viewZToOrthographicDepth( positionView.z, cameraNear, cameraFar );
-
-			}
-
-		} else if ( scope === ViewportDepthNode.LINEAR_DEPTH ) {
-
-			if ( value !== null ) {
-
-				if ( camera.isOrthographicCamera !== true ) {
-
-					const viewZ = perspectiveDepthToViewZ( value, cameraNear, cameraFar );
-
-					node = viewZToOrthographicDepth( viewZ, cameraNear, cameraFar );
-
-				} else {
-
-					node = value;
-
-				}
-
-			} else {
-
-				node = viewZToOrthographicDepth( positionView.z, cameraNear, cameraFar );
-
-			}
-
-		}
-
-		return node;
-
-	}
-
-}
-
-ViewportDepthNode.DEPTH_BASE = 'depthBase';
-ViewportDepthNode.DEPTH = 'depth';
-ViewportDepthNode.LINEAR_DEPTH = 'linearDepth';
-
-// NOTE: viewZ, the z-coordinate in camera space, is negative for points in front of the camera
-
-/**
- * TSL function for converting a viewZ value to an orthographic depth value.
- *
- * @tsl
- * @function
- * @param {Node<float>} viewZ - The viewZ node.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const viewZToOrthographicDepth = ( viewZ, near, far ) => viewZ.add( near ).div( near.sub( far ) );
-
-/**
- * TSL function for converting a viewZ value to a reversed orthographic depth value.
- *
- * @tsl
- * @function
- * @param {Node<float>} viewZ - The viewZ node.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const viewZToReversedOrthographicDepth = ( viewZ, near, far ) => viewZ.add( far ).div( far.sub( near ) );
-
-/**
- * TSL function for converting an orthographic depth value to a viewZ value.
- *
- * @tsl
- * @function
- * @param {Node<float>} depth - The orthographic depth.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const orthographicDepthToViewZ = /*@__PURE__*/ Fn( ( [ depth, near, far ], builder ) => {
-
-	if ( builder.renderer.reversedDepthBuffer === true ) {
-
-		return far.sub( near ).mul( depth ).sub( far );
-
-	} else {
-
-		return near.sub( far ).mul( depth ).sub( near );
-
-	}
-
-} );
-
-/**
- * TSL function for converting a viewZ value to a perspective depth value.
- *
- * Note: {link https://twitter.com/gonnavis/status/1377183786949959682}.
- *
- * @tsl
- * @function
- * @param {Node<float>} viewZ - The viewZ node.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const viewZToPerspectiveDepth = ( viewZ, near, far ) => near.add( viewZ ).mul( far ).div( far.sub( near ).mul( viewZ ) );
-
-/**
- * TSL function for converting a viewZ value to a reversed perspective depth value.
- *
- * @tsl
- * @function
- * @param {Node<float>} viewZ - The viewZ node.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const viewZToReversedPerspectiveDepth = ( viewZ, near, far ) => near.mul( viewZ.add( far ) ).div( viewZ.mul( near.sub( far ) ) );
-
-/**
- * TSL function for converting a perspective depth value to a viewZ value.
- *
- * @tsl
- * @function
- * @param {Node<float>} depth - The perspective depth.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const perspectiveDepthToViewZ = /*@__PURE__*/ Fn( ( [ depth, near, far ], builder ) => {
-
-	if ( builder.renderer.reversedDepthBuffer === true ) {
-
-		return near.mul( far ).div( near.sub( far ).mul( depth ).sub( near ) );
-
-	} else {
-
-		return near.mul( far ).div( far.sub( near ).mul( depth ).sub( far ) );
-
-	}
-
-} );
-
-/**
- * TSL function for converting a viewZ value to a logarithmic depth value.
- *
- * @tsl
- * @function
- * @param {Node<float>} viewZ - The viewZ node.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const viewZToLogarithmicDepth = ( viewZ, near, far ) => {
-
-	// NOTE: viewZ must be negative--see explanation at the end of this comment block.
-	// The final logarithmic depth formula used here is adapted from one described in an
-	// article by Thatcher Ulrich (see http://tulrich.com/geekstuff/log_depth_buffer.txt),
-	// which was an improvement upon an earlier formula one described in an
-	// Outerra article (https://outerra.blogspot.com/2009/08/logarithmic-z-buffer.html).
-	// Ulrich's formula is the following:
-	//     z = K * log( w / cameraNear ) / log( cameraFar / cameraNear )
-	//     where K = 2^k - 1, and k is the number of bits in the depth buffer.
-	// The Outerra variant ignored the camera near plane (it assumed it was 0) and instead
-	// opted for a "C-constant" for resolution adjustment of objects near the camera.
-	// Outerra states: "Notice that the 'C' variant doesn’t use a near plane distance, it has it
-	// set at 0" (quote from https://outerra.blogspot.com/2012/11/maximizing-depth-buffer-range-and.html).
-	// Ulrich's variant has the benefit of constant relative precision over the whole near-far range.
-	// It was debated here whether Outerra's "C-constant" or Ulrich's "near plane" variant should
-	// be used, and ultimately Ulrich's "near plane" version was chosen.
-	// Outerra eventually made another improvement to their original "C-constant" variant,
-	// but it still does not incorporate the camera near plane (for this version,
-	// see https://outerra.blogspot.com/2013/07/logarithmic-depth-buffer-optimizations.html).
-	// Here we make 4 changes to Ulrich's formula:
-	// 1. Clamp the camera near plane so we don't divide by 0.
-	// 2. Use log2 instead of log to avoid an extra multiply (shaders implement log using log2).
-	// 3. Assume K is 1 (K = maximum value in depth buffer; see Ulrich's formula above).
-	// 4. To maintain consistency with the functions "viewZToOrthographicDepth" and "viewZToPerspectiveDepth",
-	//    we modify the formula here to use 'viewZ' instead of 'w'. The other functions expect a negative viewZ,
-	//    so we do the same here, hence the 'viewZ.negate()' call.
-	// For visual representation of this depth curve, see https://www.desmos.com/calculator/uyqk0vex1u
-	near = near.max( EPSILON ).toVar();
-	const numerator = log2( viewZ.negate().div( near ) );
-	const denominator = log2( far.div( near ) );
-	return numerator.div( denominator );
-
-};
-
-/**
- * TSL function for converting a logarithmic depth value to a viewZ value.
- *
- * @tsl
- * @function
- * @param {Node<float>} depth - The logarithmic depth.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const logarithmicDepthToViewZ = ( depth, near, far ) => {
-
-	// NOTE: we add a 'negate()' call to the return value here to maintain consistency with
-	// the functions "orthographicDepthToViewZ" and "perspectiveDepthToViewZ" (they return
-	// a negative viewZ).
-	const exponent = depth.mul( log( far.div( near ) ) );
-	return float( Math.E ).pow( exponent ).mul( near ).negate();
-
-};
-
-/**
- * TSL function for retrieving the depth value as produced by the camera's projection matrix.
- *
- * @tsl
- * @function
- * @param {Node<float>} depth - The depth value.
- * @param {Node<float>} near - The camera's near value.
- * @param {Node<float>} far - The camera's far value.
- * @returns {Node<float>}
- */
-const projectionDepth = /*@__PURE__*/ Fn( ( [ depth, near, far ], builder ) => {
-
-	if ( builder.renderer.logarithmicDepthBuffer === true ) {
-
-		const viewZ = logarithmicDepthToViewZ( depth, near, far );
-
-		return viewZToPerspectiveDepth( viewZ, near, far );
-
-	}
-
-	return depth;
-
-} );
-
-/**
- * TSL function for defining a value for the current fragment's depth.
- *
- * @tsl
- * @function
- * @param {Node<float>} value - The depth value to set.
- * @returns {ViewportDepthNode<float>}
- */
-const depthBase = /*@__PURE__*/ nodeProxy( ViewportDepthNode, ViewportDepthNode.DEPTH_BASE );
-
-/**
- * TSL object that represents the depth value for the current fragment.
- *
- * @tsl
- * @type {ViewportDepthNode}
- */
-const depth = /*@__PURE__*/ nodeImmutable( ViewportDepthNode, ViewportDepthNode.DEPTH );
-
-/**
- * TSL function for converting a perspective depth value to linear depth.
- *
- * @tsl
- * @function
- * @param {?Node<float>} [value=null] - The perspective depth. If `null` is provided, the current fragment's depth is used.
- * @returns {ViewportDepthNode<float>}
- */
-const linearDepth = /*@__PURE__*/ nodeProxy( ViewportDepthNode, ViewportDepthNode.LINEAR_DEPTH ).setParameterLength( 0, 1 );
-
-/**
- * TSL object that represents the linear (orthographic) depth value of the current fragment
- *
- * @tsl
- * @type {ViewportDepthNode}
- */
-const viewportLinearDepth = /*@__PURE__*/ linearDepth( viewportDepthTexture() );
-
-depth.assign = ( value ) => depthBase( value );
 
 /**
  * A special version of a screen uv function that involves a depth comparison
@@ -21095,7451 +30539,6 @@ class ReflectorBaseNode extends Node {
  * @returns {ReflectorNode}
  */
 const reflector = ( parameters ) => new ReflectorNode( parameters );
-
-const _m1$1 = /*@__PURE__*/ new Matrix4();
-
-/**
- * TSL object that represents the refraction ratio of the material used for rendering the current object.
- *
- * @tsl
- * @type {UniformNode<float>}
- */
-const materialRefractionRatio = /*@__PURE__*/ uniform( 0 ).onReference( ( { material } ) => material ).onObjectUpdate( ( { material } ) => material.refractionRatio );
-
-/**
- * TSL object that represents the intensity of environment maps of PBR materials.
- * When `material.envMap` is set, the value is `material.envMapIntensity` otherwise `scene.environmentIntensity`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialEnvIntensity = /*@__PURE__*/ uniform( 1 ).onReference( ( { material } ) => material ).onObjectUpdate( function ( { material, scene } ) {
-
-	return material.envMap ? material.envMapIntensity : scene.environmentIntensity;
-
-} );
-
-/**
- * TSL object that represents the rotation of environment maps.
- * When `material.envMap` is set, the value is `material.envMapRotation`.
- * `scene.environmentRotation` controls the rotation of `scene.environment` or `scene.environmentNode` instead.
- *
- * @tsl
- * @type {Node<mat4>}
- */
-const materialEnvRotation = /*@__PURE__*/ uniform( new Matrix4() ).onReference( function ( frame ) {
-
-	return frame.material;
-
-} ).onObjectUpdate( function ( { material, scene } ) {
-
-	const hasSceneEnvironment = ( scene.environment !== null ) || ( scene.environmentNode && scene.environmentNode.isNode );
-	const rotation = ( hasSceneEnvironment && material.envMap === null ) ? scene.environmentRotation : material.envMapRotation;
-
-	if ( rotation ) {
-
-		// note: since the matrix is orthonormal, we can use the more-efficient transpose() in lieu of invert()
-		_m1$1.makeRotationFromEuler( rotation ).transpose();
-
-	} else {
-
-		_m1$1.identity();
-
-	}
-
-	return _m1$1;
-
-} );
-
-/**
- * The reflect vector in view space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const reflectView = /*@__PURE__*/ positionViewDirection.negate().reflect( normalView );
-
-/**
- * The refract vector in view space.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const refractView = /*@__PURE__*/ positionViewDirection.negate().refract( normalView, materialRefractionRatio );
-
-/**
- * Used for sampling cube maps when using cube reflection mapping.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const reflectVector = /*@__PURE__*/ reflectView.transformDirection( cameraWorldMatrix ).toVar( 'reflectVector' );
-
-/**
- * Used for sampling cube maps when using cube refraction mapping.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const refractVector = /*@__PURE__*/ refractView.transformDirection( cameraWorldMatrix ).toVar( 'refractVector' );
-
-const EmptyTexture = /*@__PURE__*/ new CubeTexture();
-
-/**
- * This type of uniform node represents a cube texture.
- *
- * @augments TextureNode
- */
-class CubeTextureNode extends TextureNode {
-
-	static get type() {
-
-		return 'CubeTextureNode';
-
-	}
-
-	/**
-	 * Constructs a new cube texture node.
-	 *
-	 * @param {CubeTexture} value - The cube texture.
-	 * @param {?Node<vec3>} [uvNode=null] - The uv node.
-	 * @param {?Node<int>} [levelNode=null] - The level node.
-	 * @param {?Node<float>} [biasNode=null] - The bias node.
-	 */
-	constructor( value, uvNode = null, levelNode = null, biasNode = null ) {
-
-		super( value, uvNode, levelNode, biasNode );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isCubeTextureNode = true;
-
-	}
-
-	/**
-	 * Overwrites the default implementation to return the appropriate cube texture type.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The input type.
-	 */
-	getInputType( /*builder*/ ) {
-
-		if ( this.value.isDepthTexture === true ) {
-
-			return 'cubeDepthTexture';
-
-		}
-
-		return 'cubeTexture';
-
-	}
-
-	/**
-	 * Returns a default uvs based on the mapping type of the cube texture.
-	 *
-	 * @return {Node<vec3>} The default uv attribute.
-	 */
-	getDefaultUV() {
-
-		const texture = this.value;
-
-		if ( texture.mapping === CubeReflectionMapping ) {
-
-			return reflectVector;
-
-		} else if ( texture.mapping === CubeRefractionMapping ) {
-
-			return refractVector;
-
-		} else {
-
-			error( 'CubeTextureNode: Mapping "%s" not supported.', texture.mapping );
-
-			return vec3( 0, 0, 0 );
-
-		}
-
-	}
-
-	/**
-	 * Overwritten with an empty implementation since the `updateMatrix` flag is ignored
-	 * for cube textures. The uv transformation matrix is not applied to cube textures.
-	 *
-	 * @param {boolean} value - The update toggle.
-	 */
-	setUpdateMatrix( /*updateMatrix*/ ) { } // Ignore .updateMatrix for CubeTextureNode
-
-	/**
-	 * Setups the uv node. Depending on the backend as well as the texture type, it might be necessary
-	 * to modify the uv node for correct sampling.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node} uvNode - The uv node to setup.
-	 * @return {Node} The updated uv node.
-	 */
-	setupUV( builder, uvNode ) {
-
-		const texture = this.value;
-
-		if ( builder.renderer.coordinateSystem === WebGPUCoordinateSystem || ( ! texture.isRenderTargetTexture && ! texture.isDepthTexture ) ) {
-
-			uvNode = vec3( uvNode.x.negate(), uvNode.yz );
-
-		}
-
-		return uvNode;
-
-	}
-
-	/**
-	 * Generates the uv code snippet.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node} cubeUV - The uv node to generate code for.
-	 * @return {string} The generated code snippet.
-	 */
-	generateUV( builder, cubeUV ) {
-
-		return cubeUV.build( builder, this.sampler === true ? 'vec3' : 'ivec3' );
-
-	}
-
-}
-
-/**
- * TSL function for creating a cube texture node.
- *
- * @tsl
- * @function
- * @param {CubeTexture} value - The cube texture.
- * @param {?Node<vec3>} [uvNode=null] - The uv node.
- * @param {?Node<int>} [levelNode=null] - The level node.
- * @param {?Node<float>} [biasNode=null] - The bias node.
- * @returns {CubeTextureNode}
- */
-const cubeTextureBase = /*@__PURE__*/ nodeProxy( CubeTextureNode ).setParameterLength( 1, 4 ).setName( 'cubeTexture' );
-
-/**
- * TSL function for creating a cube texture uniform node.
- *
- * @tsl
- * @function
- * @param {?(CubeTexture|CubeTextureNode)} [value=EmptyTexture] - The cube texture.
- * @param {?Node<vec3>} [uvNode=null] - The uv node.
- * @param {?Node<int>} [levelNode=null] - The level node.
- * @param {?Node<float>} [biasNode=null] - The bias node.
- * @returns {CubeTextureNode}
- */
-const cubeTexture = ( value = EmptyTexture, uvNode = null, levelNode = null, biasNode = null ) => {
-
-	let textureNode;
-
-	if ( value && value.isCubeTextureNode === true ) {
-
-		textureNode = value.clone();
-		textureNode.referenceNode = value; // Ensure the reference is set to the original node
-
-		if ( uvNode !== null ) textureNode.uvNode = nodeObject( uvNode );
-		if ( levelNode !== null ) textureNode.levelNode = nodeObject( levelNode );
-		if ( biasNode !== null ) textureNode.biasNode = nodeObject( biasNode );
-
-	} else {
-
-		textureNode = cubeTextureBase( value, uvNode, levelNode, biasNode );
-
-	}
-
-	return textureNode;
-
-};
-
-/**
- * TSL function for creating a non-mergeable uniform cube texture node.
- *
- * @tsl
- * @function
- * @param {?CubeTexture} [value=EmptyTexture] - The cube texture.
- * @returns {CubeTextureNode}
- */
-const uniformCubeTexture = ( value = EmptyTexture ) => {
-
-	const textureNode = cubeTextureBase( value );
-
-	textureNode.mergeable = false;
-
-	return textureNode;
-
-};
-
-// TODO: Avoid duplicated code and use only ReferenceBaseNode or ReferenceNode
-
-/**
- * This type of node establishes a reference to a property of another object.
- * In this way, the value of the node is automatically linked to the value of
- * referenced object. Reference nodes internally represent the linked value
- * as a uniform.
- *
- * @augments Node
- */
-class ReferenceNode extends Node {
-
-	static get type() {
-
-		return 'ReferenceNode';
-
-	}
-
-	/**
-	 * Constructs a new reference node.
-	 *
-	 * @param {string} property - The name of the property the node refers to.
-	 * @param {string} uniformType - The uniform type that should be used to represent the property value.
-	 * @param {?Object} [object=null] - The object the property belongs to.
-	 * @param {?number} [count=null] - When the linked property is an array-like, this parameter defines its length.
-	 */
-	constructor( property, uniformType, object = null, count = null ) {
-
-		super();
-
-		/**
-		 * The name of the property the node refers to.
-		 *
-		 * @type {string}
-		 */
-		this.property = property;
-
-		/**
-		 * The uniform type that should be used to represent the property value.
-		 *
-		 * @type {string}
-		 */
-		this.uniformType = uniformType;
-
-		/**
-		 * The object the property belongs to.
-		 *
-		 * @type {?Object}
-		 * @default null
-		 */
-		this.object = object;
-
-		/**
-		 * When the linked property is an array, this parameter defines its length.
-		 *
-		 * @type {?number}
-		 * @default null
-		 */
-		this.count = count;
-
-		/**
-		 * The property name might have dots so nested properties can be referred.
-		 * The hierarchy of the names is stored inside this array.
-		 *
-		 * @type {Array<string>}
-		 */
-		this.properties = property.split( '.' );
-
-		/**
-		 * Points to the current referred object. This property exists next to {@link ReferenceNode#object}
-		 * since the final reference might be updated from calling code.
-		 *
-		 * @type {?Object}
-		 * @default null
-		 */
-		this.reference = object;
-
-		/**
-		 * The uniform node that holds the value of the reference node.
-		 *
-		 * @type {UniformNode}
-		 * @default null
-		 */
-		this.node = null;
-
-		/**
-		 * The uniform group of the internal uniform.
-		 *
-		 * @type {UniformGroupNode}
-		 * @default null
-		 */
-		this.group = null;
-
-		/**
-		 * An optional label of the internal uniform node.
-		 *
-		 * @type {?string}
-		 * @default null
-		 */
-		this.name = null;
-
-		/**
-		 * Overwritten since reference nodes are updated per object.
-		 *
-		 * @type {string}
-		 * @default 'object'
-		 */
-		this.updateType = NodeUpdateType.OBJECT;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	/**
-	 * When the referred property is array-like, this method can be used
-	 * to access elements via an index node.
-	 *
-	 * @param {IndexNode} indexNode - indexNode.
-	 * @return {ReferenceElementNode} A reference to an element.
-	 */
-	element( indexNode ) {
-
-		return new ReferenceElementNode( this, nodeObject( indexNode ) );
-
-	}
-
-	/**
-	 * Sets the uniform group for this reference node.
-	 *
-	 * @param {UniformGroupNode} group - The uniform group to set.
-	 * @return {ReferenceNode} A reference to this node.
-	 */
-	setGroup( group ) {
-
-		this.group = group;
-
-		return this;
-
-	}
-
-	/**
-	 * Sets the name for the internal uniform.
-	 *
-	 * @param {string} name - The label to set.
-	 * @return {ReferenceNode} A reference to this node.
-	 */
-	setName( name ) {
-
-		this.name = name;
-
-		return this;
-
-	}
-
-	/**
-	 * Sets the label for the internal uniform.
-	 *
-	 * @deprecated
-	 * @param {string} name - The label to set.
-	 * @return {ReferenceNode} A reference to this node.
-	 */
-	label( name ) {
-
-		warn( 'TSL: "label()" has been deprecated. Use "setName()" instead.' ); // @deprecated r179
-
-		return this.setName( name );
-
-	}
-
-	/**
-	 * Sets the node type which automatically defines the internal
-	 * uniform type.
-	 *
-	 * @param {string} uniformType - The type to set.
-	 */
-	setNodeType( uniformType ) {
-
-		let node = null;
-
-		if ( this.count !== null ) {
-
-			node = buffer( null, uniformType, this.count );
-
-		} else if ( Array.isArray( this.getValueFromReference() ) ) {
-
-			node = uniformArray( null, uniformType );
-			node.updateType = NodeUpdateType.OBJECT;
-
-		} else if ( uniformType === 'texture' ) {
-
-			node = texture( null );
-
-		} else if ( uniformType === 'cubeTexture' ) {
-
-			node = cubeTexture( null );
-
-		} else {
-
-			node = uniform( null, uniformType );
-
-		}
-
-		if ( this.group !== null ) {
-
-			node.setGroup( this.group );
-
-		}
-
-		if ( this.name !== null ) node.setName( this.name );
-
-		this.node = node;
-
-	}
-
-	/**
-	 * This method is overwritten since the node type is inferred from
-	 * the type of the reference node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The node type.
-	 */
-	generateNodeType( builder ) {
-
-		if ( this.node === null ) {
-
-			this.updateReference( builder );
-			this.updateValue();
-
-		}
-
-		return this.node.getNodeType( builder );
-
-	}
-
-	/**
-	 * Returns the property value from the given referred object.
-	 *
-	 * @param {Object} [object=this.reference] - The object to retrieve the property value from.
-	 * @return {any} The value.
-	 */
-	getValueFromReference( object = this.reference ) {
-
-		const { properties } = this;
-
-		let value = object[ properties[ 0 ] ];
-
-		for ( let i = 1; i < properties.length; i ++ ) {
-
-			value = value[ properties[ i ] ];
-
-		}
-
-		return value;
-
-	}
-
-	/**
-	 * Allows to update the reference based on the given state. The state is only
-	 * evaluated {@link ReferenceNode#object} is not set.
-	 *
-	 * @param {(NodeFrame|NodeBuilder)} state - The current state.
-	 * @return {Object} The updated reference.
-	 */
-	updateReference( state ) {
-
-		this.reference = this.object !== null ? this.object : state.object;
-
-		return this.reference;
-
-	}
-
-	/**
-	 * The output of the reference node is the internal uniform node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {UniformNode} The output node.
-	 */
-	setup( /* builder */ ) {
-
-		this.updateValue();
-
-		return this.node;
-
-	}
-
-	/**
-	 * Overwritten to update the internal uniform value.
-	 *
-	 * @param {NodeFrame} frame - A reference to the current node frame.
-	 */
-	update( /*frame*/ ) {
-
-		this.updateValue();
-
-	}
-
-	/**
-	 * Retrieves the value from the referred object property and uses it
-	 * to updated the internal uniform.
-	 */
-	updateValue() {
-
-		if ( this.node === null ) this.setNodeType( this.uniformType );
-
-		const value = this.getValueFromReference();
-
-		if ( Array.isArray( value ) ) {
-
-			this.node.array = value;
-
-		} else {
-
-			this.node.value = value;
-
-		}
-
-	}
-
-}
-
-/**
- * TSL function for creating a reference node.
- *
- * @tsl
- * @function
- * @param {string} name - The name of the property the node refers to.
- * @param {string} type - The uniform type that should be used to represent the property value.
- * @param {?Object} [object] - The object the property belongs to.
- * @returns {ReferenceNode}
- */
-const reference = ( name, type, object ) => new ReferenceNode( name, type, object );
-
-/**
- * TSL function for creating a reference node. Use this function if you want need a reference
- * to an array-like property that should be represented as a uniform buffer.
- *
- * @tsl
- * @function
- * @param {string} name - The name of the property the node refers to.
- * @param {string} type - The uniform type that should be used to represent the property value.
- * @param {number} count - The number of value inside the array-like object.
- * @param {Object} object - An array-like object the property belongs to.
- * @returns {ReferenceNode}
- */
-const referenceBuffer = ( name, type, count, object ) => new ReferenceNode( name, type, object, count );
-
-/**
- * This node is a special type of reference node which is intended
- * for linking material properties with node values.
- * ```js
- * const opacityNode = materialReference( 'opacity', 'float', material );
- * ```
- * When changing `material.opacity`, the node value of `opacityNode` will
- * automatically be updated.
- *
- * @augments ReferenceNode
- */
-class MaterialReferenceNode extends ReferenceNode {
-
-	static get type() {
-
-		return 'MaterialReferenceNode';
-
-	}
-
-	/**
-	 * Constructs a new material reference node.
-	 *
-	 * @param {string} property - The name of the property the node refers to.
-	 * @param {string} inputType - The uniform type that should be used to represent the property value.
-	 * @param {?Material} [material=null] - The material the property belongs to. When no material is set,
-	 * the node refers to the material of the current rendered object.
-	 */
-	constructor( property, inputType, material = null ) {
-
-		super( property, inputType, material );
-
-		/**
-		 * The material the property belongs to. When no material is set,
-		 * the node refers to the material of the current rendered object.
-		 *
-		 * @type {?Material}
-		 * @default null
-		 */
-		this.material = material;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isMaterialReferenceNode = true;
-
-	}
-
-	/**
-	 * Updates the reference based on the given state. The state is only evaluated
-	 * {@link MaterialReferenceNode#material} is not set.
-	 *
-	 * @param {(NodeFrame|NodeBuilder)} state - The current state.
-	 * @return {Object} The updated reference.
-	 */
-	updateReference( state ) {
-
-		this.reference = this.material !== null ? this.material : state.material;
-
-		return this.reference;
-
-	}
-
-}
-
-/**
- * TSL function for creating a material reference node.
- *
- * @tsl
- * @function
- * @param {string} name - The name of the property the node refers to.
- * @param {string} type - The uniform type that should be used to represent the property value.
- * @param {?Material} [material=null] - The material the property belongs to.
- * When no material is set, the node refers to the material of the current rendered object.
- * @returns {MaterialReferenceNode}
- */
-const materialReference = ( name, type, material = null ) => new MaterialReferenceNode( name, type, material );
-
-// Normal Mapping Without Precomputed Tangents
-// http://www.thetenthplanet.de/archives/1180
-
-const uv = uv$1();
-
-const q0 = positionView.dFdx();
-const q1 = positionView.dFdy();
-const st0 = uv.dFdx();
-const st1 = uv.dFdy();
-
-const N = normalView;
-
-const q1perp = q1.cross( N );
-const q0perp = N.cross( q0 );
-
-const T = q1perp.mul( st0.x ).add( q0perp.mul( st1.x ) );
-const B = q1perp.mul( st0.y ).add( q0perp.mul( st1.y ) );
-
-const det = T.dot( T ).max( B.dot( B ) );
-const scale = det.equal( 0.0 ).select( 0.0, det.inverseSqrt() );
-
-/**
- * Tangent vector in view space, computed dynamically from geometry and UV derivatives.
- * Useful for normal mapping without precomputed tangents.
- *
- * Reference: http://www.thetenthplanet.de/archives/1180
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const tangentViewFrame = /*@__PURE__*/ T.mul( scale ).toVar( 'tangentViewFrame' );
-
-/**
- * Bitangent vector in view space, computed dynamically from geometry and UV derivatives.
- * Complements the tangentViewFrame for constructing the tangent space basis.
- *
- * Reference: http://www.thetenthplanet.de/archives/1180
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const bitangentViewFrame = /*@__PURE__*/ B.mul( scale ).toVar( 'bitangentViewFrame' );
-
-/**
- * TSL object that represents the tangent attribute of the current rendered object.
- *
- * @tsl
- * @type {Node<vec4>}
- */
-const tangentGeometry = /*@__PURE__*/ attribute( 'tangent', 'vec4' );
-
-/**
- * TSL object that represents the vertex tangent in local space of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const tangentLocal = /*@__PURE__*/ tangentGeometry.xyz.toVar( 'tangentLocal' );
-
-/**
- * TSL object that represents the vertex tangent in view space of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const tangentView = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	let node;
-
-	if ( builder.subBuildFn === 'VERTEX' || builder.geometry.hasAttribute( 'tangent' ) ) {
-
-		node = modelViewMatrix.mul( vec4( tangentLocal, 0 ) ).xyz.toVarying( 'v_tangentView' ).normalize();
-
-	} else {
-
-		node = tangentViewFrame;
-
-	}
-
-	if ( builder.isFlatShading() !== true ) {
-
-		node = negateOnBackSide( node );
-
-	}
-
-	return node;
-
-}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'tangentView' );
-
-/**
- * TSL object that represents the vertex tangent in world space of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const tangentWorld = /*@__PURE__*/ tangentView.transformDirection( cameraWorldMatrix ).toVarying( 'v_tangentWorld' ).normalize().toVar( 'tangentWorld' );
-
-/**
- * Returns the bitangent node and assigns it to a varying if the material is not flat shaded.
- *
- * @tsl
- * @private
- * @param {Node<vec3>} crossNormalTangent - The cross product of the normal and tangent vectors.
- * @param {string} varyingName - The name of the varying to assign the bitangent to.
- * @returns {Node<vec3>} The bitangent node.
- */
-const getBitangent = /*@__PURE__*/ Fn( ( [ crossNormalTangent, varyingName ], builder ) => {
-
-	let bitangent = crossNormalTangent.mul( tangentGeometry.w ).xyz;
-
-	if ( builder.subBuildFn === 'NORMAL' && builder.isFlatShading() !== true ) {
-
-		bitangent = bitangent.toVarying( varyingName );
-
-	}
-
-	return bitangent;
-
-} ).once( [ 'NORMAL' ] );
-
-/**
- * TSL object that represents the bitangent attribute of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const bitangentGeometry = /*@__PURE__*/ getBitangent( normalGeometry.cross( tangentGeometry ), 'v_bitangentGeometry' ).normalize().toVar( 'bitangentGeometry' );
-
-/**
- * TSL object that represents the vertex bitangent in local space of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const bitangentLocal = /*@__PURE__*/ getBitangent( normalLocal.cross( tangentLocal ), 'v_bitangentLocal' ).normalize().toVar( 'bitangentLocal' );
-
-/**
- * TSL object that represents the vertex bitangent in view space of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const bitangentView = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	let node;
-
-	if ( builder.subBuildFn === 'VERTEX' || builder.geometry.hasAttribute( 'tangent' ) ) {
-
-		node = getBitangent( normalView.cross( tangentView ), 'v_bitangentView' ).normalize();
-
-	} else {
-
-		node = bitangentViewFrame;
-
-	}
-
-	if ( builder.isFlatShading() !== true ) {
-
-		node = negateOnBackSide( node );
-
-	}
-
-	return node;
-
-}, 'vec3' ).once( [ 'NORMAL', 'VERTEX' ] ) )().toVar( 'bitangentView' );
-
-/**
- * TSL object that represents the vertex bitangent in world space of the current rendered object.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const bitangentWorld = /*@__PURE__*/ getBitangent( normalWorld.cross( tangentWorld ), 'v_bitangentWorld' ).normalize().toVar( 'bitangentWorld' );
-
-/**
- * TSL object that represents the TBN matrix in view space.
- *
- * @tsl
- * @type {Node<mat3>}
- */
-const TBNViewMatrix = /*@__PURE__*/ mat3( tangentView, bitangentView, normalView ).toVar( 'TBNViewMatrix' );
-
-/**
- * TSL object that represents the parallax direction.
- *
- * @tsl
- * @type {Node<mat3>}
- */
-const parallaxDirection = /*@__PURE__*/ positionViewDirection.mul( TBNViewMatrix )/*.normalize()*/;
-
-/**
- * TSL function for computing parallax uv coordinates.
- *
- * @tsl
- * @function
- * @param {Node<vec2>} uv - A uv node.
- * @param {Node<vec2>} scale - A scale node.
- * @returns {Node<vec2>} Parallax uv coordinates.
- */
-const parallaxUV = ( uv, scale ) => uv.sub( parallaxDirection.mul( scale ) );
-
-/**
- * TSL function for computing bent normals.
- *
- * @tsl
- * @function
- * @returns {Node<vec3>} Bent normals.
- */
-const bentNormalView = /*@__PURE__*/ ( Fn( () => {
-
-	// https://google.github.io/filament/Filament.md.html#lighting/imagebasedlights/anisotropy
-
-	let bentNormal = anisotropyB.cross( positionViewDirection );
-	bentNormal = bentNormal.cross( anisotropyB ).normalize();
-	bentNormal = mix( bentNormal, normalView, anisotropy.mul( roughness.oneMinus() ).oneMinus().pow2().pow2() ).normalize();
-
-	return bentNormal;
-
-} ).once() )();
-
-/**
- * This class can be used for applying normals maps to materials.
- *
- * ```js
- * material.normalNode = normalMap( texture( normalTex ) );
- * ```
- *
- * @augments Node
- */
-class NormalMapNode extends Node {
-
-	static get type() {
-
-		return 'NormalMapNode';
-
-	}
-
-	/**
-	 * Constructs a new normal map node.
-	 *
-	 * @param {Node<vec3>} node - Represents the normal map data.
-	 * @param {?Node<vec2>} [scaleNode=null] - Controls the intensity of the effect.
-	 */
-	constructor( node, scaleNode = null ) {
-
-		super( 'vec3' );
-
-		/**
-		 * Represents the normal map data.
-		 *
-		 * @type {Node<vec3>}
-		 */
-		this.node = node;
-
-		/**
-		 * Controls the intensity of the effect.
-		 *
-		 * @type {?Node<vec2>}
-		 * @default null
-		 */
-		this.scaleNode = scaleNode;
-
-		/**
-		 * The normal map type.
-		 *
-		 * @type {(TangentSpaceNormalMap|ObjectSpaceNormalMap)}
-		 * @default TangentSpaceNormalMap
-		 */
-		this.normalMapType = TangentSpaceNormalMap;
-
-		/**
-		 * Controls how to unpack the sampled normal map values.
-		 *
-		 * @type {string}
-		 * @default NoNormalPacking
-		 */
-		this.unpackNormalMode = NoNormalPacking;
-
-	}
-
-	setup( builder ) {
-
-		const { normalMapType, scaleNode, unpackNormalMode } = this;
-
-		let normalMap = this.node.mul( 2.0 ).sub( 1.0 );
-
-		if ( normalMapType === TangentSpaceNormalMap ) {
-
-			if ( unpackNormalMode === NormalRGPacking ) {
-
-				normalMap = unpackNormal( normalMap.xy );
-
-			} else if ( unpackNormalMode === NormalGAPacking ) {
-
-				normalMap = unpackNormal( normalMap.yw );
-
-			} else if ( unpackNormalMode !== NoNormalPacking ) {
-
-				error( `THREE.NodeMaterial: Unexpected unpack normal mode: ${ unpackNormalMode }` );
-
-			}
-
-		} else {
-
-			if ( unpackNormalMode !== NoNormalPacking ) {
-
-				error( `THREE.NodeMaterial: Normal map type '${ normalMapType }' is not compatible with unpack normal mode '${ unpackNormalMode }'` );
-
-			}
-
-		}
-
-		if ( scaleNode !== null ) {
-
-			let scale = scaleNode;
-
-			if ( builder.isFlatShading() === true ) {
-
-				scale = negateOnBackSide( scale );
-
-			}
-
-			normalMap = vec3( normalMap.xy.mul( scale ), normalMap.z );
-
-		}
-
-		let output = null;
-
-		if ( normalMapType === ObjectSpaceNormalMap ) {
-
-			output = transformNormalToView( normalMap );
-
-		} else if ( normalMapType === TangentSpaceNormalMap ) {
-
-			output = TBNViewMatrix.mul( normalMap ).normalize();
-
-		} else {
-
-			error( `NodeMaterial: Unsupported normal map type: ${ normalMapType }` );
-
-			output = normalView; // Fallback to default normal view
-
-		}
-
-		return output;
-
-	}
-
-}
-
-/**
- * TSL function for creating a normal map node.
- *
- * @tsl
- * @function
- * @param {Node<vec3>} node - Represents the normal map data.
- * @param {?Node<vec2>} [scaleNode=null] - Controls the intensity of the effect.
- * @returns {NormalMapNode}
- */
-const normalMap = /*@__PURE__*/ nodeProxy( NormalMapNode ).setParameterLength( 1, 2 );
-
-// Bump Mapping Unparametrized Surfaces on the GPU by Morten S. Mikkelsen
-// https://mmikk.github.io/papers3d/mm_sfgrad_bump.pdf
-
-const dHdxy_fwd = /*@__PURE__*/ Fn( ( { textureNode, bumpScale } ) => {
-
-	// It's used to preserve the same TextureNode instance
-	const sampleTexture = ( callback ) => textureNode.isolate().context( { getUV: ( texNode ) => callback( texNode.uvNode || uv$1() ), forceUVContext: true } );
-
-	const Hll = float( sampleTexture( ( uvNode ) => uvNode ) );
-
-	return vec2(
-		float( sampleTexture( ( uvNode ) => uvNode.add( uvNode.dFdx() ) ) ).sub( Hll ),
-		float( sampleTexture( ( uvNode ) => uvNode.add( uvNode.dFdy() ) ) ).sub( Hll )
-	).mul( bumpScale );
-
-} );
-
-// Evaluate the derivative of the height w.r.t. screen-space using forward differencing (listing 2)
-
-const perturbNormalArb = /*@__PURE__*/ Fn( ( inputs ) => {
-
-	const { surf_pos, surf_norm, dHdxy } = inputs;
-
-	// normalize is done to ensure that the bump map looks the same regardless of the texture's scale
-	const vSigmaX = surf_pos.dFdx().normalize();
-	const vSigmaY = surf_pos.dFdy().normalize();
-	const vN = surf_norm; // normalized
-
-	const R1 = vSigmaY.cross( vN );
-	const R2 = vN.cross( vSigmaX );
-
-	const fDet = vSigmaX.dot( R1 ).mul( faceDirection );
-
-	const vGrad = fDet.sign().mul( dHdxy.x.mul( R1 ).add( dHdxy.y.mul( R2 ) ) );
-
-	return fDet.abs().mul( surf_norm ).sub( vGrad ).normalize();
-
-} );
-
-/**
- * This class can be used for applying bump maps to materials.
- *
- * ```js
- * material.normalNode = bumpMap( texture( bumpTex ) );
- * ```
- *
- * @augments Node
- */
-class BumpMapNode extends Node {
-
-	static get type() {
-
-		return 'BumpMapNode';
-
-	}
-
-	/**
-	 * Constructs a new bump map node.
-	 *
-	 * @param {Node<float>} textureNode - Represents the bump map data.
-	 * @param {?Node<float>} [scaleNode=null] - Controls the intensity of the bump effect.
-	 * @param {Node<vec3>} [normalNode=normalView] - The view-space normal to perturb.
-	 */
-	constructor( textureNode, scaleNode = null, normalNode = normalView ) {
-
-		super( 'vec3' );
-
-		/**
-		 * Represents the bump map data.
-		 *
-		 * @type {Node<float>}
-		 */
-		this.textureNode = textureNode;
-
-		/**
-		 * Controls the intensity of the bump effect.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.scaleNode = scaleNode;
-
-		/**
-		 * The view-space normal to perturb.
-		 *
-		 * @type {Node<vec3>}
-		 * @default normalView
-		 */
-		this.normalNode = normalNode;
-
-	}
-
-	setup( builder ) {
-
-		// Screen-space derivatives are unreliable on thin lines, so the bump
-		// effect is disabled for wireframe rendering.
-
-		if ( builder.material.wireframe === true ) return this.normalNode;
-
-		const bumpScale = this.scaleNode !== null ? this.scaleNode : 1;
-		const dHdxy = dHdxy_fwd( { textureNode: this.textureNode, bumpScale } );
-
-		return perturbNormalArb( {
-			surf_pos: positionView,
-			surf_norm: this.normalNode,
-			dHdxy
-		} );
-
-	}
-
-}
-
-/**
- * TSL function for creating a bump map node.
- *
- * @tsl
- * @function
- * @param {Node<float>} textureNode - Represents the bump map data.
- * @param {?Node<float>} [scaleNode=null] - Controls the intensity of the bump effect.
- * @param {Node<vec3>} [normalNode=normalView] - The view-space normal to perturb.
- * @returns {BumpMapNode}
- */
-const bumpMap = /*@__PURE__*/ nodeProxy( BumpMapNode ).setParameterLength( 1, 3 );
-
-const _propertyCache = new Map();
-
-/**
- * This class should simplify the node access to material properties.
- * It internal uses reference nodes to make sure  changes to material
- * properties are automatically reflected to predefined TSL objects
- * like e.g. `materialColor`.
- *
- * @augments Node
- */
-class MaterialNode extends Node {
-
-	static get type() {
-
-		return 'MaterialNode';
-
-	}
-
-	/**
-	 * Constructs a new material node.
-	 *
-	 * @param {string} scope - The scope defines what kind of material property is referred by the node.
-	 */
-	constructor( scope ) {
-
-		super();
-
-		/**
-		 * The scope defines what material property is referred by the node.
-		 *
-		 * @type {string}
-		 */
-		this.scope = scope;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	/**
-	 * Returns a cached reference node for the given property and type.
-	 *
-	 * @param {string} property - The name of the material property.
-	 * @param {string} type - The uniform type of the property.
-	 * @return {MaterialReferenceNode} A material reference node representing the property access.
-	 */
-	getCache( property, type ) {
-
-		let node = _propertyCache.get( property );
-
-		if ( node === undefined ) {
-
-			node = materialReference( property, type );
-
-			_propertyCache.set( property, node );
-
-		}
-
-		return node;
-
-	}
-
-	/**
-	 * Returns a float-typed material reference node for the given property name.
-	 *
-	 * @param {string} property - The name of the material property.
-	 * @return {MaterialReferenceNode<float>} A material reference node representing the property access.
-	 */
-	getFloat( property ) {
-
-		return this.getCache( property, 'float' );
-
-	}
-
-	/**
-	 * Returns a color-typed material reference node for the given property name.
-	 *
-	 * @param {string} property - The name of the material property.
-	 * @return {MaterialReferenceNode<color>} A material reference node representing the property access.
-	 */
-	getColor( property ) {
-
-		return this.getCache( property, 'color' );
-
-	}
-
-	/**
-	 * Returns a texture-typed material reference node for the given property name.
-	 *
-	 * @param {string} property - The name of the material property.
-	 * @return {MaterialReferenceNode} A material reference node representing the property access.
-	 */
-	getTexture( property ) {
-
-		return this.getCache( property === 'map' ? 'map' : property + 'Map', 'texture' );
-
-	}
-
-	/**
-	 * The node setup is done depending on the selected scope. Multiple material properties
-	 * might be grouped into a single node composition if they logically belong together.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node} The node representing the selected scope.
-	 */
-	setup( builder ) {
-
-		const material = builder.context.material;
-		const scope = this.scope;
-
-		let node = null;
-
-		if ( scope === MaterialNode.COLOR ) {
-
-			const colorNode = material.color !== undefined ? this.getColor( scope ) : vec3();
-
-			if ( material.map && material.map.isTexture === true ) {
-
-				node = colorNode.mul( this.getTexture( 'map' ) );
-
-			} else {
-
-				node = colorNode;
-
-			}
-
-		} else if ( scope === MaterialNode.OPACITY ) {
-
-			const opacityNode = this.getFloat( scope );
-
-			if ( material.alphaMap && material.alphaMap.isTexture === true ) {
-
-				node = opacityNode.mul( this.getTexture( 'alpha' ) );
-
-			} else {
-
-				node = opacityNode;
-
-			}
-
-		} else if ( scope === MaterialNode.SPECULAR_STRENGTH ) {
-
-			if ( material.specularMap && material.specularMap.isTexture === true ) {
-
-				node = this.getTexture( 'specular' ).r;
-
-			} else {
-
-				node = float( 1 );
-
-			}
-
-		} else if ( scope === MaterialNode.SPECULAR_INTENSITY ) {
-
-			const specularIntensityNode = this.getFloat( scope );
-
-			if ( material.specularIntensityMap && material.specularIntensityMap.isTexture === true ) {
-
-				node = specularIntensityNode.mul( this.getTexture( scope ).a );
-
-			} else {
-
-				node = specularIntensityNode;
-
-			}
-
-		} else if ( scope === MaterialNode.SPECULAR_COLOR ) {
-
-			const specularColorNode = this.getColor( scope );
-
-			if ( material.specularColorMap && material.specularColorMap.isTexture === true ) {
-
-				node = specularColorNode.mul( this.getTexture( scope ).rgb );
-
-			} else {
-
-				node = specularColorNode;
-
-			}
-
-		} else if ( scope === MaterialNode.ROUGHNESS ) { // TODO: cleanup similar branches
-
-			const roughnessNode = this.getFloat( scope );
-
-			if ( material.roughnessMap && material.roughnessMap.isTexture === true ) {
-
-				node = roughnessNode.mul( this.getTexture( scope ).g );
-
-			} else {
-
-				node = roughnessNode;
-
-			}
-
-		} else if ( scope === MaterialNode.DIFFUSE_ROUGHNESS ) {
-
-			const diffuseRoughnessNode = this.getFloat( scope );
-
-			if ( material.diffuseRoughnessMap && material.diffuseRoughnessMap.isTexture === true ) {
-
-				node = diffuseRoughnessNode.mul( this.getTexture( scope ).r );
-
-			} else {
-
-				node = diffuseRoughnessNode;
-
-			}
-
-		} else if ( scope === MaterialNode.METALNESS ) {
-
-			const metalnessNode = this.getFloat( scope );
-
-			if ( material.metalnessMap && material.metalnessMap.isTexture === true ) {
-
-				node = metalnessNode.mul( this.getTexture( scope ).b );
-
-			} else {
-
-				node = metalnessNode;
-
-			}
-
-		} else if ( scope === MaterialNode.EMISSIVE ) {
-
-			const emissiveIntensityNode = this.getFloat( 'emissiveIntensity' );
-			const emissiveNode = this.getColor( scope ).mul( emissiveIntensityNode );
-
-			if ( material.emissiveMap && material.emissiveMap.isTexture === true ) {
-
-				node = emissiveNode.mul( this.getTexture( scope ) );
-
-			} else {
-
-				node = emissiveNode;
-
-			}
-
-		} else if ( scope === MaterialNode.NORMAL ) {
-
-			if ( material.normalMap ) {
-
-				node = normalMap( this.getTexture( 'normal' ), this.getCache( 'normalScale', 'vec2' ) );
-				node.normalMapType = material.normalMapType;
-
-				if ( material.normalMap.format == RGFormat || material.normalMap.format == RED_GREEN_RGTC2_Format || material.normalMap.format == RG11_EAC_Format ) {
-
-					node.unpackNormalMode = NormalRGPacking;
-
-				}
-
-			} else if ( material.bumpMap ) {
-
-				node = bumpMap( this.getTexture( 'bump' ).r, this.getFloat( 'bumpScale' ) );
-
-			} else {
-
-				node = normalView;
-
-			}
-
-		} else if ( scope === MaterialNode.CLEARCOAT ) {
-
-			const clearcoatNode = this.getFloat( scope );
-
-			if ( material.clearcoatMap && material.clearcoatMap.isTexture === true ) {
-
-				node = clearcoatNode.mul( this.getTexture( scope ).r );
-
-			} else {
-
-				node = clearcoatNode;
-
-			}
-
-		} else if ( scope === MaterialNode.CLEARCOAT_ROUGHNESS ) {
-
-			const clearcoatRoughnessNode = this.getFloat( scope );
-
-			if ( material.clearcoatRoughnessMap && material.clearcoatRoughnessMap.isTexture === true ) {
-
-				node = clearcoatRoughnessNode.mul( this.getTexture( scope ).g );
-
-			} else {
-
-				node = clearcoatRoughnessNode;
-
-			}
-
-		} else if ( scope === MaterialNode.CLEARCOAT_NORMAL ) {
-
-			if ( material.clearcoatNormalMap ) {
-
-				node = normalMap( this.getTexture( scope ), this.getCache( scope + 'Scale', 'vec2' ) );
-
-			} else {
-
-				node = normalView;
-
-			}
-
-		} else if ( scope === MaterialNode.SHEEN ) {
-
-			const sheenNode = this.getColor( 'sheenColor' ).mul( this.getFloat( 'sheen' ) ); // Move this mul() to CPU
-
-			if ( material.sheenColorMap && material.sheenColorMap.isTexture === true ) {
-
-				node = sheenNode.mul( this.getTexture( 'sheenColor' ).rgb );
-
-			} else {
-
-				node = sheenNode;
-
-			}
-
-		} else if ( scope === MaterialNode.SHEEN_ROUGHNESS ) {
-
-			const sheenRoughnessNode = this.getFloat( scope );
-
-			if ( material.sheenRoughnessMap && material.sheenRoughnessMap.isTexture === true ) {
-
-				node = sheenRoughnessNode.mul( this.getTexture( scope ).a );
-
-			} else {
-
-				node = sheenRoughnessNode;
-
-			}
-
-			node = node.clamp( 0.0001, 1.0 );
-
-		} else if ( scope === MaterialNode.ANISOTROPY ) {
-
-			if ( material.anisotropyMap && material.anisotropyMap.isTexture === true ) {
-
-				const anisotropyPolar = this.getTexture( scope );
-				const anisotropyMat = mat2( materialAnisotropyVector.x, materialAnisotropyVector.y, materialAnisotropyVector.y.negate(), materialAnisotropyVector.x );
-
-				node = anisotropyMat.mul( anisotropyPolar.rg.mul( 2.0 ).sub( vec2( 1.0 ) ).normalize().mul( anisotropyPolar.b ) );
-
-			} else {
-
-				node = materialAnisotropyVector;
-
-			}
-
-		} else if ( scope === MaterialNode.IRIDESCENCE_THICKNESS ) {
-
-			const iridescenceThicknessMaximum = this.getFloat( 'iridescenceThicknessMaximum' );
-
-			if ( material.iridescenceThicknessMap ) {
-
-				const iridescenceThicknessMinimum = this.getFloat( 'iridescenceThicknessMinimum' );
-
-				node = iridescenceThicknessMaximum.sub( iridescenceThicknessMinimum ).mul( this.getTexture( scope ).g ).add( iridescenceThicknessMinimum );
-
-			} else {
-
-				node = iridescenceThicknessMaximum;
-
-			}
-
-		} else if ( scope === MaterialNode.TRANSMISSION ) {
-
-			const transmissionNode = this.getFloat( scope );
-
-			if ( material.transmissionMap ) {
-
-				node = transmissionNode.mul( this.getTexture( scope ).r );
-
-			} else {
-
-				node = transmissionNode;
-
-			}
-
-		} else if ( scope === MaterialNode.THICKNESS ) {
-
-			const thicknessNode = this.getFloat( scope );
-
-			if ( material.thicknessMap ) {
-
-				node = thicknessNode.mul( this.getTexture( scope ).g );
-
-			} else {
-
-				node = thicknessNode;
-
-			}
-
-		} else if ( scope === MaterialNode.IOR ) {
-
-			node = this.getFloat( scope );
-
-		} else if ( scope === MaterialNode.LIGHT_MAP ) {
-
-			if ( material.lightMap ) {
-
-				node = this.getTexture( scope ).rgb.mul( this.getFloat( 'lightMapIntensity' ) );
-
-			} else {
-
-				node = vec3( 0.0 );
-
-			}
-
-		} else if ( scope === MaterialNode.AO ) {
-
-			if ( material.aoMap ) {
-
-				node = this.getTexture( scope ).r.sub( 1.0 ).mul( this.getFloat( 'aoMapIntensity' ) ).add( 1.0 );
-
-			} else {
-
-				node = float( 1.0 );
-
-			}
-
-		} else if ( scope === MaterialNode.LINE_DASH_OFFSET ) {
-
-			node = ( material.dashOffset ) ? this.getFloat( scope ) : float( 0 );
-
-		} else {
-
-			const outputType = this.getNodeType( builder );
-
-			node = this.getCache( scope, outputType );
-
-		}
-
-		return node;
-
-	}
-
-}
-
-MaterialNode.ALPHA_TEST = 'alphaTest';
-MaterialNode.COLOR = 'color';
-MaterialNode.OPACITY = 'opacity';
-MaterialNode.SHININESS = 'shininess';
-MaterialNode.SPECULAR = 'specular';
-MaterialNode.SPECULAR_STRENGTH = 'specularStrength';
-MaterialNode.SPECULAR_INTENSITY = 'specularIntensity';
-MaterialNode.SPECULAR_COLOR = 'specularColor';
-MaterialNode.REFLECTIVITY = 'reflectivity';
-MaterialNode.ROUGHNESS = 'roughness';
-MaterialNode.DIFFUSE_ROUGHNESS = 'diffuseRoughness';
-MaterialNode.METALNESS = 'metalness';
-MaterialNode.NORMAL = 'normal';
-MaterialNode.CLEARCOAT = 'clearcoat';
-MaterialNode.CLEARCOAT_ROUGHNESS = 'clearcoatRoughness';
-MaterialNode.CLEARCOAT_NORMAL = 'clearcoatNormal';
-MaterialNode.EMISSIVE = 'emissive';
-MaterialNode.ROTATION = 'rotation';
-MaterialNode.SHEEN = 'sheen';
-MaterialNode.SHEEN_ROUGHNESS = 'sheenRoughness';
-MaterialNode.ANISOTROPY = 'anisotropy';
-MaterialNode.IRIDESCENCE = 'iridescence';
-MaterialNode.IRIDESCENCE_IOR = 'iridescenceIOR';
-MaterialNode.IRIDESCENCE_THICKNESS = 'iridescenceThickness';
-MaterialNode.IOR = 'ior';
-MaterialNode.TRANSMISSION = 'transmission';
-MaterialNode.THICKNESS = 'thickness';
-MaterialNode.ATTENUATION_DISTANCE = 'attenuationDistance';
-MaterialNode.ATTENUATION_COLOR = 'attenuationColor';
-MaterialNode.LINE_SCALE = 'scale';
-MaterialNode.LINE_DASH_SIZE = 'dashSize';
-MaterialNode.LINE_GAP_SIZE = 'gapSize';
-MaterialNode.LINE_WIDTH = 'linewidth';
-MaterialNode.LINE_DASH_OFFSET = 'dashOffset';
-MaterialNode.POINT_SIZE = 'size';
-MaterialNode.DISPERSION = 'dispersion';
-MaterialNode.RETROREFLECTIVITY = 'retroreflectivity';
-MaterialNode.LIGHT_MAP = 'light';
-MaterialNode.AO = 'ao';
-
-/**
- * TSL object that represents alpha test of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialAlphaTest = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ALPHA_TEST );
-
-/**
- * TSL object that represents the diffuse color of the current material.
- * The value is composed via `color` * `map`.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialColor = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.COLOR );
-
-/**
- * TSL object that represents the shininess of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialShininess = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SHININESS );
-
-/**
- * TSL object that represents the emissive color of the current material.
- * The value is composed via `emissive` * `emissiveIntensity` * `emissiveMap`.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialEmissive = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.EMISSIVE );
-
-/**
- * TSL object that represents the opacity of the current material.
- * The value is composed via `opacity` * `alphaMap`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialOpacity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.OPACITY );
-
-/**
- * TSL object that represents the specular of the current material.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialSpecular = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR );
-
-/**
- * TSL object that represents the specular intensity of the current material.
- * The value is composed via `specularIntensity` * `specularMap.a`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialSpecularIntensity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR_INTENSITY );
-
-/**
- * TSL object that represents the specular color of the current material.
- * The value is composed via `specularColor` * `specularMap.rgb`.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialSpecularColor = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR_COLOR );
-
-/**
- * TSL object that represents the specular strength of the current material.
- * The value is composed via `specularMap.r`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialSpecularStrength = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SPECULAR_STRENGTH );
-
-/**
- * TSL object that represents the reflectivity of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialReflectivity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.REFLECTIVITY );
-
-/**
- * TSL object that represents the roughness of the current material.
- * The value is composed via `roughness` * `roughnessMap.g`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ROUGHNESS );
-
-/**
- * TSL object that represents the diffuse roughness of the current material.
- * The value is composed via `diffuseRoughness` * `diffuseRoughnessMap.r`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialDiffuseRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.DIFFUSE_ROUGHNESS );
-
-/**
- * TSL object that represents the metalness of the current material.
- * The value is composed via `metalness` * `metalnessMap.b`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialMetalness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.METALNESS );
-
-/**
- * TSL object that represents the normal of the current material.
- * The value will be either `normalMap` * `normalScale`, `bumpMap` * `bumpScale` or `normalView`.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialNormal = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.NORMAL );
-
-/**
- * TSL object that represents the clearcoat of the current material.
- * The value is composed via `clearcoat` * `clearcoatMap.r`
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialClearcoat = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.CLEARCOAT );
-
-/**
- * TSL object that represents the clearcoat roughness of the current material.
- * The value is composed via `clearcoatRoughness` * `clearcoatRoughnessMap.r`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialClearcoatRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.CLEARCOAT_ROUGHNESS );
-
-/**
- * TSL object that represents the clearcoat normal of the current material.
- * The value will be either `clearcoatNormalMap` or `normalView`.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialClearcoatNormal = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.CLEARCOAT_NORMAL );
-
-/**
- * TSL object that represents the rotation of the current sprite material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialRotation = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ROTATION );
-
-/**
- * TSL object that represents the sheen color of the current material.
- * The value is composed via `sheen` * `sheenColor` * `sheenColorMap`.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialSheen = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SHEEN );
-
-/**
- * TSL object that represents the sheen roughness of the current material.
- * The value is composed via `sheenRoughness` * `sheenRoughnessMap.a`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialSheenRoughness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.SHEEN_ROUGHNESS );
-
-/**
- * TSL object that represents the anisotropy of the current material.
- *
- * @tsl
- * @type {Node<vec2>}
- */
-const materialAnisotropy = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ANISOTROPY );
-
-/**
- * TSL object that represents the iridescence of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialIridescence = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IRIDESCENCE );
-
-/**
- * TSL object that represents the iridescence IOR of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialIridescenceIOR = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IRIDESCENCE_IOR );
-
-/**
- * TSL object that represents the iridescence thickness of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialIridescenceThickness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IRIDESCENCE_THICKNESS );
-
-/**
- * TSL object that represents the transmission of the current material.
- * The value is composed via `transmission` * `transmissionMap.r`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialTransmission = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.TRANSMISSION );
-
-/**
- * TSL object that represents the thickness of the current material.
- * The value is composed via `thickness` * `thicknessMap.g`.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialThickness = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.THICKNESS );
-
-/**
- * TSL object that represents the IOR of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialIOR = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.IOR );
-
-/**
- * TSL object that represents the attenuation distance of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialAttenuationDistance = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ATTENUATION_DISTANCE );
-
-/**
- * TSL object that represents the attenuation color of the current material.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialAttenuationColor = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.ATTENUATION_COLOR );
-
-/**
- * TSL object that represents the scale of the current dashed line material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialLineScale = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_SCALE );
-
-/**
- * TSL object that represents the dash size of the current dashed line material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialLineDashSize = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_DASH_SIZE );
-
-/**
- * TSL object that represents the gap size of the current dashed line material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialLineGapSize = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_GAP_SIZE );
-
-/**
- * TSL object that represents the line width of the current line material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialLineWidth = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_WIDTH );
-
-/**
- * TSL object that represents the dash offset of the current line material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialLineDashOffset = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LINE_DASH_OFFSET );
-
-/**
- * TSL object that represents the point size of the current points material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialPointSize = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.POINT_SIZE );
-
-/**
- * TSL object that represents the dispersion of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialDispersion = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.DISPERSION );
-
-/**
- * TSL object that represents the retroreflective strength of the current material.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialRetroreflectivity = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.RETROREFLECTIVITY );
-
-/**
- * TSL object that represents the light map of the current material.
- * The value is composed via `lightMapIntensity` * `lightMap.rgb`.
- *
- * @tsl
- * @type {Node<vec3>}
- */
-const materialLightMap = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.LIGHT_MAP );
-
-/**
- * TSL object that represents the ambient occlusion map of the current material.
- * The value is composed via `aoMap.r` - 1 * `aoMapIntensity` + 1.
- *
- * @tsl
- * @type {Node<float>}
- */
-const materialAO = /*@__PURE__*/ nodeImmutable( MaterialNode, MaterialNode.AO );
-
-/**
- * TSL object that represents the anisotropy vector of the current material.
- *
- * @tsl
- * @type {Node<vec2>}
- */
-const materialAnisotropyVector = /*@__PURE__*/ uniform( new Vector2() ).onReference( function ( frame ) {
-
-	return frame.material;
-
-} ).onRenderUpdate( function ( { material } ) {
-
-	this.value.set( material.anisotropy * Math.cos( material.anisotropyRotation ), material.anisotropy * Math.sin( material.anisotropyRotation ) );
-
-} );
-
-/**
- * TSL object that represents the position in clip space after the model-view-projection transform of the current rendered object.
- *
- * @tsl
- * @type {VaryingNode<vec4>}
- */
-const modelViewProjection = /*@__PURE__*/ ( Fn( ( builder ) => {
-
-	return builder.context.setupModelViewProjection();
-
-}, 'vec4' ).once() )().toVarying( 'v_modelViewProjection' );
-
-/**
- * EventNode is a node that executes a callback during specific update phases.
- *
- * @augments Node
- */
-class EventNode extends Node {
-
-	static get type() {
-
-		return 'EventNode';
-
-	}
-
-	/**
-	 * Creates an EventNode.
-	 *
-	 * @param {string} eventType - The type of event
-	 * @param {Function} callback - The callback to execute on update.
-	 */
-	constructor( eventType, callback ) {
-
-		super( 'void' );
-
-		this.eventType = eventType;
-		this.callback = callback;
-
-		if ( eventType === EventNode.OBJECT ) {
-
-			this.updateType = NodeUpdateType.OBJECT;
-
-		} else if ( eventType === EventNode.MATERIAL ) {
-
-			this.updateType = NodeUpdateType.RENDER;
-
-		} else if ( eventType === EventNode.FRAME ) {
-
-			this.updateType = NodeUpdateType.FRAME;
-
-		} else if ( eventType === EventNode.AFTER_OBJECT ) {
-
-			this.updateAfterType = NodeUpdateType.OBJECT;
-
-		} else if ( eventType === EventNode.BEFORE_OBJECT ) {
-
-			this.updateBeforeType = NodeUpdateType.OBJECT;
-
-		} else if ( eventType === EventNode.BEFORE_MATERIAL ) {
-
-			this.updateBeforeType = NodeUpdateType.RENDER;
-
-		} else if ( eventType === EventNode.BEFORE_FRAME ) {
-
-			this.updateBeforeType = NodeUpdateType.FRAME;
-
-		}
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	setup( builder ) {
-
-		const { eventType, callback } = this;
-
-		if ( eventType === EventNode.BEFORE_RENDER_PIPELINE ) {
-
-			const callbacks = builder.context.onBeforePipelineCallbacks;
-
-			if ( callbacks ) {
-
-				callbacks.push( callback );
-
-			}
-
-		} else if ( eventType === EventNode.AFTER_RENDER_PIPELINE ) {
-
-			const callbacks = builder.context.onAfterPipelineCallbacks;
-
-			if ( callbacks ) {
-
-				callbacks.push( callback );
-
-			}
-
-		}
-
-		return super.setup( builder );
-
-	}
-
-	update( frame ) {
-
-		this.callback( frame );
-
-	}
-
-	updateBefore( frame ) {
-
-		this.callback( frame );
-
-	}
-
-	updateAfter( frame ) {
-
-		this.callback( frame );
-
-	}
-
-}
-
-EventNode.OBJECT = 'object';
-EventNode.MATERIAL = 'material';
-EventNode.FRAME = 'frame';
-EventNode.AFTER_OBJECT = 'afterObject';
-EventNode.BEFORE_OBJECT = 'beforeObject';
-EventNode.BEFORE_MATERIAL = 'beforeMaterial';
-EventNode.BEFORE_FRAME = 'beforeFrame';
-EventNode.BEFORE_RENDER_PIPELINE = 'beforeRenderPipeline';
-EventNode.AFTER_RENDER_PIPELINE = 'afterRenderPipeline';
-
-/**
- * Helper to create an EventNode and add it to the stack.
- *
- * @param {string} type - The event type.
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const createEvent = ( type, callback ) => new EventNode( type, callback ).toStack();
-
-/**
- * Creates an event that triggers a function every time an object (Mesh|Sprite) is rendered.
- *
- * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnObjectUpdate = ( callback ) => createEvent( EventNode.OBJECT, callback );
-
-/**
- * Creates an event that triggers a function when the first object that uses the material is rendered.
- *
- * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnMaterialUpdate = ( callback ) => createEvent( EventNode.MATERIAL, callback );
-
-/**
- * Creates an event that triggers a function every frame.
- *
- * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnFrameUpdate = ( callback ) => createEvent( EventNode.FRAME, callback );
-
-/**
- * Creates an event that triggers a function every time an object (Mesh|Sprite) has been rendered.
- *
- * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnAfterObjectUpdate = ( callback ) => createEvent( EventNode.AFTER_OBJECT, callback );
-
-/**
- * Creates an event that triggers a function before an object (Mesh|Sprite) is updated.
- *
- * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnBeforeObjectUpdate = ( callback ) => createEvent( EventNode.BEFORE_OBJECT, callback );
-
-/**
- * Creates an event that triggers a function before the material is updated.
- *
- * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnBeforeMaterialUpdate = ( callback ) => createEvent( EventNode.BEFORE_MATERIAL, callback );
-
-/**
- * Creates an event that triggers a function before every frame.
- *
- * The event will be bound to the declared TSL function `Fn()`; it must be declared within a `Fn()` or the JS function call must be inherited from one.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnBeforeFrameUpdate = ( callback ) => createEvent( EventNode.BEFORE_FRAME, callback );
-
-/**
- * Creates an event that triggers a function before the render pipeline is rendered.
- *
- * The node must be part of a node chain that is used as the output of a `RenderPipeline`,
- * otherwise the event is ignored.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnBeforeRenderPipeline = ( callback ) => createEvent( EventNode.BEFORE_RENDER_PIPELINE, callback );
-
-/**
- * Creates an event that triggers a function after the render pipeline is rendered.
- *
- * The node must be part of a node chain that is used as the output of a `RenderPipeline`,
- * otherwise the event is ignored.
- *
- * @param {Function} callback - The callback function.
- * @returns {EventNode}
- */
-const OnAfterRenderPipeline = ( callback ) => createEvent( EventNode.AFTER_RENDER_PIPELINE, callback );
-
-/**
- * This class enables element access on instances of {@link StorageBufferNode}.
- * In most cases, it is indirectly used when accessing elements with the
- * {@link StorageBufferNode#element} method.
- *
- * ```js
- * const position = positionStorage.element( instanceIndex );
- * ```
- *
- * @augments ArrayElementNode
- */
-class StorageArrayElementNode extends ArrayElementNode {
-
-	static get type() {
-
-		return 'StorageArrayElementNode';
-
-	}
-
-	/**
-	 * Constructs storage buffer element node.
-	 *
-	 * @param {StorageBufferNode} storageBufferNode - The storage buffer node.
-	 * @param {Node} indexNode - The index node that defines the element access.
-	 */
-	constructor( storageBufferNode, indexNode ) {
-
-		super( storageBufferNode, indexNode );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isStorageArrayElementNode = true;
-
-	}
-
-	/**
-	 * The storage buffer node.
-	 *
-	 * @param {Node} value
-	 * @type {StorageBufferNode}
-	 */
-	set storageBufferNode( value ) {
-
-		this.node = value;
-
-	}
-
-	get storageBufferNode() {
-
-		return this.node;
-
-	}
-
-	getMemberType( builder, name ) {
-
-		const structTypeNode = this.storageBufferNode.structTypeNode;
-
-		if ( structTypeNode ) {
-
-			return structTypeNode.getMemberType( builder, name );
-
-		}
-
-		return 'void';
-
-	}
-
-	setup( builder ) {
-
-		if ( builder.isAvailable( 'storageBuffer' ) === false ) {
-
-			if ( this.node.isPBO === true ) {
-
-				builder.setupPBO( this.node );
-
-			}
-
-		}
-
-		return super.setup( builder );
-
-	}
-
-	generate( builder, output ) {
-
-		let snippet;
-
-		const isAssignContext = builder.isContextAssign();
-
-		//
-
-		if ( builder.isAvailable( 'storageBuffer' ) === false ) {
-
-			if ( this.node.isPBO === true && isAssignContext !== true && ( this.node.value.isInstancedBufferAttribute || builder.shaderStage !== 'compute' ) ) {
-
-				snippet = builder.generatePBO( this );
-
-			} else {
-
-				snippet = this.node.build( builder );
-
-			}
-
-		} else {
-
-			snippet = super.generate( builder );
-
-		}
-
-		if ( isAssignContext !== true ) {
-
-			const type = this.getNodeType( builder );
-
-			snippet = builder.format( snippet, type, output );
-
-		}
-
-		return snippet;
-
-	}
-
-}
-
-/**
- * TSL function for creating a storage element node.
- *
- * @tsl
- * @function
- * @param {StorageBufferNode} storageBufferNode - The storage buffer node.
- * @param {Node} indexNode - The index node that defines the element access.
- * @returns {StorageArrayElementNode}
- */
-const storageElement = /*@__PURE__*/ nodeProxy( StorageArrayElementNode ).setParameterLength( 2 );
-
-/**
- * This node is used in context of compute shaders and allows to define a
- * storage buffer for data. A typical workflow is to create instances of
- * this node with the convenience functions `attributeArray()` or `instancedArray()`,
- * setup up a compute shader that writes into the buffers and then convert
- * the storage buffers to attribute nodes for rendering.
- *
- * ```js
- * const positionBuffer = instancedArray( particleCount, 'vec3' ); // the storage buffer node
- *
- * const computeInit = Fn( () => { // the compute shader
- *
- * 	const position = positionBuffer.element( instanceIndex );
- *
- * 	// compute position data
- *
- * 	position.x = 1;
- * 	position.y = 1;
- * 	position.z = 1;
- *
- * } )().compute( particleCount );
- *
- * const particleMaterial = new THREE.SpriteNodeMaterial();
- * particleMaterial.positionNode = positionBuffer.toAttribute();
- *
- * renderer.computeAsync( computeInit );
- *
- * ```
- *
- * @augments BufferNode
- */
-class StorageBufferNode extends BufferNode {
-
-	static get type() {
-
-		return 'StorageBufferNode';
-
-	}
-
-	/**
-	 * Constructs a new storage buffer node.
-	 *
-	 * @param {StorageBufferAttribute|StorageInstancedBufferAttribute|BufferAttribute} value - The buffer data.
-	 * @param {?(string|Struct)} [bufferType=null] - The buffer type (e.g. `'vec3'`).
-	 * @param {number} [bufferCount=0] - The buffer count.
-	 */
-	constructor( value, bufferType = null, bufferCount = 0 ) {
-
-		let nodeType, structTypeNode = null;
-
-		if ( bufferType && bufferType.isStructTypeNode ) {
-
-			nodeType = 'struct';
-			structTypeNode = bufferType;
-
-			if ( value.isStorageBufferAttribute || value.isStorageInstancedBufferAttribute ) {
-
-				bufferCount = value.count;
-
-			}
-
-		} else if ( bufferType === null && ( value.isStorageBufferAttribute || value.isStorageInstancedBufferAttribute ) ) {
-
-			nodeType = getTypeFromLength( value.itemSize );
-			bufferCount = value.count;
-
-		} else {
-
-			nodeType = bufferType;
-
-		}
-
-		super( value, nodeType, bufferCount );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isStorageBufferNode = true;
-
-
-		/**
-		 * The buffer struct type.
-		 *
-		 * @type {?StructTypeNode}
-		 * @default null
-		 */
-		this.structTypeNode = structTypeNode;
-
-		/**
-		 * The access type of the texture node.
-		 *
-		 * @type {string}
-		 * @default 'readWrite'
-		 */
-		this.access = NodeAccess.READ_WRITE;
-
-		/**
-		 * Whether the node is atomic or not.
-		 *
-		 * @type {boolean}
-		 * @default false
-		 */
-		this.isAtomic = false;
-
-		/**
-		 * Whether the node represents a PBO or not.
-		 * Only relevant for WebGL.
-		 *
-		 * @type {boolean}
-		 * @default false
-		 */
-		this.isPBO = false;
-
-		/**
-		 * A reference to the internal buffer attribute node.
-		 *
-		 * @private
-		 * @type {?BufferAttributeNode}
-		 * @default null
-		 */
-		this._attribute = null;
-
-		/**
-		 * A reference to the internal varying node.
-		 *
-		 * @private
-		 * @type {?VaryingNode}
-		 * @default null
-		 */
-		this._varying = null;
-
-		/**
-		 * `StorageBufferNode` sets this property to `true` by default.
-		 *
-		 * @type {boolean}
-		 * @default true
-		 */
-		this.global = true;
-
-		if ( value.isStorageBufferAttribute !== true && value.isStorageInstancedBufferAttribute !== true ) {
-
-			// TODO: Improve it, possibly adding a new property to the BufferAttribute to identify it as a storage buffer read-only attribute in Renderer
-
-			if ( value.isInstancedBufferAttribute ) value.isStorageInstancedBufferAttribute = true;
-			else value.isStorageBufferAttribute = true;
-
-		}
-
-	}
-
-	/**
-	 * This method is overwritten since the buffer data might be shared
-	 * and thus the hash should be shared as well.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The hash.
-	 */
-	getHash( builder ) {
-
-		let id;
-
-		if ( this.bufferCount === 0 ) {
-
-			let bufferData = builder.globalCache.getData( this.value );
-
-			if ( bufferData === undefined ) {
-
-				bufferData = {
-					node: this
-				};
-
-				builder.globalCache.setData( this.value, bufferData );
-
-			}
-
-			id = bufferData.node.id;
-
-		} else {
-
-			id = this.id;
-
-		}
-
-		return String( id );
-
-	}
-
-	/**
-	 * Overwrites the default implementation to return a fixed value `'indirectStorageBuffer'` or `'storageBuffer'`.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The input type.
-	 */
-	getInputType( /*builder*/ ) {
-
-		return this.value.isIndirectStorageBufferAttribute ? 'indirectStorageBuffer' : 'storageBuffer';
-
-	}
-
-	/**
-	 * Enables element access with the given index node.
-	 *
-	 * @param {IndexNode} indexNode - The index node.
-	 * @return {StorageArrayElementNode} A node representing the element access.
-	 */
-	element( indexNode ) {
-
-		return storageElement( this, indexNode );
-
-	}
-
-	/**
-	 * Defines whether this node is a PBO or not. Only relevant for WebGL.
-	 *
-	 * @param {boolean} value - The value so set.
-	 * @return {StorageBufferNode} A reference to this node.
-	 */
-	setPBO( value ) {
-
-		this.isPBO = value;
-
-		return this;
-
-	}
-
-	/**
-	 * Returns the `isPBO` value.
-	 *
-	 * @return {boolean} Whether the node represents a PBO or not.
-	 */
-	getPBO() {
-
-		return this.isPBO;
-
-	}
-
-	/**
-	 * Defines the node access.
-	 *
-	 * @param {string} value - The node access.
-	 * @return {StorageBufferNode} A reference to this node.
-	 */
-	setAccess( value ) {
-
-		this.access = value;
-
-		return this;
-
-	}
-
-	/**
-	 * Convenience method for configuring a read-only node access.
-	 *
-	 * @return {StorageBufferNode} A reference to this node.
-	 */
-	toReadOnly() {
-
-		return this.setAccess( NodeAccess.READ_ONLY );
-
-	}
-
-	/**
-	 * Defines whether the node is atomic or not.
-	 *
-	 * @param {boolean} value - The atomic flag.
-	 * @return {StorageBufferNode} A reference to this node.
-	 */
-	setAtomic( value ) {
-
-		this.isAtomic = value;
-
-		return this;
-
-	}
-
-	/**
-	 * Convenience method for making this node atomic.
-	 *
-	 * @return {StorageBufferNode} A reference to this node.
-	 */
-	toAtomic() {
-
-		return this.setAtomic( true );
-
-	}
-
-	/**
-	 * Returns attribute data for this storage buffer node.
-	 *
-	 * @return {{attribute: BufferAttributeNode, varying: VaryingNode}} The attribute data.
-	 */
-	getAttributeData() {
-
-		if ( this._attribute === null ) {
-
-			this._attribute = bufferAttribute( this.value );
-			this._varying = varying( this._attribute );
-
-		}
-
-		return {
-			attribute: this._attribute,
-			varying: this._varying
-		};
-
-	}
-
-	/**
-	 * This method is overwritten since the node type is inferred from the struct type if present.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The node type.
-	 */
-	generateNodeType( builder ) {
-
-		if ( this.structTypeNode !== null ) {
-
-			return this.structTypeNode.getNodeType( builder );
-
-		}
-
-		return super.generateNodeType( builder );
-
-	}
-
-	/**
-	 * Returns the type of a member of the struct.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {string} name - The name of the member.
-	 * @return {string} The type of the member.
-	 */
-	getMemberType( builder, name ) {
-
-		if ( this.structTypeNode !== null ) {
-
-			return this.structTypeNode.getMemberType( builder, name );
-
-		}
-
-		return 'void';
-
-	}
-
-	/**
-	 * Generates the code snippet of the storage buffer node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The generated code snippet.
-	 */
-	generate( builder ) {
-
-		if ( this.structTypeNode !== null ) this.structTypeNode.build( builder );
-
-		if ( builder.isAvailable( 'storageBuffer' ) || builder.isAvailable( 'indirectStorageBuffer' ) ) {
-
-			return super.generate( builder );
-
-		}
-
-		const { attribute, varying } = this.getAttributeData();
-
-		const output = varying.build( builder );
-
-		builder.registerTransform( output, attribute );
-
-		return builder.format( output, attribute.getNodeType( builder ), this.getNodeType( builder ) );
-
-	}
-
-}
-
-/**
- * TSL function for creating a storage buffer node.
- *
- * @tsl
- * @function
- * @param {StorageBufferAttribute|StorageInstancedBufferAttribute|BufferAttribute} value - The buffer data.
- * @param {?(string|Struct)} [type=null] - The buffer type (e.g. `'vec3'`).
- * @param {number} [count=0] - The buffer count.
- * @returns {StorageBufferNode}
- */
-const storage = ( value, type = null, count = 0 ) => new StorageBufferNode( value, type, count );
-
-const _columns = /*@__PURE__*/ new WeakMap();
-
-/**
- * Returns a column of the given buffer attribute, like a column of the matrices of an
- * instanced mesh. The column views the attribute itself, so both share the same GPU buffer.
- *
- * @private
- * @param {BufferAttribute} attribute - The buffer attribute.
- * @param {string} type - The type of the column (e.g. `'vec4'`).
- * @param {number} offset - The offset of the column.
- * @return {InterleavedBufferAttribute} The column.
- */
-function getAttributeColumn( attribute, type, offset ) {
-
-	let columns = _columns.get( attribute );
-
-	if ( columns === undefined ) {
-
-		columns = [];
-
-		_columns.set( attribute, columns );
-
-	}
-
-	return columns[ offset ] || ( columns[ offset ] = new InterleavedBufferAttribute( attribute, getLengthFromType( type ), offset ) );
-
-}
-
-/**
- * A buffer attribute node that binds the attribute of the rendered object
- * referred to by a {@link ReferenceAttributeNode}.
- *
- * @private
- * @augments BufferAttributeNode
- */
-class ReferenceBufferAttributeNode extends BufferAttributeNode {
-
-	static get type() {
-
-		return 'ReferenceBufferAttributeNode';
-
-	}
-
-	/**
-	 * Constructs a new reference buffer attribute node.
-	 *
-	 * @param {ReferenceAttributeNode} referenceNode - The reference attribute node.
-	 * @param {string} bufferType - The buffer type (e.g. `'vec3'`).
-	 * @param {number} [bufferStride=0] - The buffer stride, when binding a column of the attribute.
-	 * @param {number} [bufferOffset=0] - The buffer offset, when binding a column of the attribute.
-	 */
-	constructor( referenceNode, bufferType, bufferStride = 0, bufferOffset = 0 ) {
-
-		super( null, bufferType, bufferStride, bufferOffset );
-
-		/**
-		 * The reference attribute node.
-		 *
-		 * @type {ReferenceAttributeNode}
-		 */
-		this.referenceNode = referenceNode;
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isReferenceBufferAttributeNode = true;
-
-	}
-
-	/**
-	 * Overwritten since the node has no attribute data of its own.
-	 *
-	 * @return {string} The hash.
-	 */
-	getHash() {
-
-		return String( this.id );
-
-	}
-
-	/**
-	 * Returns the referred attribute of the given object, or its column.
-	 *
-	 * @param {Object3D} object - The rendered object.
-	 * @return {?(BufferAttribute|InterleavedBufferAttribute)} The buffer attribute.
-	 */
-	getObjectAttribute( object ) {
-
-		const attribute = this.referenceNode.getAttribute( object );
-
-		if ( ! attribute || this.bufferStride === 0 ) return attribute;
-
-		return getAttributeColumn( attribute, this.bufferType, this.bufferOffset );
-
-	}
-
-	/**
-	 * The attribute of the object the program is built for defines the layout.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	setup( builder ) {
-
-		this.attribute = this.getObjectAttribute( builder.object );
-
-	}
-
-}
-
-/**
- * This node binds a buffer attribute that is a property of the rendered object, like the
- * matrices of an instanced mesh. Unlike {@link BufferAttributeNode}, the attribute isn't part
- * of the program: each object binds its own attribute, so objects can share a program.
- * ```js
- * const matrix = referenceAttribute( 'instanceMatrix', 'mat4' );
- * const color = referenceAttribute( 'instanceColor' );
- * ```
- * Matrices are bound as columns. Storage buffer attributes are bound as storage buffers.
- *
- * @augments Node
- */
-class ReferenceAttributeNode extends Node {
-
-	static get type() {
-
-		return 'ReferenceAttributeNode';
-
-	}
-
-	/**
-	 * Constructs a new reference attribute node.
-	 *
-	 * @param {string} property - The name of the property the node refers to.
-	 * @param {?string} [nodeType=null] - The node type. Inferred from the attribute if not set.
-	 * @param {?Object} [object=null] - The object the property belongs to. The rendered object if not set.
-	 */
-	constructor( property, nodeType = null, object = null ) {
-
-		super( nodeType );
-
-		/**
-		 * The name of the property the node refers to.
-		 *
-		 * @type {string}
-		 */
-		this.property = property;
-
-		/**
-		 * The property name might have dots so nested properties can be referred.
-		 * The hierarchy of the names is stored inside this array.
-		 *
-		 * @type {Array<string>}
-		 */
-		this.properties = property.split( '.' );
-
-		/**
-		 * The object the property belongs to. If `null`, the rendered object is used.
-		 *
-		 * @type {?Object}
-		 * @default null
-		 */
-		this.object = object;
-
-	}
-
-	/**
-	 * Returns the value of the referred property of the given object.
-	 *
-	 * @param {Object} object - The object.
-	 * @return {?(BufferAttribute|InterleavedBufferAttribute)} The value of the referred property.
-	 */
-	getValueFromReference( object ) {
-
-		let value = object;
-
-		for ( const property of this.properties ) {
-
-			if ( value === undefined || value === null ) break;
-
-			value = value[ property ];
-
-		}
-
-		return value;
-
-	}
-
-	/**
-	 * Returns the attribute the node binds when rendering the given object.
-	 *
-	 * @param {Object3D} object - The rendered object.
-	 * @return {?(BufferAttribute|InterleavedBufferAttribute)} The buffer attribute.
-	 */
-	getAttribute( object ) {
-
-		return this.getValueFromReference( this.object !== null ? this.object : object );
-
-	}
-
-	/**
-	 * Returns the node type, inferred from the attribute if not set.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The node type.
-	 */
-	generateNodeType( builder ) {
-
-		if ( this.nodeType !== null ) return this.nodeType;
-
-		const attribute = this.getAttribute( builder.object );
-
-		return attribute ? builder.getTypeFromAttribute( attribute ) : 'float';
-
-	}
-
-	/**
-	 * Sets up the attribute nodes.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node} The attribute node.
-	 */
-	setup( builder ) {
-
-		const attribute = this.getAttribute( builder.object );
-
-		if ( ! attribute ) throw new Error( `THREE.ReferenceAttributeNode: Attribute "${ this.property }" not found.` );
-
-		const type = this.getNodeType( builder );
-
-		if ( attribute.isStorageBufferAttribute === true || attribute.isStorageInstancedBufferAttribute === true ) {
-
-			const index = attribute.isStorageInstancedBufferAttribute === true ? instanceIndex : vertexIndex;
-
-			return storage( attribute, type, Math.max( attribute.count, 1 ) ).onObjectUpdate( ( { object } ) => this.getAttribute( object ) ).element( index );
-
-		}
-
-		if ( type === 'mat4' ) {
-
-			return mat4( ...[ 0, 4, 8, 12 ].map( ( offset ) => new ReferenceBufferAttributeNode( this, 'vec4', 16, offset ) ) );
-
-		} else if ( type === 'mat3' ) {
-
-			return mat3( ...[ 0, 3, 6 ].map( ( offset ) => new ReferenceBufferAttributeNode( this, 'vec3', 9, offset ) ) );
-
-		}
-
-		return new ReferenceBufferAttributeNode( this, type );
-
-	}
-
-}
-
-/**
- * TSL function for creating a reference attribute node.
- *
- * @tsl
- * @function
- * @param {string} name - The name of the property the node refers to.
- * @param {?string} [type=null] - The node type. Inferred from the attribute if not set.
- * @param {?Object} [object=null] - The object the property belongs to. The rendered object if not set.
- * @returns {ReferenceAttributeNode}
- */
-const referenceAttribute = ( name, type = null, object = null ) => new ReferenceAttributeNode( name, type, object );
-
-const _previousInstanceMatrices = /*@__PURE__*/ new WeakMap();
-const _previousMatrices = /*@__PURE__*/ new WeakMap();
-
-// The default limit of vertex buffers in WebGPU.
-const MAX_VERTEX_BUFFERS = 8;
-
-/**
- * Creates the appropriate node for instanced matrix transformations.
- * Depending on buffer limits and storage capability, returns either a storage, buffer, or instanced interleaved attribute node.
- *
- * @param {NodeBuilder} builder - The current node builder.
- * @param {InstancedBufferAttribute|StorageInstancedBufferAttribute} instanceMatrix - The matrix buffer attribute.
- * @returns {Node} The matrix node.
- */
-function createInstanceMatrixNode( builder, instanceMatrix ) {
-
-	let instanceMatrixNode;
-	const matrixCount = Math.max( instanceMatrix.count, 1 );
-
-	const isStorageMatrix = instanceMatrix.isStorageInstancedBufferAttribute === true;
-
-	if ( isStorageMatrix ) {
-
-		instanceMatrixNode = storage( instanceMatrix, 'mat4', matrixCount ).element( instanceIndex );
-
-	} else {
-
-		const uniformBufferSize = matrixCount * 16 * 4;
-
-		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
-
-			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
-
-		} else {
-
-			// the columns view the matrices, so both share the same GPU buffer which is freed via instanceMatrix.dispose()
-
-			const bufferFn = instanceMatrix.usage === DynamicDrawUsage ? instancedDynamicBufferAttribute : instancedBufferAttribute;
-
-			const instanceBuffers = [ 0, 4, 8, 12 ].map( ( offset ) => bufferFn( new InterleavedBufferAttribute( instanceMatrix, 4, offset ) ) );
-
-			instanceMatrixNode = mat4( ...instanceBuffers );
-
-		}
-
-	}
-
-	return instanceMatrixNode;
-
-}
-
-/**
- * Retrieves or initializes the previous frame instance matrix node for motion vectors.
- * Uses a WeakMap to cache previous frame instance matrices and their TSL nodes.
- *
- * @param {InstancedMesh} instancedMesh - The instanced mesh object.
- * @param {InstancedBufferAttribute|StorageInstancedBufferAttribute} instanceMatrix - The current matrix buffer attribute.
- * @param {NodeBuilder} builder - The current node builder.
- * @returns {Node} The previous frame instance matrix node.
- */
-function getPreviousInstance( instancedMesh, instanceMatrix, builder ) {
-
-	let data = _previousInstanceMatrices.get( instancedMesh );
-
-	if ( data === undefined ) {
-
-		const previousInstanceMatrix = instanceMatrix.clone();
-
-		data = {
-			previousInstanceMatrix,
-			node: createInstanceMatrixNode( builder, previousInstanceMatrix )
-		};
-
-		_previousInstanceMatrices.set( instancedMesh, data );
-
-		instancedMesh.addEventListener( 'dispose', onPreviousInstanceDispose );
-
-	}
-
-	return data.node;
-
-}
-
-/**
- * Frees the GPU buffer of the previous frame instance matrices when the mesh is disposed.
- * The matrices are kept since the node refers to them, rendering the mesh again re-creates the buffer.
- *
- * @param {Object} event - The dispose event.
- */
-function onPreviousInstanceDispose( { target: object } ) {
-
-	_previousInstanceMatrices.get( object ).previousInstanceMatrix.dispose();
-
-}
-
-/**
- * Returns the instance matrices of the previous frame of the given mesh, for motion vectors.
- *
- * @param {InstancedMesh} object - The instanced mesh.
- * @returns {InstancedBufferAttribute} The matrices of the previous frame.
- */
-function getPreviousMatrix$1( object ) {
-
-	const matrices = object.instanceMatrix;
-
-	let previous = _previousMatrices.get( object );
-
-	if ( previous === undefined || previous.count !== matrices.count ) {
-
-		if ( previous === undefined ) {
-
-			object.addEventListener( 'dispose', onPreviousMatrixDispose );
-
-		} else {
-
-			previous.dispose();
-
-		}
-
-		previous = matrices.clone();
-
-		_previousMatrices.set( object, previous );
-
-	}
-
-	return previous;
-
-}
-
-/**
- * Disposes the instance matrices of the previous frame when the mesh is disposed.
- *
- * @param {Object} event - The dispose event.
- */
-function onPreviousMatrixDispose( { target: object } ) {
-
-	object.removeEventListener( 'dispose', onPreviousMatrixDispose );
-
-	_previousMatrices.get( object ).dispose();
-	_previousMatrices.delete( object );
-
-}
-
-/**
- * Binds the instance matrices of the previous frame of the rendered mesh.
- *
- * @private
- * @augments ReferenceAttributeNode
- */
-class PreviousInstanceMatrixNode extends ReferenceAttributeNode {
-
-	static get type() {
-
-		return 'PreviousInstanceMatrixNode';
-
-	}
-
-	/**
-	 * Constructs a new previous instance matrix node.
-	 */
-	constructor() {
-
-		super( 'previousInstanceMatrix', 'mat4' );
-
-	}
-
-	/**
-	 * Returns the instance matrices of the previous frame of the given mesh.
-	 *
-	 * @param {InstancedMesh} object - The instanced mesh.
-	 * @return {InstancedBufferAttribute} The matrices of the previous frame.
-	 */
-	getValueFromReference( object ) {
-
-		return getPreviousMatrix$1( object );
-
-	}
-
-}
-
-/**
- * Returns `true` if the build can bind the instance data of the rendered mesh, so it can
- * be shared between instanced meshes.
- *
- * @param {InstancedMesh} object - The instanced mesh.
- * @param {NodeBuilder} builder - The current node builder.
- * @returns {boolean} Whether the build can bind the instance data of the rendered mesh.
- */
-function canReferenceInstanceData( object, builder ) {
-
-	// only render objects bind attributes per object
-
-	if ( builder.renderer.isRenderer !== true ) return false;
-
-	// the instance data take up to three vertex buffers next to the ones of the geometry
-
-	const instanceBuffers = 1 + ( object.instanceColor !== null ? 1 : 0 ) + ( builder.needsPreviousData() ? 1 : 0 );
-
-	return Object.keys( object.geometry.attributes ).length + instanceBuffers <= MAX_VERTEX_BUFFERS;
-
-}
-
-/**
- * Transforms the position, the previous position and the normal with the given instance matrices.
- *
- * @param {NodeBuilder} builder - The current node builder.
- * @param {Node<mat4>} instanceMatrixNode - The instance matrix.
- * @param {?Node<mat4>} previousMatrixNode - The instance matrix of the previous frame, if motion vectors are needed.
- */
-function transformInstance( builder, instanceMatrixNode, previousMatrixNode ) {
-
-	// POSITION
-
-	const instancePosition = instanceMatrixNode.mul( positionLocal ).xyz;
-	positionLocal.assign( instancePosition );
-
-	if ( previousMatrixNode !== null ) {
-
-		positionPrevious.assign( previousMatrixNode.mul( positionPrevious ).xyz );
-
-	}
-
-	// NORMAL
-
-	if ( builder.hasGeometryAttribute( 'normal' ) ) {
-
-		const instanceNormal = transformNormal( normalLocal, instanceMatrixNode );
-		normalLocal.assign( instanceNormal );
-
-	}
-
-}
-
-/**
- * TSL object representing a varying property for the instanced color vector.
- *
- * @type {VaryingNode<vec3>}
- */
-const instanceColor = /*@__PURE__*/ varyingProperty( 'vec3', 'vInstanceColor' );
-
-/**
- * TSL function representing the standard instancing vertex shader setup.
- * Transforms positionLocal and normalLocal, and assigns varying color in-place.
- *
- * @tsl
- * @function
- * @param {InstancedBufferAttribute|StorageInstancedBufferAttribute} matrices - The instanced transformation matrices.
- * @param {?InstancedBufferAttribute|StorageInstancedBufferAttribute} [colors=null] - The optional instanced colors.
- */
-const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
-
-	const isStorageColor = colors && colors.isStorageInstancedBufferAttribute === true;
-
-	const instanceMatrixNode = createInstanceMatrixNode( builder, matrices );
-
-	let instanceColorNode = null;
-
-	if ( colors ) {
-
-		if ( isStorageColor ) {
-
-			instanceColorNode = storage( colors, 'vec3', Math.max( colors.count, 1 ) ).element( instanceIndex );
-
-		} else {
-
-			// bound directly, so the GPU buffer is freed via instanceColor.dispose()
-
-			const bufferFn = colors.usage === DynamicDrawUsage ? instancedDynamicBufferAttribute : instancedBufferAttribute;
-
-			instanceColorNode = vec3( bufferFn( colors ) );
-
-		}
-
-	}
-
-	let previousInstanceMatrixNode = null;
-
-	if ( builder.needsPreviousData() ) {
-
-		const instancedMesh = builder.object;
-
-		OnAfterObjectUpdate( ( { object } ) => {
-
-			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
-
-			previousInstanceMatrix.array.set( matrices.array );
-			previousInstanceMatrix.version = matrices.version;
-
-		} );
-
-		previousInstanceMatrixNode = getPreviousInstance( instancedMesh, matrices, builder );
-
-	}
-
-	transformInstance( builder, instanceMatrixNode, previousInstanceMatrixNode );
-
-	// COLOR
-
-	if ( instanceColorNode !== null ) {
-
-		instanceColor.assign( instanceColorNode );
-
-	}
-
-}, 'void' );
-
-/**
- * TSL wrapper for applying instanced mesh rendering setup.
- *
- * The instance data of the rendered mesh are bound per object via {@link ReferenceAttributeNode},
- * so instanced meshes share builds.
- *
- * @tsl
- * @function
- * @param {InstancedMesh} instancedMesh - The instanced mesh.
- */
-const instancedMesh = /*@__PURE__*/ Fn( ( [ instancedMesh ], builder ) => {
-
-	if ( canReferenceInstanceData( instancedMesh, builder ) ) {
-
-		let previousInstanceMatrixNode = null;
-
-		if ( builder.needsPreviousData() ) {
-
-			OnAfterObjectUpdate( ( { object } ) => {
-
-				const previous = getPreviousMatrix$1( object );
-
-				previous.array.set( object.instanceMatrix.array );
-				previous.version = object.instanceMatrix.version;
-
-			} );
-
-			previousInstanceMatrixNode = new PreviousInstanceMatrixNode();
-
-		}
-
-		transformInstance( builder, referenceAttribute( 'instanceMatrix', 'mat4' ), previousInstanceMatrixNode );
-
-		if ( instancedMesh.instanceColor !== null ) {
-
-			instanceColor.assign( referenceAttribute( 'instanceColor', 'vec3' ) );
-
-		}
-
-	} else {
-
-		builder.objectSpecific = true;
-
-		instance( instancedMesh.instanceMatrix, instancedMesh.instanceColor );
-
-	}
-
-}, 'void' );
-
-/**
- * TSL function that retrieves the batching color for a given instance ID from a colors texture.
- *
- * @param {Node<texture>} colorsTexture - The colors texture.
- * @param {Node<int>} id - The instance or batch ID.
- * @returns {Node<vec4>} The retrieved color.
- */
-const getBatchingColor = /*@__PURE__*/ Fn( ( [ colorsTexture, id ] ) => {
-
-	const size = int( textureSize( textureLoad( colorsTexture ), 0 ).x ).toConst();
-	const j = int( id );
-	const x = j.mod( size ).toConst();
-	const y = j.div( size ).toConst();
-	return textureLoad( colorsTexture, ivec2( x, y ) );
-
-} );
-
-/**
- * TSL function that retrieves the indirect index for a given batch ID.
- *
- * @param {BatchedMesh} batchMesh - The batched mesh.
- * @param {Node<int>} id - The draw or instance ID.
- * @returns {Node<uint>} The indirect index.
- */
-const getIndirectIndex = /*@__PURE__*/ Fn( ( [ indirectTexture, id ] ) => {
-
-	const size = int( textureSize( textureLoad( indirectTexture ), 0 ).x ).toConst();
-	const x = int( id ).mod( size ).toConst();
-	const y = int( id ).div( size ).toConst();
-	return textureLoad( indirectTexture, ivec2( x, y ) ).x;
-
-} );
-
-/**
- * Creates the node that reads a batching matrix from the given matrices texture.
- *
- * @param {Texture} matricesTexture - The matrices texture.
- * @param {Node<uint>} id - The indirect instance ID.
- * @returns {Node<mat4>} The matrix node.
- */
-function createBatchingMatrixNode( matricesTexture, id ) {
-
-	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
-	const j = float( id ).mul( 4 ).toInt().toConst();
-
-	const x = j.mod( size ).toConst();
-	const y = j.div( size ).toConst();
-
-	return mat4(
-		textureLoad( matricesTexture, ivec2( x, y ) ),
-		textureLoad( matricesTexture, ivec2( x.add( 1 ), y ) ),
-		textureLoad( matricesTexture, ivec2( x.add( 2 ), y ) ),
-		textureLoad( matricesTexture, ivec2( x.add( 3 ), y ) )
-	);
-
-}
-
-/**
- * Returns the batching matrices texture of the previous frame for motion vectors.
- * It is created on first use and again after the batched mesh released it.
- *
- * @param {BatchedMesh} batchMesh - The batched mesh.
- * @returns {DataTexture} The previous frame matrices texture.
- */
-function getPreviousMatricesTexture( batchMesh ) {
-
-	let previousMatricesTexture = batchMesh._previousMatricesTexture;
-
-	if ( previousMatricesTexture === null ) {
-
-		const { image, format, type, version } = batchMesh._matricesTexture;
-
-		previousMatricesTexture = new DataTexture( image.data.slice(), image.width, image.height, format, type );
-		previousMatricesTexture.version = version;
-
-		batchMesh._previousMatricesTexture = previousMatricesTexture;
-
-	}
-
-	return previousMatricesTexture;
-
-}
-
-/**
- * TSL object representing a varying property for the batching color vector.
- *
- * @type {VaryingNode<vec4>}
- */
-const batchColor = /*@__PURE__*/ varyingProperty( 'vec4', 'vBatchColor' );
-
-/**
- * TSL object representing a varying property for the batch indirect index (instance ID).
- *
- * @type {VaryingNode<uint>}
- */
-const batchIndirectIndex = /*@__PURE__*/ varyingProperty( 'uint', 'vBatchIndirectId' );
-
-/**
- * TSL function representing the vertex shader batching setup.
- * Applies the batch transformation matrix to positionLocal, normalLocal, and tangentLocal.
- * Also assigns the batch color if a color texture is present.
- *
- * @tsl
- * @function
- * @param {BatchedMesh} batchMesh - The batched mesh.
- */
-const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
-
-	const batchingIdNode = builder.getDrawIndex() === null ? instanceIndex : drawIndex;
-
-	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
-
-	batchIndirectIndex.assign( indirectId );
-
-	const batchingMatrix = createBatchingMatrixNode( batchMesh._matricesTexture, indirectId );
-
-	const colorsTexture = batchMesh._colorsTexture;
-
-	if ( colorsTexture !== null ) {
-
-		const color = getBatchingColor( colorsTexture, indirectId );
-
-		batchColor.assign( color );
-
-	}
-
-	const bm = mat3( batchingMatrix );
-
-	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
-
-	if ( builder.needsPreviousData() ) {
-
-		OnAfterObjectUpdate( ( { object } ) => {
-
-			const previousMatricesTexture = getPreviousMatricesTexture( object );
-			const matricesTexture = object._matricesTexture;
-
-			if ( previousMatricesTexture.version !== matricesTexture.version ) {
-
-				previousMatricesTexture.image.data.set( matricesTexture.image.data );
-				previousMatricesTexture.version = matricesTexture.version;
-
-			}
-
-		} );
-
-		const previousBatchingMatrixNode = createBatchingMatrixNode( getPreviousMatricesTexture( batchMesh ), indirectId );
-		positionPrevious.assign( previousBatchingMatrixNode.mul( positionPrevious ).xyz );
-
-	}
-
-	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
-
-	const batchingNormal = bm.mul( transformedNormal ).xyz;
-
-	normalLocal.assign( batchingNormal );
-
-	if ( builder.hasGeometryAttribute( 'tangent' ) ) {
-
-		tangentLocal.mulAssign( bm );
-
-	}
-
-	const drawFormat = builder.renderer.backend.isWebGPUBackend === true ? 'merged' : 'multiDraw';
-
-	OnObjectUpdate( ( { object, camera, material } ) => {
-
-		object._updateDrawParameters( camera, object.geometry, material, drawFormat );
-
-	} );
-
-}, 'void' );
-
-const _skeletonsUpdated = /*@__PURE__*/ new WeakMap();
-
-/**
- * Creates an accessor for bone matrices stored in a bone texture.
- *
- * @param {TextureNode} boneTexture - The bone texture node.
- * @returns {Object} An accessor with the same `element()` interface as a buffer node.
- */
-function getBoneTextureMatrices( boneTexture ) {
-
-	return {
-		element: ( i ) => {
-
-			const size = int( textureSize( boneTexture ).x ).toConst();
-			const j = int( i ).mul( 4 ).toConst();
-			const y = j.div( size ).toConst();
-			const x = j.sub( y.mul( size ) ).toConst();
-
-			return mat4(
-				boneTexture.load( ivec2( x, y ) ),
-				boneTexture.load( ivec2( x.add( 1 ), y ) ),
-				boneTexture.load( ivec2( x.add( 2 ), y ) ),
-				boneTexture.load( ivec2( x.add( 3 ), y ) )
-			);
-
-		}
-	};
-
-}
-
-/**
- * Creates the bone matrices node. Skeletons that fit within the uniform buffer limit
- * use a uniform buffer, larger skeletons fall back to a bone texture.
- *
- * @param {NodeBuilder} builder - The current node builder.
- * @param {Skeleton} skeleton - The skeleton.
- * @returns {Object} The bone matrices node.
- */
-function getBoneMatricesNode( builder, skeleton ) {
-
-	let node;
-
-	const uniformBufferSize = skeleton.bones.length * 16 * 4;
-
-	if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
-
-		node = referenceBuffer( 'skeleton.boneMatrices', 'mat4', skeleton.bones.length );
-
-	} else {
-
-		if ( skeleton.boneTexture === null ) skeleton.computeBoneTexture();
-
-		const boneTexture = texture( skeleton.boneTexture );
-
-		OnObjectUpdate( ( { object } ) => {
-
-			const skeleton = object.skeleton;
-
-			if ( skeleton.boneTexture === null ) skeleton.computeBoneTexture();
-
-			boneTexture.value = skeleton.boneTexture;
-
-		} );
-
-		node = getBoneTextureMatrices( boneTexture );
-
-	}
-
-	return node;
-
-}
-
-/**
- * Computes the skinned position by applying bone matrices based on weights.
- *
- * @param {Node} boneMatrices - The bone matrices buffer or storage node.
- * @param {Node<vec3>} position - The vertex position to transform.
- * @param {Node<mat4>} bindMatrix - The bind matrix node.
- * @param {Node<mat4>} bindMatrixInverse - The inverse bind matrix node.
- * @param {Node<uvec4>} skinIndex - The skin index attribute.
- * @param {Node<vec4>} skinWeight - The skin weight attribute.
- * @returns {Node<vec3>} The skinned position.
- */
-function getSkinnedPosition( boneMatrices, position, bindMatrix, bindMatrixInverse, skinIndex, skinWeight ) {
-
-	const boneMatX = boneMatrices.element( skinIndex.x );
-	const boneMatY = boneMatrices.element( skinIndex.y );
-	const boneMatZ = boneMatrices.element( skinIndex.z );
-	const boneMatW = boneMatrices.element( skinIndex.w );
-
-	// POSITION
-
-	const skinVertex = bindMatrix.mul( position );
-
-	const skinned = add(
-		boneMatX.mul( skinWeight.x ).mul( skinVertex ),
-		boneMatY.mul( skinWeight.y ).mul( skinVertex ),
-		boneMatZ.mul( skinWeight.z ).mul( skinVertex ),
-		boneMatW.mul( skinWeight.w ).mul( skinVertex )
-	);
-
-	return bindMatrixInverse.mul( skinned ).xyz;
-
-}
-
-/**
- * Computes the skinned normal and tangent vectors by applying bone matrices based on weights.
- *
- * @param {Node} boneMatrices - The bone matrices buffer or storage node.
- * @param {Node<vec3>} normal - The normal vector in local space.
- * @param {Node<vec3>} tangent - The tangent vector in local space.
- * @param {Node<mat4>} bindMatrix - The bind matrix node.
- * @param {Node<mat4>} bindMatrixInverse - The inverse bind matrix node.
- * @param {Node<uvec4>} skinIndex - The skin index attribute.
- * @param {Node<vec4>} skinWeight - The skin weight attribute.
- * @returns {{skinNormal: Node<vec3>, skinTangent: Node<vec3>}} The skinned normal and tangent.
- */
-function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix, bindMatrixInverse, skinIndex, skinWeight ) {
-
-	const boneMatX = boneMatrices.element( skinIndex.x );
-	const boneMatY = boneMatrices.element( skinIndex.y );
-	const boneMatZ = boneMatrices.element( skinIndex.z );
-	const boneMatW = boneMatrices.element( skinIndex.w );
-
-	// NORMAL and TANGENT
-
-	let skinMatrix = add(
-		skinWeight.x.mul( boneMatX ),
-		skinWeight.y.mul( boneMatY ),
-		skinWeight.z.mul( boneMatZ ),
-		skinWeight.w.mul( boneMatW )
-	);
-
-	skinMatrix = bindMatrixInverse.mul( skinMatrix ).mul( bindMatrix );
-
-	const skinMatrix3 = mat3( skinMatrix );
-
-	const skinNormal = skinMatrix3.mul( normal );
-	const skinTangent = skinMatrix3.mul( tangent );
-
-	return { skinNormal, skinTangent };
-
-}
-
-/**
- * Creates the bone data of the previous frame if they do not exist yet.
- *
- * @param {Skeleton} skeleton - The skeleton.
- */
-function setupPreviousBoneData( skeleton ) {
-
-	if ( skeleton.previousBoneMatrices === null ) {
-
-		skeleton.update();
-
-		skeleton.previousBoneMatrices = new Float32Array( skeleton.boneMatrices );
-
-	}
-
-	if ( skeleton.previousBoneTexture === null && skeleton.boneTexture !== null ) {
-
-		const { width, height } = skeleton.boneTexture.image;
-
-		skeleton.previousBoneTexture = new DataTexture( skeleton.previousBoneMatrices, width, height, RGBAFormat, FloatType );
-		skeleton.previousBoneTexture.needsUpdate = true;
-
-	}
-
-}
-
-/**
- * Creates the bone matrices node of the previous frame.
- *
- * @param {NodeBuilder} builder - The current node builder.
- * @param {Skeleton} skeleton - The skeleton.
- * @returns {Object} The previous bone matrices node.
- */
-function getPreviousBoneMatricesNode( builder, skeleton ) {
-
-	let node;
-
-	setupPreviousBoneData( skeleton );
-
-	const uniformBufferSize = skeleton.bones.length * 16 * 4;
-
-	if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
-
-		node = referenceBuffer( 'skeleton.previousBoneMatrices', 'mat4', skeleton.bones.length );
-
-	} else {
-
-		const previousBoneTexture = texture( skeleton.previousBoneTexture );
-
-		OnObjectUpdate( ( { object } ) => {
-
-			previousBoneTexture.value = object.skeleton.previousBoneTexture;
-
-		} );
-
-		node = getBoneTextureMatrices( previousBoneTexture );
-
-	}
-
-	return node;
-
-}
-
-/**
- * TSL function representing the standard skeletal animation vertex shader setup.
- * Transforms positionLocal, normalLocal, and tangentLocal in-place.
- *
- * @tsl
- * @function
- * @param {SkinnedMesh} skinnedMesh - The skinned mesh.
- */
-const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
-
-	const skinIndexNode = attribute( 'skinIndex', 'uvec4' );
-	const skinWeightNode = attribute( 'skinWeight', 'vec4' );
-	const bindMatrixNode = reference( 'bindMatrix', 'mat4' );
-	const bindMatrixInverseNode = reference( 'bindMatrixInverse', 'mat4' );
-	const boneMatricesNode = getBoneMatricesNode( builder, skinnedMesh.skeleton );
-	const needsPreviousData = builder.needsPreviousData();
-
-	OnObjectUpdate( ( { object, frameId } ) => {
-
-		const skeleton = object.skeleton;
-
-		if ( needsPreviousData ) setupPreviousBoneData( skeleton );
-
-		if ( _skeletonsUpdated.get( skeleton ) !== frameId ) {
-
-			_skeletonsUpdated.set( skeleton, frameId );
-
-			if ( skeleton.previousBoneMatrices !== null ) {
-
-				skeleton.previousBoneMatrices.set( skeleton.boneMatrices );
-
-				if ( skeleton.previousBoneTexture !== null ) {
-
-					skeleton.previousBoneTexture.needsUpdate = true;
-
-				}
-
-			}
-
-			skeleton.update();
-
-		}
-
-	} );
-
-	if ( needsPreviousData ) {
-
-		const previousBoneMatricesNode = getPreviousBoneMatricesNode( builder, skinnedMesh.skeleton );
-		const previousSkinnedPosition = getSkinnedPosition( previousBoneMatricesNode, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-
-		positionPrevious.assign( previousSkinnedPosition );
-
-	}
-
-	const skinPosition = getSkinnedPosition( boneMatricesNode, positionLocal, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-	positionLocal.assign( skinPosition );
-
-	if ( builder.hasGeometryAttribute( 'normal' ) ) {
-
-		const { skinNormal, skinTangent } = getSkinnedNormalAndTangent( boneMatricesNode, normalLocal, tangentLocal, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-
-		normalLocal.assign( skinNormal );
-
-		if ( builder.hasGeometryAttribute( 'tangent' ) ) {
-
-			tangentLocal.assign( skinTangent );
-
-		}
-
-	}
-
-}, 'void' );
-
-/**
- * TSL function that computes skeletal animation for custom compute passes.
- *
- * @tsl
- * @function
- * @param {SkinnedMesh} skinnedMesh - The skinned mesh.
- * @param {Node<vec3>} [toPosition=null] - The target position node to assign.
- * @returns {Node<vec3>} The computed skinned position node.
- */
-const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ], builder ) => {
-
-	const positionNode = storage( new InstancedBufferAttribute( skinnedMesh.geometry.getAttribute( 'position' ).array, 3 ), 'vec3' ).setPBO( true ).toReadOnly().element( instanceIndex ).toVar();
-	const skinIndexNode = storage( new InstancedBufferAttribute( new Uint32Array( skinnedMesh.geometry.getAttribute( 'skinIndex' ).array ), 4 ), 'uvec4' ).setPBO( true ).toReadOnly().element( instanceIndex ).toVar();
-	const skinWeightNode = storage( new InstancedBufferAttribute( skinnedMesh.geometry.getAttribute( 'skinWeight' ).array, 4 ), 'vec4' ).setPBO( true ).toReadOnly().element( instanceIndex ).toVar();
-	const bindMatrixNode = uniform( skinnedMesh.bindMatrix, 'mat4' );
-	const bindMatrixInverseNode = uniform( skinnedMesh.bindMatrixInverse, 'mat4' );
-	const boneMatricesNode = buffer( skinnedMesh.skeleton.boneMatrices, 'mat4', skinnedMesh.skeleton.bones.length );
-
-	const skeleton = skinnedMesh.skeleton;
-
-	OnObjectUpdate( ( { frameId } ) => {
-
-		if ( _skeletonsUpdated.get( skeleton ) !== frameId ) {
-
-			_skeletonsUpdated.set( skeleton, frameId );
-
-			if ( skeleton.previousBoneMatrices !== null ) {
-
-				skeleton.previousBoneMatrices.set( skeleton.boneMatrices );
-
-				if ( skeleton.previousBoneTexture !== null ) {
-
-					skeleton.previousBoneTexture.needsUpdate = true;
-
-				}
-
-			}
-
-			skeleton.update();
-
-		}
-
-	} );
-
-	if ( builder.needsPreviousData() ) {
-
-		setupPreviousBoneData( skeleton );
-
-		const previousBoneMatricesNode = buffer( skeleton.previousBoneMatrices, 'mat4', skeleton.bones.length );
-		const previousSkinnedPosition = getSkinnedPosition( previousBoneMatricesNode, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-
-		positionPrevious.assign( previousSkinnedPosition );
-
-	}
-
-	const skinPosition = getSkinnedPosition( boneMatricesNode, positionNode, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-
-	if ( toPosition !== null ) {
-
-		toPosition.assign( skinPosition );
-
-	}
-
-	if ( builder.hasGeometryAttribute( 'normal' ) ) {
-
-		const { skinNormal, skinTangent } = getSkinnedNormalAndTangent( boneMatricesNode, normalLocal, tangentLocal, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
-
-		normalLocal.assign( skinNormal );
-
-		if ( builder.hasGeometryAttribute( 'tangent' ) ) {
-
-			tangentLocal.assign( skinTangent );
-
-		}
-
-	}
-
-	return skinPosition;
-
-} );
-
-const _morphTextures = /*@__PURE__*/ new WeakMap();
-const _morphVec4 = /*@__PURE__*/ new Vector4();
-const _morphInfluencesData = /*@__PURE__*/ new WeakMap();
-
-/**
- * TSL function that retrieves and scales the morphed attribute (position, normal or color) texel value.
- *
- * @param {Object} params - The parameter object.
- * @param {Node<texture>} params.bufferMap - The morph target data array texture.
- * @param {Node<float>} params.influence - The target's animation influence weight.
- * @param {number} params.stride - The vertex data stride (e.g. 1 or 2).
- * @param {Node<int>} params.width - The texture width limit.
- * @param {Node<int>} params.depth - The target layer index (morph target index).
- * @param {Node<int>} params.offset - The texture offset (e.g. 0 for position, 1 for normal, 2 for color).
- * @returns {Node<vec4>} The scaled morph target value.
- */
-const getMorph = /*@__PURE__*/ Fn( ( { bufferMap, influence, stride, width, depth, offset } ) => {
-
-	const texelIndex = int( vertexIndex ).mul( stride ).add( offset );
-
-	const y = texelIndex.div( width );
-	const x = texelIndex.sub( y.mul( width ) );
-
-	const bufferAttrib = textureLoad( bufferMap, ivec2( x, y ) ).depth( depth );
-
-	return bufferAttrib.mul( influence );
-
-} );
-
-/**
- * The morph target base influence. It is `1` when `morphTargetsRelative`
- * is `true`, otherwise `1 - sum( influences )`.
- *
- * @type {UniformNode<float>}
- */
-const morphBase = /*@__PURE__*/ uniform( 1 ).onObjectUpdate( ( { object } ) => {
-
-	return object.geometry.morphTargetsRelative ? 1 : 1 - object.morphTargetInfluences.reduce( ( a, b ) => a + b, 0 );
-
-} );
-
-/**
- * The sum of the weighted color morph targets.
- *
- * @type {PropertyNode<vec4>}
- */
-const morphColorSum = /*@__PURE__*/ property( 'vec4', 'morphColorSum' );
-
-/**
- * TSL function that applies the color morph targets to the given color.
- * The result is computed in the vertex stage.
- *
- * @tsl
- * @function
- * @param {Node<vec4>} color - The color to morph. Must be available in the vertex stage.
- * @returns {Node<vec4>} The morphed color.
- */
-const morphColor = /*@__PURE__*/ Fn( ( [ color ], { geometry } ) => {
-
-	if ( geometry.morphAttributes.color[ 0 ].itemSize === 4 ) {
-
-		return varying( color.mul( morphBase ).add( morphColorSum ) );
-
-	}
-
-	return varying( vec4( color.rgb.mul( morphBase ).add( morphColorSum.rgb ), color.a ) );
-
-} );
-
-/**
- * Resolves or creates a compiled DataArrayTexture containing encoded vertex morph targets data for WebGL2/WebGPU.
- *
- * @param {BufferGeometry} geometry - The geometry to parse.
- * @returns {Object} The resolved morph targets texture data mapping entry.
- */
-function getEntry( geometry ) {
-
-	const hasMorphPosition = geometry.morphAttributes.position !== undefined;
-	const hasMorphNormals = geometry.morphAttributes.normal !== undefined;
-	const hasMorphColors = geometry.morphAttributes.color !== undefined;
-
-	// instead of using attributes, the WebGL 2 code path encodes morph targets
-	// into an array of data textures. Each layer represents a single morph target.
-
-	const morphAttribute = geometry.morphAttributes.position || geometry.morphAttributes.normal || geometry.morphAttributes.color;
-	const morphTargetsCount = ( morphAttribute !== undefined ) ? morphAttribute.length : 0;
-
-	let entry = _morphTextures.get( geometry );
-
-	if ( entry === undefined || entry.count !== morphTargetsCount ) {
-
-		if ( entry !== undefined ) entry.texture.dispose();
-
-		const morphTargets = geometry.morphAttributes.position || [];
-		const morphNormals = geometry.morphAttributes.normal || [];
-		const morphColors = geometry.morphAttributes.color || [];
-
-		let vertexDataCount = 0;
-
-		if ( hasMorphPosition === true ) vertexDataCount = 1;
-		if ( hasMorphNormals === true ) vertexDataCount = 2;
-		if ( hasMorphColors === true ) vertexDataCount = 3;
-
-		let width = geometry.attributes.position.count * vertexDataCount;
-		let height = 1;
-
-		const maxTextureSize = 4096; // @TODO: Use 'capabilities.maxTextureSize'
-
-		if ( width > maxTextureSize ) {
-
-			height = Math.ceil( width / maxTextureSize );
-			width = maxTextureSize;
-
-		}
-
-		const buffer = new Float32Array( width * height * 4 * morphTargetsCount );
-
-		const bufferTexture = new DataArrayTexture( buffer, width, height, morphTargetsCount );
-		bufferTexture.type = FloatType;
-		bufferTexture.needsUpdate = true;
-
-		// fill buffer
-
-		const vertexDataStride = vertexDataCount * 4;
-
-		for ( let i = 0; i < morphTargetsCount; i ++ ) {
-
-			const morphTarget = morphTargets[ i ];
-			const morphNormal = morphNormals[ i ];
-			const morphColor = morphColors[ i ];
-
-			const offset = width * height * 4 * i;
-
-			for ( let j = 0; j < morphTarget.count; j ++ ) {
-
-				const stride = j * vertexDataStride;
-
-				if ( hasMorphPosition === true ) {
-
-					_morphVec4.fromBufferAttribute( morphTarget, j );
-
-					buffer[ offset + stride + 0 ] = _morphVec4.x;
-					buffer[ offset + stride + 1 ] = _morphVec4.y;
-					buffer[ offset + stride + 2 ] = _morphVec4.z;
-					buffer[ offset + stride + 3 ] = 0;
-
-				}
-
-				if ( hasMorphNormals === true ) {
-
-					_morphVec4.fromBufferAttribute( morphNormal, j );
-
-					buffer[ offset + stride + 4 ] = _morphVec4.x;
-					buffer[ offset + stride + 5 ] = _morphVec4.y;
-					buffer[ offset + stride + 6 ] = _morphVec4.z;
-					buffer[ offset + stride + 7 ] = 0;
-
-				}
-
-				if ( hasMorphColors === true ) {
-
-					_morphVec4.fromBufferAttribute( morphColor, j );
-
-					buffer[ offset + stride + 8 ] = _morphVec4.x;
-					buffer[ offset + stride + 9 ] = _morphVec4.y;
-					buffer[ offset + stride + 10 ] = _morphVec4.z;
-					buffer[ offset + stride + 11 ] = ( morphColor.itemSize === 4 ) ? _morphVec4.w : 1;
-
-				}
-
-			}
-
-		}
-
-		entry = {
-			count: morphTargetsCount,
-			texture: bufferTexture,
-			stride: vertexDataCount,
-			size: new Vector2( width, height )
-		};
-
-		_morphTextures.set( geometry, entry );
-
-		function disposeTexture() {
-
-			bufferTexture.dispose();
-
-			_morphTextures.delete( geometry );
-
-			geometry.removeEventListener( 'dispose', disposeTexture );
-
-		}
-
-		geometry.addEventListener( 'dispose', disposeTexture );
-
-	}
-
-	return entry;
-
-}
-
-/**
- * TSL function representing the vertex shader morph targets blend setup.
- * Dynamically computes morph targets weights and updates positionLocal and normalLocal in-place.
- *
- * @tsl
- * @function
- * @param {Mesh} mesh - The mesh.
- */
-const morphReference = /*@__PURE__*/ Fn( ( [ mesh ], builder ) => {
-
-	const { geometry } = mesh;
-
-	const hasMorphPosition = geometry.morphAttributes.position !== undefined;
-	const hasMorphNormals = geometry.hasAttribute( 'normal' ) && geometry.morphAttributes.normal !== undefined;
-	const hasMorphColors = builder.material.vertexColors === true && geometry.morphAttributes.color !== undefined;
-	const hasColorAlpha = hasMorphColors === true && geometry.morphAttributes.color[ 0 ].itemSize === 4;
-
-	const morphAttribute = geometry.morphAttributes.position || geometry.morphAttributes.normal || geometry.morphAttributes.color;
-	const morphTargetsCount = ( morphAttribute !== undefined ) ? morphAttribute.length : 0;
-
-	if ( morphTargetsCount === 0 ) return;
-
-	if ( mesh.morphTexture ) builder.objectSpecific = true;
-
-	// Init
-
-	let morphInfluenceData = _morphInfluencesData.get( mesh );
-
-	if ( morphInfluenceData === undefined || morphInfluenceData.count !== morphTargetsCount ) {
-
-		morphInfluenceData = {
-			influences: mesh.morphTargetInfluences ? uniformArray( mesh.morphTargetInfluences, 'float' ) : null,
-			count: morphTargetsCount
-		};
-
-		_morphInfluencesData.set( mesh, morphInfluenceData );
-
-	}
-
-	const { influences } = morphInfluenceData;
-
-	// Shader
-
-	const { texture: bufferMap, stride, size } = getEntry( geometry );
-
-	if ( hasMorphPosition === true ) positionLocal.mulAssign( morphBase );
-	if ( hasMorphNormals === true ) normalLocal.mulAssign( morphBase );
-	if ( hasMorphColors === true ) morphColorSum.assign( 0 );
-
-	const width = int( size.width );
-
-	Loop( morphTargetsCount, ( { i } ) => {
-
-		const influence = float( 0 ).toVar();
-
-		if ( mesh.count > 1 && ( mesh.morphTexture !== null && mesh.morphTexture !== undefined ) ) {
-
-			influence.assign( textureLoad( mesh.morphTexture, ivec2( int( i ).add( 1 ), int( instanceIndex ) ) ).r );
-
-		} else {
-
-			influence.assign( influences.element( i ).toVar() );
-
-		}
-
-		If( influence.notEqual( 0 ), () => {
-
-			if ( hasMorphPosition === true ) {
-
-				positionLocal.addAssign( getMorph( {
-					bufferMap,
-					influence,
-					stride,
-					width,
-					depth: i,
-					offset: int( 0 )
-				} ).xyz );
-
-			}
-
-			if ( hasMorphNormals === true ) {
-
-				normalLocal.addAssign( getMorph( {
-					bufferMap,
-					influence,
-					stride,
-					width,
-					depth: i,
-					offset: int( 1 )
-				} ).xyz );
-
-			}
-
-			if ( hasMorphColors === true ) {
-
-				const morph = getMorph( {
-					bufferMap,
-					influence,
-					stride,
-					width,
-					depth: i,
-					offset: int( 2 )
-				} );
-
-				if ( hasColorAlpha === true ) {
-
-					morphColorSum.addAssign( morph );
-
-				} else {
-
-					morphColorSum.rgb.addAssign( morph.rgb );
-
-				}
-
-			}
-
-		} );
-
-	} );
-
-	// Update
-
-	OnObjectUpdate( ( { object } ) => {
-
-		const { influences } = morphInfluenceData;
-
-		if ( influences ) {
-
-			influences.array = object.morphTargetInfluences;
-			influences.update();
-
-		}
-
-	} );
-
-}, 'void' );
-
-/**
- * Base class for lighting nodes.
- *
- * @augments Node
- */
-class LightingNode extends Node {
-
-	static get type() {
-
-		return 'LightingNode';
-
-	}
-
-	/**
-	 * Constructs a new lighting node.
-	 */
-	constructor() {
-
-		super( 'vec3' );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isLightingNode = true;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-}
-
-/**
- * A generic class that can be used by nodes which contribute
- * ambient occlusion to the scene. E.g. an ambient occlusion map
- * node can be used as input for this module. Used in {@link NodeMaterial}.
- *
- * @augments LightingNode
- */
-class AONode extends LightingNode {
-
-	static get type() {
-
-		return 'AONode';
-
-	}
-
-	/**
-	 * Constructs a new AO node.
-	 *
-	 * @param {?Node<float>} [aoNode=null] - The ambient occlusion node.
-	 */
-	constructor( aoNode = null ) {
-
-		super();
-
-		/**
-		 * The ambient occlusion node.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.aoNode = aoNode;
-
-	}
-
-	setup( builder ) {
-
-		builder.context.ambientOcclusion.mulAssign( this.aoNode );
-
-	}
-
-}
-
-/**
- * `LightingContextNode` represents an extension of the {@link ContextNode} module
- * by adding lighting specific context data. It represents the runtime context of
- * {@link LightsNode}.
- *
- * @augments ContextNode
- */
-class LightingContextNode extends ContextNode {
-
-	static get type() {
-
-		return 'LightingContextNode';
-
-	}
-
-	/**
-	 * Constructs a new lighting context node.
-	 *
-	 * @param {LightsNode} lightsNode - The lights node.
-	 * @param {?LightingModel} [lightingModel=null] - The current lighting model.
-	 * @param {?Array<LightingNode>} materialLightings - The material lightings nodes.
-	 * @param {?Node<vec3>} [backdropNode=null] - A backdrop node.
-	 * @param {?Node<float>} [backdropAlphaNode=null] - A backdrop alpha node.
-	 */
-	constructor( lightsNode, lightingModel = null, materialLightings = [], backdropNode = null, backdropAlphaNode = null ) {
-
-		super( lightsNode );
-
-		/**
-		 * The current lighting model.
-		 *
-		 * @type {?LightingModel}
-		 * @default null
-		 */
-		this.lightingModel = lightingModel;
-
-		/**
-		 * @type {?Array<LightingNode>}
-		 * @default []
-		 */
-		this.materialLightings = materialLightings;
-
-		/**
-		 * A backdrop node.
-		 *
-		 * @type {?Node<vec3>}
-		 * @default null
-		 */
-		this.backdropNode = backdropNode;
-
-		/**
-		 * A backdrop alpha node.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.backdropAlphaNode = backdropAlphaNode;
-
-		this._value = null;
-
-	}
-
-	/**
-	 * Returns a lighting context object.
-	 *
-	 * @return {{
-	 * radiance: Node<vec3>,
-	 * irradiance: Node<vec3>,
-	 * iblIrradiance: Node<vec3>,
-	 * ambientOcclusion: Node<float>,
-	 * reflectedLight: {directDiffuse: Node<vec3>, directSpecular: Node<vec3>, indirectDiffuse: Node<vec3>, indirectSpecular: Node<vec3>},
-	 * backdrop: Node<vec3>,
-	 * backdropAlpha: Node<float>
-	 * }} The lighting context object.
-	 */
-	getContext() {
-
-		const { materialLightings, backdropNode, backdropAlphaNode } = this;
-
-		const directDiffuse = vec3().toVar( 'directDiffuse' ),
-			directSpecular = vec3().toVar( 'directSpecular' ),
-			indirectDiffuse = vec3().toVar( 'indirectDiffuse' ),
-			indirectSpecular = vec3().toVar( 'indirectSpecular' );
-
-		const reflectedLight = {
-			directDiffuse,
-			directSpecular,
-			indirectDiffuse,
-			indirectSpecular
-		};
-
-		const context = {
-			radiance: vec3().toVar( 'radiance' ),
-			irradiance: vec3().toVar( 'irradiance' ),
-			iblIrradiance: vec3().toVar( 'iblIrradiance' ),
-			ambientOcclusion: float( 1 ).toVar( 'ambientOcclusion' ),
-			reflectedLight,
-			materialLightings,
-			backdrop: backdropNode,
-			backdropAlpha: backdropAlphaNode
-		};
-
-		return context;
-
-	}
-
-	setup( builder ) {
-
-		this.value = this._value || ( this._value = this.getContext() );
-		this.value.lightingModel = this.lightingModel || builder.context.lightingModel;
-
-		return super.setup( builder );
-
-	}
-
-}
-
-const lightingContext = /*@__PURE__*/ nodeProxy( LightingContextNode );
-
-/**
- * A generic class that can be used by nodes which contribute
- * irradiance to the scene. E.g. a light map node can be used
- * as input for this module. Used in {@link NodeMaterial}.
- *
- * @augments LightingNode
- */
-class IrradianceNode extends LightingNode {
-
-	static get type() {
-
-		return 'IrradianceNode';
-
-	}
-
-	/**
-	 * Constructs a new irradiance node.
-	 *
-	 * @param {Node<vec3>} node - A node contributing irradiance.
-	 */
-	constructor( node ) {
-
-		super();
-
-		/**
-		 * A node contributing irradiance.
-		 *
-		 * @type {Node<vec3>}
-		 */
-		this.node = node;
-
-	}
-
-	setup( builder ) {
-
-		builder.context.irradiance.addAssign( this.node );
-
-	}
-
-}
-
-/**
- * This node is used in {@link NodeMaterial} to setup the clipping
- * which can happen hardware-accelerated (if supported) and optionally
- * use alpha-to-coverage for anti-aliasing clipped edges.
- *
- * @augments Node
- */
-class ClippingNode extends Node {
-
-	static get type() {
-
-		return 'ClippingNode';
-
-	}
-
-	/**
-	 * Constructs a new clipping node.
-	 *
-	 * @param {('default'|'hardware'|'alphaToCoverage')} [scope='default'] - The node's scope. Similar to other nodes,
-	 * the selected scope influences the behavior of the node and what type of code is generated.
-	 */
-	constructor( scope = ClippingNode.DEFAULT ) {
-
-		super();
-
-		/**
-		 * The node's scope. Similar to other nodes, the selected scope influences
-		 * the behavior of the node and what type of code is generated.
-		 *
-		 * @type {('default'|'hardware'|'alphaToCoverage')}
-		 */
-		this.scope = scope;
-
-	}
-
-	isCacheable( /*builder*/ ) {
-
-		return false;
-
-	}
-
-	/**
-	 * Setups the node depending on the selected scope.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node} The result node.
-	 */
-	setup( builder ) {
-
-		super.setup( builder );
-
-		const clippingContext = builder.clippingContext;
-		const { intersectionPlanes, unionPlanes } = clippingContext;
-
-		this.hardwareClipping = builder.hardwareClipping;
-
-		// with ArrayCamera, clipping planes are in world space
-
-		this.position = builder.camera.isArrayCamera === true ? cameraWorldMatrix.mul( vec4( positionView, 1 ) ).xyz : positionView;
-
-		if ( this.scope === ClippingNode.ALPHA_TO_COVERAGE ) {
-
-			return this.setupAlphaToCoverage( intersectionPlanes, unionPlanes );
-
-		} else if ( this.scope === ClippingNode.HARDWARE ) {
-
-			return this.setupHardwareClipping( unionPlanes, builder );
-
-		} else {
-
-			return this.setupDefault( intersectionPlanes, unionPlanes );
-
-		}
-
-	}
-
-	/**
-	 * Setups alpha to coverage.
-	 *
-	 * @param {Array<Vector4>} intersectionPlanes - The intersection planes.
-	 * @param {Array<Vector4>} unionPlanes - The union planes.
-	 * @return {Node} The result node.
-	 */
-	setupAlphaToCoverage( intersectionPlanes, unionPlanes ) {
-
-		return Fn( () => {
-
-			const distanceToPlane = float().toVar( 'distanceToPlane' );
-			const distanceGradient = float().toVar( 'distanceToGradient' );
-
-			const clipOpacity = float( 1 ).toVar( 'clipOpacity' );
-
-			const numUnionPlanes = unionPlanes.length;
-
-			if ( this.hardwareClipping === false && numUnionPlanes > 0 ) {
-
-				const clippingPlanes = uniformArray( unionPlanes ).setGroup( renderGroup );
-
-				Loop( numUnionPlanes, ( { i } ) => {
-
-					const plane = clippingPlanes.element( i );
-
-					distanceToPlane.assign( this.position.dot( plane.xyz ).negate().add( plane.w ) );
-					distanceGradient.assign( distanceToPlane.fwidth().div( 2.0 ) );
-
-					clipOpacity.mulAssign( smoothstep( distanceGradient.negate(), distanceGradient, distanceToPlane ) );
-
-				} );
-
-			}
-
-			const numIntersectionPlanes = intersectionPlanes.length;
-
-			if ( numIntersectionPlanes > 0 ) {
-
-				const clippingPlanes = uniformArray( intersectionPlanes ).setGroup( renderGroup );
-				const intersectionClipOpacity = float( 1 ).toVar( 'intersectionClipOpacity' );
-
-				Loop( numIntersectionPlanes, ( { i } ) => {
-
-					const plane = clippingPlanes.element( i );
-
-					distanceToPlane.assign( this.position.dot( plane.xyz ).negate().add( plane.w ) );
-					distanceGradient.assign( distanceToPlane.fwidth().div( 2.0 ) );
-
-					intersectionClipOpacity.mulAssign( smoothstep( distanceGradient.negate(), distanceGradient, distanceToPlane ).oneMinus() );
-
-				} );
-
-				clipOpacity.mulAssign( intersectionClipOpacity.oneMinus() );
-
-			}
-
-			diffuseColor.a.mulAssign( clipOpacity );
-
-			diffuseColor.a.equal( 0.0 ).discard();
-
-		} )();
-
-	}
-
-	/**
-	 * Setups the default clipping.
-	 *
-	 * @param {Array<Vector4>} intersectionPlanes - The intersection planes.
-	 * @param {Array<Vector4>} unionPlanes - The union planes.
-	 * @return {Node} The result node.
-	 */
-	setupDefault( intersectionPlanes, unionPlanes ) {
-
-		return Fn( () => {
-
-			const numUnionPlanes = unionPlanes.length;
-
-			if ( this.hardwareClipping === false && numUnionPlanes > 0 ) {
-
-				const clippingPlanes = uniformArray( unionPlanes ).setGroup( renderGroup );
-
-				Loop( numUnionPlanes, ( { i } ) => {
-
-					const plane = clippingPlanes.element( i );
-					this.position.dot( plane.xyz ).greaterThan( plane.w ).discard();
-
-				} );
-
-			}
-
-			const numIntersectionPlanes = intersectionPlanes.length;
-
-			if ( numIntersectionPlanes > 0 ) {
-
-				const clippingPlanes = uniformArray( intersectionPlanes ).setGroup( renderGroup );
-				const clipped = bool( true ).toVar( 'clipped' );
-
-				Loop( numIntersectionPlanes, ( { i } ) => {
-
-					const plane = clippingPlanes.element( i );
-					clipped.assign( this.position.dot( plane.xyz ).greaterThan( plane.w ).and( clipped ) );
-
-				} );
-
-				clipped.discard();
-
-			}
-
-		} )();
-
-	}
-
-	/**
-	 * Setups hardware clipping.
-	 *
-	 * @param {Array<Vector4>} unionPlanes - The union planes.
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node} The result node.
-	 */
-	setupHardwareClipping( unionPlanes, builder ) {
-
-		const numUnionPlanes = unionPlanes.length;
-
-		builder.enableHardwareClipping( numUnionPlanes );
-
-		return Fn( () => {
-
-			const clippingPlanes = uniformArray( unionPlanes ).setGroup( renderGroup );
-			const hw_clip_distances = builtin( builder.getClipDistance() );
-
-			Loop( numUnionPlanes, ( { i } ) => {
-
-				const plane = clippingPlanes.element( i );
-
-				const distance = this.position.dot( plane.xyz ).sub( plane.w ).negate();
-				hw_clip_distances.element( i ).assign( distance );
-
-			} );
-
-		} )();
-
-	}
-
-}
-
-ClippingNode.ALPHA_TO_COVERAGE = 'alphaToCoverage';
-ClippingNode.DEFAULT = 'default';
-ClippingNode.HARDWARE = 'hardware';
-
-/**
- * TSL function for setting up the default clipping logic.
- *
- * @tsl
- * @function
- * @returns {ClippingNode}
- */
-const clipping = () => new ClippingNode();
-
-/**
- * TSL function for setting up alpha to coverage.
- *
- * @tsl
- * @function
- * @returns {ClippingNode}
- */
-const clippingAlpha = () => new ClippingNode( ClippingNode.ALPHA_TO_COVERAGE );
-
-/**
- * TSL function for setting up hardware-based clipping.
- *
- * @tsl
- * @function
- * @returns {ClippingNode}
- */
-const hardwareClipping = () => new ClippingNode( ClippingNode.HARDWARE );
-
-const refreshUniforms = [
-	'alphaMap',
-	'alphaTest',
-	'anisotropy',
-	'anisotropyMap',
-	'anisotropyRotation',
-	'aoMap',
-	'aoMapIntensity',
-	'attenuationColor',
-	'attenuationDistance',
-	'bumpMap',
-	'bumpScale',
-	'clearcoat',
-	'clearcoatMap',
-	'clearcoatNormalMap',
-	'clearcoatNormalScale',
-	'clearcoatRoughness',
-	'clearcoatRoughnessMap',
-	'color',
-	'dashOffset',
-	'dashSize',
-	'diffuseRoughness',
-	'diffuseRoughnessMap',
-	'dispersion',
-	'displacementBias',
-	'displacementMap',
-	'displacementScale',
-	'emissive',
-	'emissiveIntensity',
-	'emissiveMap',
-	'envMap',
-	'envMapIntensity',
-	'envMapRotation',
-	'gapSize',
-	'gradientMap',
-	'ior',
-	'iridescence',
-	'iridescenceIOR',
-	'iridescenceMap',
-	'iridescenceThicknessMap',
-	'iridescenceThicknessMaximum',
-	'iridescenceThicknessMinimum',
-	'lightMap',
-	'lightMapIntensity',
-	'linewidth',
-	'map',
-	'matcap',
-	'metalness',
-	'metalnessMap',
-	'normalMap',
-	'normalScale',
-	'opacity',
-	'reflectivity',
-	'refractionRatio',
-	'retroreflectivity',
-	'rotation',
-	'roughness',
-	'roughnessMap',
-	'scale',
-	'sheen',
-	'sheenColor',
-	'sheenColorMap',
-	'sheenRoughness',
-	'sheenRoughnessMap',
-	'shininess',
-	'size',
-	'specular',
-	'specularColor',
-	'specularColorMap',
-	'specularIntensity',
-	'specularIntensityMap',
-	'specularMap',
-	'steps',
-	'thickness',
-	'thicknessMap',
-	'transmission',
-	'transmissionMap',
-	'wireframe'
-];
-
-
-/**
- * A WeakMap to cache lights data for node materials.
- * Cache lights data by render ID to avoid unnecessary recalculations.
- *
- * @private
- * @type {WeakMap<LightsNode,Object>}
- */
-const _lightsCache = new WeakMap();
-
-/**
- * Holds the material data for comparison.
- *
- * @private
- * @type {WeakMap<Material,Object>}
- */
-const _materialCache = new WeakMap();
-
-/**
- * Holds the geometry data for comparison.
- *
- * @private
- * @type {WeakMap<BufferGeometry,Object>}
- */
-const _geometryCache = new WeakMap();
-
-/**
- * Holds the texture data for comparison.
- *
- * @private
- * @type {WeakMap<Texture,Object>}
- */
-const _textureCache = new WeakMap();
-
-/**
- * Holds the output target data for comparison.
- *
- * @private
- * @type {WeakMap<RenderTarget|CanvasTarget,Object>}
- */
-const _outputTargetCache = new WeakMap();
-
-/**
- * This class is used by {@link WebGPURenderer} as management component.
- * It's primary purpose is to determine whether render objects require a
- * refresh right before they are going to be rendered or not.
- */
-class NodeMaterialObserver {
-
-	/**
-	 * Constructs a new node material observer.
-	 *
-	 * @param {NodeBuilder} builder - The node builder.
-	 */
-	constructor( builder ) {
-
-		/**
-		 * A node material can be used by more than one render object so the
-		 * monitor must maintain a list of render objects.
-		 *
-		 * @type {WeakMap<RenderObject,Object>}
-		 */
-		this.renderObjects = new WeakMap();
-
-		/**
-		 * Whether the builder's context uses node objects or not.
-		 *
-		 * @type {boolean}
-		 */
-		this.hasNode = this.containsNode( builder );
-
-		/**
-		 * Whether the node builder's 3D object is animated or not.
-		 *
-		 * @type {boolean}
-		 */
-		this.hasAnimation = builder.object.isSkinnedMesh === true;
-
-		/**
-		 * A list of all possible material uniforms
-		 *
-		 * @type {Array<string>}
-		 */
-		this.refreshUniforms = refreshUniforms;
-
-		/**
-		 * Holds the current render ID from the node frame.
-		 *
-		 * @type {number}
-		 * @default 0
-		 */
-		this.renderId = 0;
-
-	}
-
-	/**
-	 * Returns `true` if the given render object is verified for the first time of this observer.
-	 *
-	 * @param {RenderObject} renderObject - The render object.
-	 * @return {boolean} Whether the given render object is verified for the first time of this observer.
-	 */
-	firstInitialization( renderObject ) {
-
-		const hasInitialized = this.renderObjects.has( renderObject );
-
-		if ( hasInitialized === false ) {
-
-			this.getRenderObjectData( renderObject );
-
-			return true;
-
-		}
-
-		return false;
-
-	}
-
-	/**
-	 * Returns `true` if the given 3D object uses instance buffers with dynamic draw usage.
-	 * Such buffers must be uploaded once per render so the render object requires a full refresh.
-	 *
-	 * @param {Object3D} object - The 3D object.
-	 * @return {boolean} Whether the given 3D object uses instance buffers with dynamic draw usage or not.
-	 */
-	hasDynamicInstancing( object ) {
-
-		return object.isInstancedMesh === true && ( object.instanceMatrix.usage === DynamicDrawUsage ||
-			( object.instanceColor !== null && object.instanceColor.usage === DynamicDrawUsage ) );
-
-	}
-
-	/**
-	 * Returns `true` if the current rendering produces motion vectors.
-	 *
-	 * @param {Renderer} renderer - The renderer.
-	 * @return {boolean} Whether the current rendering produces motion vectors or not.
-	 */
-	needsVelocity( renderer ) {
-
-		const mrt = renderer.getMRT();
-
-		return ( mrt !== null && mrt.has( 'velocity' ) );
-
-	}
-
-	/**
-	 * Returns monitoring data for the given render object.
-	 *
-	 * @param {RenderObject} renderObject - The render object.
-	 * @return {Object} The monitoring data.
-	 */
-	getRenderObjectData( renderObject ) {
-
-		let data = this.renderObjects.get( renderObject );
-
-		if ( data === undefined ) {
-
-			const { geometry, object } = renderObject;
-
-			data = {
-				geometryId: geometry.id,
-				geometryVersion: this.getGeometryData( geometry )._version,
-				materialVersion: this.getMaterialData( renderObject.material )._version,
-				attributesDisposeVersion: renderObject._geometries.attributes.disposeVersion,
-				worldMatrix: object.matrixWorld.clone()
-			};
-
-			if ( object.center ) {
-
-				data.center = object.center.clone();
-
-			}
-
-			if ( object.morphTargetInfluences ) {
-
-				data.morphTargetInfluences = object.morphTargetInfluences.slice();
-
-			}
-
-			if ( object.isInstancedMesh === true ) {
-
-				data.instanceMatrix = object.instanceMatrix;
-				data.instanceMatrixVersion = object.instanceMatrix.version;
-				data.instanceColor = object.instanceColor;
-				data.instanceColorVersion = object.instanceColor !== null ? object.instanceColor.version : null;
-				data.morphTextureVersion = object.morphTexture !== null ? object.morphTexture.version : null;
-
-			}
-
-			if ( object.isBatchedMesh === true ) {
-
-				data.matricesTextureVersion = object._matricesTexture.version;
-				data.colorsTextureVersion = object._colorsTexture !== null ? object._colorsTexture.version : null;
-				data.indirectTextureVersion = object._indirectTexture.version;
-
-			}
-
-			if ( renderObject.bundle !== null ) {
-
-				data.version = renderObject.bundle.version;
-
-			}
-
-			// global data
-
-			data.outputTarget = this.getOutputTarget( renderObject.renderer );
-			data.outputTargetVersion = this.getOutputTargetData( data.outputTarget, renderObject.context )._version;
-
-			const { environment, environmentIntensity, environmentRotation } = renderObject.scene;
-
-			data.environmentIntensity = environmentIntensity;
-			data.environmentRotation = environmentRotation.clone();
-			data.environmentVersion = environment !== null ? this.getTextureData( environment )._version : null;
-
-			data.lights = this.getLightsData( renderObject.lightsNode.getBuiltinLights(), [] );
-
-			this.renderObjects.set( renderObject, data );
-
-		}
-
-		return data;
-
-	}
-
-	/**
-	 * Returns the current output target of the given renderer. That is the active
-	 * render target or, if none is set, the output render target or the canvas target.
-	 *
-	 * @param {Renderer} renderer - The renderer.
-	 * @return {RenderTarget|CanvasTarget} The output target.
-	 */
-	getOutputTarget( renderer ) {
-
-		const renderTarget = renderer.getRenderTarget();
-
-		return renderTarget !== null ? renderTarget : ( renderer.getOutputRenderTarget() || renderer.getCanvasTarget() );
-
-	}
-
-	/**
-	 * Returns an output target data structure holding the size of the given output
-	 * target for monitoring. Its version is incremented whenever a size change is observed.
-	 *
-	 * @param {RenderTarget|CanvasTarget} outputTarget - The output target.
-	 * @param {RenderContext} renderContext - The render context.
-	 * @return {Object} An object for monitoring the output target size.
-	 */
-	getOutputTargetData( outputTarget, renderContext ) {
-
-		const { width, height } = renderContext;
-
-		let data = _outputTargetCache.get( outputTarget );
-
-		if ( data === undefined ) {
-
-			data = { _version: 0, width, height };
-
-			_outputTargetCache.set( outputTarget, data );
-
-		} else if ( data.width !== width || data.height !== height ) {
-
-			data.width = width;
-			data.height = height;
-			data._version ++;
-
-		}
-
-		return data;
-
-	}
-
-	/**
-	 * Returns an attribute data structure holding the attributes versions for
-	 * monitoring.
-	 *
-	 * @param {Object} attributes - The geometry attributes.
-	 * @return {Object} An object for monitoring the versions of attributes.
-	 */
-	getAttributesData( attributes ) {
-
-		const attributesData = {};
-
-		for ( const name in attributes ) {
-
-			const attribute = attributes[ name ];
-
-			attributesData[ name ] = {
-				id: attribute.isInterleavedBufferAttribute ? attribute.data.uuid : attribute.id,
-				version: attribute.isInterleavedBufferAttribute ? attribute.data.version : attribute.version,
-			};
-
-		}
-
-		return attributesData;
-
-	}
-
-	/**
-	 * Returns `true` if the node builder's context (e.g. material) uses node properties.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {boolean} Whether the node builder's context uses node properties or not.
-	 */
-	containsNode( builder ) {
-
-		// material
-
-		const material = builder.material;
-
-		for ( const property in material ) {
-
-			if ( material[ property ] && material[ property ].isNode )
-				return true;
-
-		}
-
-		// context
-
-		if ( builder.context.modelViewMatrix || builder.context.modelNormalViewMatrix || builder.context.getAO || builder.context.getShadow || builder.context.getGI )
-			return true;
-
-		return false;
-
-	}
-
-	/**
-	 * Returns a geometry data structure holding the geometry property values for
-	 * monitoring.
-	 *
-	 * @param {BufferGeometry} geometry - The geometry.
-	 * @return {Object} An object for monitoring geometry properties.
-	 */
-	getGeometryData( geometry ) {
-
-		let data = _geometryCache.get( geometry );
-
-		if ( data === undefined ) {
-
-			data = {
-				_renderId: -1,
-				_version: 0,
-
-				attributes: this.getAttributesData( geometry.attributes ),
-				indexId: geometry.index ? geometry.index.id : null,
-				indexVersion: geometry.index ? geometry.index.version : null,
-				drawRange: { start: geometry.drawRange.start, count: geometry.drawRange.count }
-			};
-
-			// force refresh on dispose
-
-			geometry.addEventListener( 'dispose', () => {
-
-				data._version ++;
-
-			} );
-
-			_geometryCache.set( geometry, data );
-
-		}
-
-		return data;
-
-	}
-
-	/**
-	 * Returns a texture data structure holding the texture state for
-	 * monitoring.
-	 *
-	 * @param {Texture} texture - The texture.
-	 * @return {Object} An object for monitoring the texture.
-	 */
-	getTextureData( texture ) {
-
-		let data = _textureCache.get( texture );
-
-		if ( data === undefined ) {
-
-			data = { _version: 0 };
-
-			// force refresh on dispose
-
-			const onDispose = () => {
-
-				data._version ++;
-
-			};
-
-			if ( texture.renderTarget !== null ) {
-
-				texture.renderTarget.addEventListener( 'dispose', onDispose );
-
-			} else {
-
-				texture.addEventListener( 'dispose', onDispose );
-
-			}
-
-			_textureCache.set( texture, data );
-
-		}
-
-		return data;
-
-	}
-
-	/**
-	 * Returns a data structure holding the uv transformation of the given
-	 * texture for monitoring.
-	 *
-	 * @param {Texture} texture - The texture.
-	 * @return {Object} An object for monitoring the uv transformation.
-	 */
-	getTextureTransformData( texture ) {
-
-		return {
-			offset: texture.offset.clone(),
-			repeat: texture.repeat.clone(),
-			center: texture.center.clone(),
-			rotation: texture.rotation,
-			matrix: texture.matrix.clone()
-		};
-
-	}
-
-	/**
-	 * Returns `true` if the uv transformation of the given texture has not changed.
-	 *
-	 * @param {Object} transformData - The monitored uv transformation.
-	 * @param {Texture} texture - The texture.
-	 * @return {boolean} Whether the uv transformation has not changed or not.
-	 */
-	equalsTextureTransform( transformData, texture ) {
-
-		if ( texture.matrixAutoUpdate === true ) {
-
-			return transformData.rotation === texture.rotation && transformData.offset.equals( texture.offset ) && transformData.repeat.equals( texture.repeat ) && transformData.center.equals( texture.center );
-
-		}
-
-		return transformData.matrix.equals( texture.matrix );
-
-	}
-
-	/**
-	 * Returns a material data structure holding the material property values for
-	 * monitoring.
-	 *
-	 * @param {Material} material - The material.
-	 * @return {Object} An object for monitoring material properties.
-	 */
-	getMaterialData( material ) {
-
-		let data = _materialCache.get( material );
-
-		if ( data === undefined ) {
-
-			data = { _renderId: -1, _version: 0 };
-
-			for ( const property of this.refreshUniforms ) {
-
-				const value = material[ property ];
-
-				if ( value === undefined ) continue;
-
-				if ( value === null ) {
-
-					data[ property ] = null; // track unset properties
-
-				} else if ( typeof value === 'object' && value.clone !== undefined ) {
-
-					if ( value.isTexture === true ) {
-
-						data[ property ] = { id: value.id, version: 0, cacheVersion: this.getTextureData( value )._version, transform: this.getTextureTransformData( value ) };
-
-					} else {
-
-						data[ property ] = value.clone();
-
-					}
-
-				} else {
-
-					data[ property ] = value;
-
-				}
-
-			}
-
-			_materialCache.set( material, data );
-
-		}
-
-		return data;
-
-	}
-
-	/**
-	 * Returns `true` if the given render object has not changed its state.
-	 *
-	 * @param {RenderObject} renderObject - The render object.
-	 * @param {Array<Light>} lightsData - The current material lights.
-	 * @param {number} renderId - The current render ID.
-	 * @return {boolean} Whether the given render object is equal to its cached state or not.
-	 */
-	equals( renderObject, lightsData, renderId ) {
-
-		const { object, material, geometry } = renderObject;
-
-		const renderObjectData = this.getRenderObjectData( renderObject );
-
-		// world matrix
-
-		if ( renderObjectData.worldMatrix.equals( object.matrixWorld ) !== true ) {
-
-			renderObjectData.worldMatrix.copy( object.matrixWorld );
-
-			return false;
-
-		}
-
-		// material
-
-		const materialData = this.getMaterialData( renderObject.material );
-
-		// check the material properties just once per render for all render objects
-
-		if ( materialData._renderId !== renderId ) {
-
-			materialData._renderId = renderId;
-
-			let changed = false;
-
-			for ( const property in materialData ) {
-
-				const value = materialData[ property ];
-				const mtlValue = material[ property ];
-
-				if ( property === '_renderId' ) continue;
-				if ( property === '_version' ) continue;
-
-				if ( value === null || mtlValue === null || mtlValue === undefined ) {
-
-					// a property was assigned or removed since the last observation so a new snapshot is required
-
-					if ( value !== ( mtlValue === undefined ? null : mtlValue ) ) {
-
-						if ( mtlValue === null || mtlValue === undefined ) {
-
-							materialData[ property ] = null;
-
-						} else if ( mtlValue.isTexture === true ) {
-
-							materialData[ property ] = { id: mtlValue.id, version: mtlValue.version, cacheVersion: this.getTextureData( mtlValue )._version, transform: this.getTextureTransformData( mtlValue ) };
-
-						} else if ( typeof mtlValue === 'object' && mtlValue.clone !== undefined ) {
-
-							materialData[ property ] = mtlValue.clone();
-
-						} else {
-
-							materialData[ property ] = mtlValue;
-
-						}
-
-						changed = true;
-
-					}
-
-				} else if ( value.equals !== undefined ) {
-
-					if ( value.equals( mtlValue ) === false ) {
-
-						value.copy( mtlValue );
-
-						changed = true;
-
-					}
-
-				} else if ( mtlValue.isTexture === true ) {
-
-					const textureData = this.getTextureData( mtlValue );
-
-					if ( value.id !== mtlValue.id || value.version !== mtlValue.version || value.cacheVersion !== textureData._version || this.equalsTextureTransform( value.transform, mtlValue ) === false ) {
-
-						value.id = mtlValue.id;
-						value.version = mtlValue.version;
-						value.cacheVersion = textureData._version;
-						value.transform.offset.copy( mtlValue.offset );
-						value.transform.repeat.copy( mtlValue.repeat );
-						value.transform.center.copy( mtlValue.center );
-						value.transform.rotation = mtlValue.rotation;
-						value.transform.matrix.copy( mtlValue.matrix );
-
-						changed = true;
-
-					}
-
-				} else if ( value !== mtlValue ) {
-
-					materialData[ property ] = mtlValue;
-
-					changed = true;
-
-				}
-
-			}
-
-			if ( changed === true ) materialData._version ++;
-
-		}
-
-		// a version mismatch means the material has changed since this render object was last refreshed
-
-		if ( renderObjectData.materialVersion !== materialData._version ) {
-
-			renderObjectData.materialVersion = materialData._version;
-
-			return false;
-
-		}
-
-		const outputTargetData = this.getOutputTargetData( renderObjectData.outputTarget, renderObject.context );
-
-		// a version mismatch means the output target has been resized since this render object was last refreshed
-
-		if ( renderObjectData.outputTargetVersion !== outputTargetData._version ) {
-
-			renderObjectData.outputTargetVersion = outputTargetData._version;
-
-			return false;
-
-		}
-
-		// geometry
-
-		if ( renderObjectData.geometryId !== geometry.id ) {
-
-			renderObjectData.geometryId = geometry.id;
-			renderObjectData.geometryVersion = this.getGeometryData( geometry )._version;
-
-			return false;
-
-		}
-
-		const geometryData = this.getGeometryData( renderObject.geometry );
-
-		// check the geometry properties just once per render for all render objects
-
-		if ( geometryData._renderId !== renderId ) {
-
-			geometryData._renderId = renderId;
-
-			let changed = false;
-
-			// attributes
-
-			const attributes = geometry.attributes;
-			const storedAttributes = geometryData.attributes;
-
-			let currentAttributeCount = 0;
-			let storedAttributeCount = 0;
-
-			for ( const _ in attributes ) currentAttributeCount ++; // eslint-disable-line no-unused-vars
-
-			for ( const name in storedAttributes ) {
-
-				storedAttributeCount ++;
-
-				const storedAttributeData = storedAttributes[ name ];
-				const attribute = attributes[ name ];
-
-				if ( attribute === undefined ) {
-
-					// attribute was removed
-					delete storedAttributes[ name ];
-
-					changed = true;
-					continue;
-
-				}
-
-				const id = attribute.isInterleavedBufferAttribute ? attribute.data.uuid : attribute.id;
-				const version = attribute.isInterleavedBufferAttribute ? attribute.data.version : attribute.version;
-
-				if ( storedAttributeData.id !== id || storedAttributeData.version !== version ) {
-
-					storedAttributeData.id = id;
-					storedAttributeData.version = version;
-
-					changed = true;
-
-				}
-
-			}
-
-			if ( storedAttributeCount !== currentAttributeCount ) {
-
-				geometryData.attributes = this.getAttributesData( attributes );
-
-				changed = true;
-
-			}
-
-			// check index
-
-			const index = geometry.index;
-			const currentIndexId = index ? index.id : null;
-			const currentIndexVersion = index ? index.version : null;
-
-			if ( geometryData.indexId !== currentIndexId || geometryData.indexVersion !== currentIndexVersion ) {
-
-				geometryData.indexId = currentIndexId;
-				geometryData.indexVersion = currentIndexVersion;
-
-				changed = true;
-
-			}
-
-			// check drawRange
-
-			if ( geometryData.drawRange.start !== geometry.drawRange.start || geometryData.drawRange.count !== geometry.drawRange.count ) {
-
-				geometryData.drawRange.start = geometry.drawRange.start;
-				geometryData.drawRange.count = geometry.drawRange.count;
-
-				changed = true;
-
-			}
-
-			if ( changed === true ) geometryData._version ++;
-
-		}
-
-		// a version mismatch means the geometry has changed since this render object was last refreshed
-
-		if ( renderObjectData.geometryVersion !== geometryData._version ) {
-
-			renderObjectData.geometryVersion = geometryData._version;
-
-			return false;
-
-		}
-
-		// morph targets
-
-		if ( renderObjectData.morphTargetInfluences ) {
-
-			let morphChanged = false;
-
-			for ( let i = 0; i < renderObjectData.morphTargetInfluences.length; i ++ ) {
-
-				if ( renderObjectData.morphTargetInfluences[ i ] !== object.morphTargetInfluences[ i ] ) {
-
-					renderObjectData.morphTargetInfluences[ i ] = object.morphTargetInfluences[ i ];
-					morphChanged = true;
-
-				}
-
-			}
-
-			if ( morphChanged ) return false;
-
-		}
-
-		// instancing
-
-		if ( object.isInstancedMesh === true ) {
-
-			const instanceColorVersion = object.instanceColor !== null ? object.instanceColor.version : null;
-			const morphTextureVersion = object.morphTexture !== null ? object.morphTexture.version : null;
-
-			if ( renderObjectData.instanceMatrix !== object.instanceMatrix ||
-				renderObjectData.instanceMatrixVersion !== object.instanceMatrix.version ||
-				renderObjectData.instanceColor !== object.instanceColor ||
-				renderObjectData.instanceColorVersion !== instanceColorVersion ||
-				renderObjectData.morphTextureVersion !== morphTextureVersion ) {
-
-				renderObjectData.instanceMatrix = object.instanceMatrix;
-				renderObjectData.instanceMatrixVersion = object.instanceMatrix.version;
-				renderObjectData.instanceColor = object.instanceColor;
-				renderObjectData.instanceColorVersion = instanceColorVersion;
-				renderObjectData.morphTextureVersion = morphTextureVersion;
-
-				return false;
-
-			}
-
-		}
-
-		// batching
-
-		if ( object.isBatchedMesh === true ) {
-
-			const colorsTextureVersion = object._colorsTexture !== null ? object._colorsTexture.version : null;
-
-			if ( renderObjectData.matricesTextureVersion !== object._matricesTexture.version ||
-				renderObjectData.colorsTextureVersion !== colorsTextureVersion ||
-				renderObjectData.indirectTextureVersion !== object._indirectTexture.version ) {
-
-				renderObjectData.matricesTextureVersion = object._matricesTexture.version;
-				renderObjectData.colorsTextureVersion = colorsTextureVersion;
-				renderObjectData.indirectTextureVersion = object._indirectTexture.version;
-
-				return false;
-
-			}
-
-		}
-
-		// lights
-
-		if ( renderObjectData.lights ) {
-
-			for ( let i = 0; i < lightsData.length; i ++ ) {
-
-				const lightData = renderObjectData.lights[ i ];
-				const currentLightData = lightsData[ i ];
-
-				if ( lightData.map !== currentLightData.map || lightData.cacheVersion !== currentLightData.cacheVersion ||
-					lightData.shadowMapWidth !== currentLightData.shadowMapWidth || lightData.shadowMapHeight !== currentLightData.shadowMapHeight ) {
-
-					lightData.map = currentLightData.map;
-					lightData.cacheVersion = currentLightData.cacheVersion;
-					lightData.shadowMapWidth = currentLightData.shadowMapWidth;
-					lightData.shadowMapHeight = currentLightData.shadowMapHeight;
-
-					return false;
-
-				}
-
-			}
-
-		}
-
-		// scene
-
-		const scene = renderObject.scene;
-
-		if ( scene.environment !== null && material.envMap === null ) {
-
-			const environmentVersion = this.getTextureData( scene.environment )._version;
-
-			if ( renderObjectData.environmentIntensity !== scene.environmentIntensity ||
-					renderObjectData.environmentRotation.equals( scene.environmentRotation ) === false ||
-					renderObjectData.environmentVersion !== environmentVersion ) {
-
-				renderObjectData.environmentIntensity = scene.environmentIntensity;
-				renderObjectData.environmentRotation.copy( scene.environmentRotation );
-				renderObjectData.environmentVersion = environmentVersion;
-
-				return false;
-
-			}
-
-		}
-
-		// center
-
-		if ( renderObjectData.center ) {
-
-			if ( renderObjectData.center.equals( object.center ) === false ) {
-
-				renderObjectData.center.copy( object.center );
-
-				return false;
-
-			}
-
-		}
-
-		// bundle
-
-		if ( renderObject.bundle !== null ) {
-
-			renderObjectData.version = renderObject.bundle.version;
-
-		}
-
-		return true;
-
-	}
-
-	/**
-	 * Returns the lights data for the given material lights.
-	 *
-	 * @param {Array<Light>} materialLights - The material lights.
-	 * @return {Array<Object>} The lights data for the given material lights.
-	 */
-	getLightsData( materialLights, lights ) {
-
-		lights.length = 0;
-
-		for ( const light of materialLights ) {
-
-			let data = null;
-
-			if ( light.isSpotLight === true && light.map !== null ) {
-
-				// only add lights that have a map
-
-				data = { map: light.map.version, cacheVersion: this.getTextureData( light.map )._version };
-
-			}
-
-			if ( light.castShadow === true && light.shadow !== undefined ) {
-
-				// resizing a shadow map recreates its textures so the bindings
-				// of all related render objects must be updated
-
-				if ( data === null ) data = {};
-
-				data.shadowMapWidth = light.shadow.mapSize.width;
-				data.shadowMapHeight = light.shadow.mapSize.height;
-
-			}
-
-			if ( data !== null ) lights.push( data );
-
-		}
-
-		return lights;
-
-	}
-
-	/**
-	 * Returns the lights for the given lights node and render ID.
-	 *
-	 * @param {LightsNode} lightsNode - The lights node.
-	 * @param {number} renderId - The render ID.
-	 * @return {Array<Object>} The lights for the given lights node and render ID.
-	 */
-	getLights( lightsNode, renderId ) {
-
-		let cached = _lightsCache.get( lightsNode );
-
-		if ( cached === undefined ) {
-
-			cached = { renderId: -1, lightsData: [] };
-			_lightsCache.set( lightsNode, cached );
-
-		}
-
-		if ( cached.renderId === renderId ) {
-
-			return cached.lightsData;
-
-		}
-
-		cached.renderId = renderId;
-		this.getLightsData( lightsNode.getBuiltinLights(), cached.lightsData );
-
-		return cached.lightsData;
-
-	}
-
-	/**
-	 * Returns `true` if a vertex buffer or the index of the given render object
-	 * has been disposed since the last check.
-	 *
-	 * @param {RenderObject} renderObject - The render object.
-	 * @param {Object} renderObjectData - The cached render object data.
-	 * @return {boolean} Whether attributes of the render object have been disposed or not.
-	 */
-	hasDisposedAttributes( renderObject, renderObjectData ) {
-
-		const attributes = renderObject._geometries.attributes;
-
-		for ( const vertexBuffer of renderObject.getVertexBuffers() ) {
-
-			if ( attributes.has( vertexBuffer ) === false ) return true;
-
-		}
-
-		const index = renderObject.getIndex();
-
-		if ( index !== null && attributes.has( index ) === false ) return true;
-
-		renderObjectData.attributesDisposeVersion = attributes.disposeVersion;
-
-		return false;
-
-	}
-
-	/**
-	 * Checks if the given render object requires a refresh.
-	 *
-	 * @param {RenderObject} renderObject - The render object.
-	 * @param {NodeFrame} nodeFrame - The current node frame.
-	 * @return {number} The refresh type, see {@link RenderObjectRefreshType}.
-	 */
-	needsRefresh( renderObject, nodeFrame ) {
-
-		if ( this.hasNode || this.hasAnimation || this.hasDynamicInstancing( renderObject.object ) || this.firstInitialization( renderObject ) || this.needsVelocity( nodeFrame.renderer ) )
-			return RenderObjectRefreshType.FULL;
-
-		const { renderId } = nodeFrame;
-
-		let refreshType = RenderObjectRefreshType.NONE;
-
-		// shared UBOs are potentially never updated when objects don't change. Below block
-		// make sure these UBOs are updated at least once.
-
-		if ( this.renderId !== renderId ) {
-
-			this.renderId = renderId;
-
-			// no early out here. instead, use the equals() code path below so the internal cache state gets synched
-
-			refreshType = RenderObjectRefreshType.SHARED;
-
-		}
-
-		// bindings might refer to per-target resources so a target switch needs a full refresh
-
-		const renderObjectData = this.getRenderObjectData( renderObject );
-		const outputTarget = this.getOutputTarget( nodeFrame.renderer );
-
-		if ( renderObjectData.outputTarget !== outputTarget ) {
-
-			renderObjectData.outputTarget = outputTarget;
-
-			refreshType = RenderObjectRefreshType.FULL;
-
-		}
-
-		const attributes = renderObject._geometries.attributes;
-
-		// re-upload disposed attributes. checked before the static early out since other geometries can destroy shared buffers
-
-		if ( renderObjectData.attributesDisposeVersion !== attributes.disposeVersion ) {
-
-			if ( this.hasDisposedAttributes( renderObject, renderObjectData ) ) refreshType = RenderObjectRefreshType.FULL;
-
-		}
-
-		const isStatic = renderObject.object.static === true;
-		const isBundle = renderObject.bundle !== null && renderObject.bundle.static === true && renderObjectData.version === renderObject.bundle.version;
-
-		if ( isStatic || isBundle )
-			return refreshType;
-
-		const lightsData = this.getLights( renderObject.lightsNode, renderId );
-
-		if ( this.equals( renderObject, lightsData, renderId ) === false ) {
-
-			refreshType = RenderObjectRefreshType.FULL;
-
-		}
-
-		return refreshType;
-
-	}
-
-}
-
-// See: https://casual-effects.com/research/Wyman2017Hashed/index.html
-
-const ALPHA_HASH_SCALE = 0.05; // Derived from trials only, and may be changed.
-
-const hash2D = /*@__PURE__*/ Fn( ( [ value ] ) => {
-
-	return fract( mul( 1.0e4, sin( mul( 17.0, value.x ).add( mul( 0.1, value.y ) ) ) ).mul( add( 0.1, abs( sin( mul( 13.0, value.y ).add( value.x ) ) ) ) ) );
-
-}, { value: 'vec2', return: 'float' } );
-
-const hash3D = /*@__PURE__*/ Fn( ( [ value ] ) => {
-
-	return hash2D( vec2( hash2D( value.xy ), value.z ) );
-
-}, { value: 'vec3', return: 'float' } );
-
-const getAlphaHashThreshold = /*@__PURE__*/ Fn( ( [ position ] ) => {
-
-	// Find the discretized derivatives of our coordinates
-	const maxDeriv = max(
-		length( dFdx( position.xyz ) ),
-		length( dFdy( position.xyz ) )
-	);
-
-	const pixScale = float( 1 ).div( float( ALPHA_HASH_SCALE ).mul( maxDeriv ) ).toVar( 'pixScale' );
-
-	// Find two nearest log-discretized noise scales
-	const pixScales = vec2(
-		exp2( floor( log2( pixScale ) ) ),
-		exp2( ceil( log2( pixScale ) ) )
-	);
-
-	// Compute alpha thresholds at our two noise scales
-	const alpha = vec2(
-		hash3D( floor( pixScales.x.mul( position.xyz ) ) ),
-		hash3D( floor( pixScales.y.mul( position.xyz ) ) ),
-	);
-
-	// Factor to interpolate lerp with
-	const lerpFactor = fract( log2( pixScale ) );
-
-	// Interpolate alpha threshold from noise at two scales
-	const x = add( mul( lerpFactor.oneMinus(), alpha.x ), mul( lerpFactor, alpha.y ) );
-
-	// Pass into CDF to compute uniformly distrib threshold
-	const a = min( lerpFactor, lerpFactor.oneMinus() );
-	const cases = vec3(
-		x.mul( x ).div( mul( 2.0, a ).mul( sub( 1.0, a ) ) ),
-		x.sub( mul( 0.5, a ) ).div( sub( 1.0, a ) ),
-		sub( 1.0, sub( 1.0, x ).mul( sub( 1.0, x ) ).div( mul( 2.0, a ).mul( sub( 1.0, a ) ) ) ) );
-
-	// Find our final, uniformly distributed alpha threshold (ατ)
-	const threshold = x.lessThan( a.oneMinus() ).select( x.lessThan( a ).select( cases.x, cases.y ), cases.z );
-
-	// Avoids ατ == 0. Could also do ατ =1-ατ
-	return clamp( threshold, 1.0e-6, 1.0 );
-
-}, { position: 'vec3', return: 'float' } );
-
-/**
- * An attribute node for representing vertex colors.
- *
- * @augments AttributeNode
- */
-class VertexColorNode extends AttributeNode {
-
-	static get type() {
-
-		return 'VertexColorNode';
-
-	}
-
-	/**
-	 * Constructs a new vertex color node.
-	 *
-	 * @param {number} index - The attribute index.
-	 */
-	constructor( index ) {
-
-		super( null, 'vec4' );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isVertexColorNode = true;
-
-		/**
-		 * The attribute index to enable more than one sets of vertex colors.
-		 *
-		 * @type {number}
-		 * @default 0
-		 */
-		this.index = index;
-
-	}
-
-	/**
-	 * Overwrites the default implementation by honoring the attribute index.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {string} The attribute name.
-	 */
-	getAttributeName( /*builder*/ ) {
-
-		const index = this.index;
-
-		return 'color' + ( index > 0 ? index : '' );
-
-	}
-
-	generate( builder ) {
-
-		const attributeName = this.getAttributeName( builder );
-		const geometryAttribute = builder.hasGeometryAttribute( attributeName );
-
-		let result;
-
-		if ( geometryAttribute === true ) {
-
-			result = super.generate( builder );
-
-		} else {
-
-			// Vertex color fallback should be white
-			result = builder.generateConst( this.nodeType, new Vector4( 1, 1, 1, 1 ) );
-
-		}
-
-		return result;
-
-	}
-
-	serialize( data ) {
-
-		super.serialize( data );
-
-		data.index = this.index;
-
-	}
-
-	deserialize( data ) {
-
-		super.deserialize( data );
-
-		this.index = data.index;
-
-	}
-
-}
-
-/**
- * TSL function for creating a reference node.
- *
- * @tsl
- * @function
- * @param {number} [index=0] - The attribute index.
- * @returns {VertexColorNode}
- */
-const vertexColor = ( index = 0 ) => new VertexColorNode( index );
-
-/**
- * Base class for all node materials.
- *
- * @augments Material
- */
-class NodeMaterial extends Material {
-
-	static get type() {
-
-		return 'NodeMaterial';
-
-	}
-
-	/**
-	 * Represents the type of the node material.
-	 *
-	 * @type {string}
-	 */
-	get type() {
-
-		return this.constructor.type;
-
-	}
-
-	set type( _value ) { /* */ }
-
-	/**
-	 * Constructs a new node material.
-	 */
-	constructor() {
-
-		super();
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isNodeMaterial = true;
-
-		/**
-		 * Whether this material is affected by fog or not.
-		 *
-		 * @type {boolean}
-		 * @default true
-		 */
-		this.fog = true;
-
-		/**
-		 * Whether this material is affected by lights or not.
-		 *
-		 * @type {boolean}
-		 * @default false
-		 */
-		this.lights = false;
-
-		/**
-		 * Node materials which set their `lights` property to `true`
-		 * are affected by all lights of the scene. Sometimes selective
-		 * lighting is wanted which means only _some_ lights in the scene
-		 * affect a material. This can be achieved by creating an instance
-		 * of {@link LightsNode} with a list of selective
-		 * lights and assign the node to this property.
-		 *
-		 * ```js
-		 * const customLightsNode = lights( [ light1, light2 ] );
-		 * material.lightsNode = customLightsNode;
-		 * ```
-		 *
-		 * @type {?LightsNode}
-		 * @default null
-		 */
-		this.lightsNode = null;
-
-		/**
-		 * The environment of node materials can be defined by an environment
-		 * map assigned to the `envMap` property or by `Scene.environment`
-		 * if the node material is a PBR material. This node property allows to overwrite
-		 * the default behavior and define the environment with a custom node.
-		 *
-		 * ```js
-		 * material.envNode = pmremTexture( renderTarget.texture );
-		 * ```
-		 *
-		 * @type {?Node<vec3>}
-		 * @default null
-		 */
-		this.envNode = null;
-
-		/**
-		 * The lighting of node materials might be influenced by ambient occlusion.
-		 * The default AO is inferred from an ambient occlusion map assigned to `aoMap`
-		 * and the respective `aoMapIntensity`. This node property allows to overwrite
-		 * the default and define the ambient occlusion with a custom node instead.
-		 *
-		 * If you don't want to overwrite the diffuse color but modify the existing
-		 * values instead, use {@link materialAO}.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.aoNode = null;
-
-		/**
-		 * The diffuse color of node materials is by default inferred from the
-		 * `color` and `map` properties. This node property allows to overwrite the default
-		 * and define the diffuse color with a node instead.
-		 *
-		 * ```js
-		 * material.colorNode = color( 0xff0000 ); // define red color
-		 * ```
-		 *
-		 * If you don't want to overwrite the diffuse color but modify the existing
-		 * values instead, use {@link materialColor}.
-		 *
-		 * ```js
-		 * material.colorNode = materialColor.mul( color( 0xff0000 ) ); // give diffuse colors a red tint
-		 * ```
-		 *
-		 * @type {?Node<vec3>}
-		 * @default null
-		 */
-		this.colorNode = null;
-
-		/**
-		 * The normals of node materials are by default inferred from the `normalMap`/`normalScale`
-		 * or `bumpMap`/`bumpScale` properties. This node property allows to overwrite the default
-		 * and define the normals with a node instead.
-		 *
-		 * If you don't want to overwrite the normals but modify the existing values instead,
-		 * use {@link materialNormal}.
-		 *
-		 * @type {?Node<vec3>}
-		 * @default null
-		 */
-		this.normalNode = null;
-
-		/**
-		 * The opacity of node materials is by default inferred from the `opacity`
-		 * and `alphaMap` properties. This node property allows to overwrite the default
-		 * and define the opacity with a node instead.
-		 *
-		 * If you don't want to overwrite the opacity but modify the existing
-		 * value instead, use {@link materialOpacity}.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.opacityNode = null;
-
-		/**
-		 * This node can be used to implement a variety of filter-like effects. The idea is
-		 * to store the current rendering into a texture e.g. via `viewportSharedTexture()`, use it
-		 * to create an arbitrary effect and then assign the node composition to this property.
-		 * Everything behind the object using this material will now be affected by a filter.
-		 *
-		 * ```js
-		 * const material = new NodeMaterial()
-		 * material.transparent = true;
-		 *
-		 * // everything behind the object will be monochromatic
-		 * material.backdropNode = saturation( viewportSharedTexture().rgb, 0 );
-		 * ```
-		 *
-		 * Backdrop computations are part of the lighting so only lit materials can use this property.
-		 *
-		 * @type {?Node<vec3>}
-		 * @default null
-		 */
-		this.backdropNode = null;
-
-		/**
-		 * This node allows to modulate the influence of `backdropNode` to the outgoing light.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.backdropAlphaNode = null;
-
-		/**
-		 * The alpha test of node materials is by default inferred from the `alphaTest`
-		 * property. This node property allows to overwrite the default and define the
-		 * alpha test with a node instead.
-		 *
-		 * If you don't want to overwrite the alpha test but modify the existing
-		 * value instead, use {@link materialAlphaTest}.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.alphaTestNode = null;
-
-
-		/**
-		 * Discards the fragment if the mask value is `false`.
-		 *
-		 * @type {?Node<bool>}
-		 * @default null
-		 */
-		this.maskNode = null;
-
-		/**
-		 * This node can be used to implement a shadow mask for the material.
-		 *
-		 * @type {?Node<bool>}
-		 * @default null
-		 */
-		this.maskShadowNode = null;
-
-		/**
-		 * The local vertex positions are computed based on multiple factors like the
-		 * attribute data, morphing, skinning, instancing or batching. This node property
-		 * allows to overwrite the default and define local vertex positions with nodes instead.
-		 *
-		 * If you don't want to overwrite the vertex positions but modify the existing
-		 * values instead, use {@link positionLocal}.
-		 *
-		 *```js
-		 * material.positionNode = positionLocal.add( displace );
-		 * ```
-		 *
-		 * @type {?Node<vec3>}
-		 * @default null
-		 */
-		this.positionNode = null;
-
-		/**
-		 * This node property is intended for logic which modifies geometry data once or per animation step.
-		 * Apps usually place such logic randomly in initialization routines or in the animation loop.
-		 * `geometryNode` is intended as a dedicated API so there is an intended spot where geometry modifications
-		 * can be implemented.
-		 *
-		 * The idea is to assign a `Fn` definition that holds the geometry modification logic. A typical example
-		 * would be a GPU based particle system that provides a node material for usage on app level. The particle
-		 * simulation would be implemented as compute shaders and managed inside a `Fn` function. This function is
-		 * eventually assigned to `geometryNode`.
-		 *
-		 * @type {?Function}
-		 * @default null
-		 */
-		this.geometryNode = null;
-
-		/**
-		 * Allows to overwrite depth values in the fragment shader.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.depthNode = null;
-
-		/**
-		 * Allows to overwrite the position used for shadow map rendering which
-		 * is by default {@link positionWorld}, the vertex position
-		 * in world space.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.receivedShadowPositionNode = null;
-
-		/**
-		 * Allows to overwrite the geometry position used for shadow map projection which
-		 * is by default {@link positionLocal}, the vertex position in local space.
-		 *
-		 * @type {?Node<float>}
-		 * @default null
-		 */
-		this.castShadowPositionNode = null;
-
-		/**
-		 * This node can be used to influence how an object using this node material
-		 * receive shadows.
-		 *
-		 * ```js
-		 * const totalShadows = float( 1 ).toVar();
-		 * material.receivedShadowNode = Fn( ( [ shadow ] ) => {
-		 * 	totalShadows.mulAssign( shadow );
-		 * 	//return float( 1 ); // bypass received shadows
-		 * 	return shadow.mix( color( 0xff0000 ), 1 ); // modify shadow color
-		 * } );
-		 *
-		 * @type {?(Function|FunctionNode<vec4>)}
-		 * @default null
-		 */
-		this.receivedShadowNode = null;
-
-		/**
-		 * This node can be used to influence how an object using this node material
-		 * casts shadows. To apply a color to shadows, you can simply do:
-		 *
-		 * ```js
-		 * material.castShadowNode = vec4( 1, 0, 0, 1 );
-		 * ```
-		 *
-		 * Which can be nice to fake colored shadows of semi-transparent objects. It
-		 * is also common to use the property with `Fn` function so checks are performed
-		 * per fragment.
-		 *
-		 * ```js
-		 * materialCustomShadow.castShadowNode = Fn( () => {
-		 * 	hash( vertexIndex ).greaterThan( 0.5 ).discard();
-		 * 	return materialColor;
-		 * } )();
-		 *  ```
-		 *
-		 * @type {?Node<vec4>}
-		 * @default null
-		 */
-		this.castShadowNode = null;
-
-		/**
-		 * This node can be used to overwrite the final output of the material.
-		 *
-		 * Unlike {@link NodeMaterial#fragmentNode}, the built-in material logic
-		 * (diffuse color, lighting, etc.) is still evaluated; assigning a node
-		 * only replaces the resulting output color.
-		 *
-		 * @type {?Node<vec4>}
-		 * @default null
-		 */
-		this.outputNode = null;
-
-		/**
-		 * MRT configuration is done on renderer or pass level. This node allows to
-		 * overwrite what values are written into MRT targets on material level. This
-		 * can be useful for implementing selective FX features that should only affect
-		 * specific objects.
-		 *
-		 * @type {?MRTNode}
-		 * @default null
-		 */
-		this.mrtNode = null;
-
-		/**
-		 * This node property can be used if you need complete freedom in implementing
-		 * the fragment shader. Assigning a node will replace the built-in material
-		 * logic used in the fragment stage.
-		 *
-		 * @type {?Node<vec4>}
-		 * @default null
-		 */
-		this.fragmentNode = null;
-
-		/**
-		 * This node property can be used if you need complete freedom in implementing
-		 * the vertex shader. Assigning a node will replace the built-in material logic
-		 * used in the vertex stage.
-		 *
-		 * @type {?Node<vec4>}
-		 * @default null
-		 */
-		this.vertexNode = null;
-
-		/**
-		 * This node can be used as a global context management component for this material.
-		 *
-		 * @type {?ContextNode}
-		 * @default null
-		 */
-		this.contextNode = null;
-
-	}
-
-	/**
-	 * Returns an array of child nodes for this material.
-	 *
-	 * @private
-	 * @returns {Array<{property: string, childNode: Node}>}
-	 */
-	_getNodeChildren() {
-
-		const children = [];
-
-		for ( const property of Object.getOwnPropertyNames( this ) ) {
-
-			if ( property.startsWith( '_' ) === true ) continue;
-
-			const object = this[ property ];
-
-			if ( object && object.isNode === true ) {
-
-				children.push( { property, childNode: object } );
-
-			}
-
-		}
-
-		return children;
-
-	}
-
-	/**
-	 * Allows to define a custom cache key that influence the material key computation
-	 * for render objects.
-	 *
-	 * @return {string} The custom cache key.
-	 */
-	customProgramCacheKey() {
-
-		const values = [];
-
-		for ( const { property, childNode } of this._getNodeChildren() ) {
-
-			values.push( hashString( property.slice( 0, -4 ) ), childNode.getCacheKey( true ) );
-
-		}
-
-		return this.type + hashArray( values );
-
-	}
-
-	/**
-	 * Builds this material with the given node builder.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	build( builder ) {
-
-		this.setup( builder );
-
-	}
-
-	/**
-	 * Setups a node material observer with the given builder.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {NodeMaterialObserver} The node material observer.
-	 */
-	setupObserver( builder ) {
-
-		return new NodeMaterialObserver( builder );
-
-	}
-
-	/**
-	 * Setups the vertex and fragment stage of this node material.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	setup( builder ) {
-
-		builder.context.setupNormal = () => subBuild( this.setupNormal( builder ), 'NORMAL', 'vec3' );
-		builder.context.setupPositionView = () => this.setupPositionView( builder );
-		builder.context.setupModelViewProjection = () => this.setupModelViewProjection( builder );
-
-		const renderer = builder.renderer;
-		const renderTarget = renderer.getRenderTarget();
-
-		// < VERTEX STAGE >
-
-		builder.addStack();
-
-		const mvp = this.setupVertex( builder );
-
-		const vertexNode = subBuild( this.vertexNode || mvp, 'VERTEX' );
-
-		builder.context.clipSpace = vertexNode;
-
-		builder.stack.outputNode = vertexNode;
-
-		this.setupHardwareClipping( builder );
-
-		if ( this.geometryNode !== null ) {
-
-			builder.stack.outputNode = builder.stack.outputNode.bypass( this.geometryNode );
-
-		}
-
-		builder.addFlow( 'vertex', builder.removeStack() );
-
-		// < FRAGMENT STAGE >
-
-		builder.addStack();
-
-		let resultNode;
-
-		const clippingNode = this.setupClipping( builder );
-
-		if ( this.depthWrite === true || this.depthTest === true ) {
-
-			// only write depth if depth buffer is configured
-
-			if ( renderTarget !== null ) {
-
-				if ( renderTarget.depthBuffer === true ) this.setupDepth( builder );
-
-			} else {
-
-				if ( renderer.depth === true ) this.setupDepth( builder );
-
-			}
-
-		}
-
-		if ( this.fragmentNode === null ) {
-
-			this.setupDiffuseColor( builder );
-			this.setupAmbientOcclusion( builder );
-			this.setupVariants( builder );
-
-			const outgoingLightNode = this.setupLighting( builder );
-
-			if ( clippingNode !== null ) builder.stack.addToStack( clippingNode );
-
-			// force unsigned floats - useful for RenderTargets
-
-			const basicOutput = vec4( outgoingLightNode, diffuseColor.a ).max( 0 );
-
-			resultNode = this.setupOutput( builder, basicOutput );
-
-			// OUTPUT NODE
-
-			output.assign( resultNode );
-
-			//
-
-			const isCustomOutput = this.outputNode !== null;
-
-			if ( isCustomOutput ) resultNode = this.outputNode;
-
-			//
-
-			if ( builder.context.getOutput ) {
-
-				resultNode = builder.context.getOutput( resultNode, builder );
-
-			}
-
-			// MRT
-
-			if ( renderTarget !== null ) {
-
-				const mrt = renderer.getMRT();
-				const materialMRT = this.mrtNode;
-
-				if ( mrt !== null ) {
-
-					if ( isCustomOutput ) output.assign( resultNode );
-
-					resultNode = mrt;
-
-					if ( materialMRT !== null ) {
-
-						resultNode = mrt.merge( materialMRT );
-
-					}
-
-				} else if ( materialMRT !== null ) {
-
-					resultNode = materialMRT;
-
-				}
-
-			}
-
-		} else {
-
-			let fragmentNode = this.fragmentNode;
-
-			if ( fragmentNode.isOutputStructNode !== true ) {
-
-				fragmentNode = fragmentNode.convert( builder.getOutputType() );
-
-			}
-
-			resultNode = this.setupOutput( builder, fragmentNode );
-
-		}
-
-		builder.stack.outputNode = resultNode;
-
-		builder.addFlow( 'fragment', builder.removeStack() );
-
-		// < OBSERVER >
-
-		builder.observer = this.setupObserver( builder );
-
-	}
-
-	/**
-	 * Setups the clipping node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {ClippingNode} The clipping node.
-	 */
-	setupClipping( builder ) {
-
-		if ( builder.clippingContext === null ) return null;
-
-		const { unionPlanes, intersectionPlanes } = builder.clippingContext;
-
-		let result = null;
-
-		if ( unionPlanes.length > 0 || intersectionPlanes.length > 0 ) {
-
-			const samples = builder.renderer.currentSamples;
-
-			if ( this.alphaToCoverage && samples > 1 ) {
-
-				// to be added to flow when the color/alpha value has been determined
-				result = clippingAlpha();
-
-			} else {
-
-				builder.stack.addToStack( clipping() );
-
-			}
-
-		}
-
-		return result;
-
-	}
-
-	/**
-	 * Setups the hardware clipping if available on the current device.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	setupHardwareClipping( builder ) {
-
-		builder.hardwareClipping = false;
-
-		if ( builder.clippingContext === null ) return;
-
-		const candidateCount = builder.clippingContext.unionPlanes.length;
-
-		// 8 planes supported by WebGL ANGLE_clip_cull_distance and WebGPU clip-distances
-
-		if ( candidateCount > 0 && candidateCount <= 8 && builder.isAvailable( 'clipDistance' ) ) {
-
-			builder.stack.addToStack( hardwareClipping() );
-
-			builder.hardwareClipping = true;
-
-		}
-
-		return;
-
-	}
-
-	/**
-	 * Setups the depth of this material.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	setupDepth( builder ) {
-
-		const { renderer, camera } = builder;
-
-		// Depth
-
-		let depthNode = this.depthNode;
-
-		if ( depthNode === null ) {
-
-			const mrt = renderer.getMRT();
-
-			if ( mrt && mrt.has( 'depth' ) ) {
-
-				depthNode = mrt.get( 'depth' );
-
-			} else if ( renderer.logarithmicDepthBuffer === true ) {
-
-				if ( camera.isOrthographicCamera !== true ) {
-
-					depthNode = viewZToLogarithmicDepth( positionView.z, cameraNear, cameraFar );
-
-				} else {
-
-					depthNode = viewZToOrthographicDepth( positionView.z, cameraNear, cameraFar );
-
-				}
-
-			}
-
-		}
-
-		if ( depthNode !== null ) {
-
-			depth.assign( depthNode ).toStack();
-
-		}
-
-	}
-
-	/**
-	 * Setups the position node in view space. This method exists
-	 * so derived node materials can modify the implementation e.g. sprite materials.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node<vec3>} The position in view space.
-	 */
-	setupPositionView( /*builder*/ ) {
-
-		return modelViewMatrix.mul( positionLocal ).xyz;
-
-	}
-
-	/**
-	 * Setups the position in clip space.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node<vec4>} The position in view space.
-	 */
-	setupModelViewProjection( /*builder*/ ) {
-
-		return cameraProjectionMatrix.mul( positionView );
-
-	}
-
-	/**
-	 * Setups the logic for the vertex stage.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node<vec4>} The position in clip space.
-	 */
-	setupVertex( builder ) {
-
-		builder.addStack();
-
-		this.setupPosition( builder );
-
-		builder.context.position = builder.removeStack();
-
-		return modelViewProjection;
-
-	}
-
-	/**
-	 * Setups the computation of the position in local space.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node<vec3>} The position in local space.
-	 */
-	setupPosition( builder ) {
-
-		const { object, geometry } = builder;
-
-		if ( geometry.morphAttributes.position || geometry.morphAttributes.normal || geometry.morphAttributes.color ) {
-
-			morphReference( object );
-
-		}
-
-		if ( object.isSkinnedMesh === true ) {
-
-			skinning( object );
-
-		}
-
-		if ( this.displacementMap ) {
-
-			const displacementMap = materialReference( 'displacementMap', 'texture' );
-			const displacementScale = materialReference( 'displacementScale', 'float' );
-			const displacementBias = materialReference( 'displacementBias', 'float' );
-
-			positionLocal.addAssign( normalLocal.normalize().mul( ( displacementMap.x.mul( displacementScale ).add( displacementBias ) ) ) );
-
-		}
-
-		if ( object.isBatchedMesh ) {
-
-			batch( object );
-
-		}
-
-		if ( ( object.isInstancedMesh && object.instanceMatrix && object.instanceMatrix.isInstancedBufferAttribute === true ) ) {
-
-			instancedMesh( object );
-
-		}
-
-		if ( this.positionNode !== null ) {
-
-			positionLocal.assign( subBuild( this.positionNode, 'POSITION', 'vec3' ) );
-
-		}
-
-		return positionLocal;
-
-	}
-
-	/**
-	 * Setups the computation of the material's diffuse color.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	setupDiffuseColor( builder ) {
-
-		const { object, geometry } = builder;
-
-		// MASK
-
-		if ( this.maskNode !== null ) {
-
-			// Discard if the mask is `false`
-
-			bool( this.maskNode ).not().discard();
-
-		}
-
-		// COLOR
-
-		let colorNode = this.colorNode ? vec4( this.colorNode ) : materialColor;
-
-		// VERTEX COLORS
-
-		let vertexColorNode = null;
-
-		if ( this.vertexColors === true && geometry.hasAttribute( 'color' ) ) {
-
-			vertexColorNode = vertexColor();
-
-		}
-
-		// INSTANCED COLORS
-
-		if ( object.instanceColor ) {
-
-			vertexColorNode = vertexColorNode !== null ? vertexColorNode.mul( instanceColor ) : instanceColor;
-
-		}
-
-		if ( object.isBatchedMesh && object._colorsTexture ) {
-
-			vertexColorNode = vertexColorNode !== null ? vertexColorNode.mul( batchColor ) : batchColor;
-
-		}
-
-		// MORPHED COLORS
-
-		if ( this.vertexColors === true && geometry.morphAttributes.color !== undefined ) {
-
-			vertexColorNode = morphColor( vec4( vertexColorNode !== null ? vertexColorNode : 1 ) );
-
-		}
-
-		if ( vertexColorNode !== null ) {
-
-			colorNode = colorNode.mul( vertexColorNode );
-
-		}
-
-		// DIFFUSE COLOR
-
-		diffuseColor.assign( colorNode );
-
-		// OPACITY
-
-		const opacityNode = this.opacityNode ? float( this.opacityNode ) : materialOpacity;
-		diffuseColor.a.assign( diffuseColor.a.mul( opacityNode ) );
-
-		// ALPHA TEST
-
-		let alphaTestNode = null;
-
-		if ( this.alphaTestNode !== null || this.alphaTest > 0 ) {
-
-			alphaTestNode = this.alphaTestNode !== null ? float( this.alphaTestNode ) : materialAlphaTest;
-
-			if ( this.alphaToCoverage === true ) {
-
-				diffuseColor.a = smoothstep( alphaTestNode, alphaTestNode.add( fwidth( diffuseColor.a ) ), diffuseColor.a );
-				diffuseColor.a.lessThanEqual( 0 ).discard();
-
-			} else {
-
-				diffuseColor.a.lessThanEqual( alphaTestNode ).discard();
-
-			}
-
-		}
-
-		// ALPHA HASH
-
-		if ( this.alphaHash === true ) {
-
-			diffuseColor.a.lessThan( getAlphaHashThreshold( positionLocal ) ).discard();
-
-		}
-
-		// OPAQUE
-
-		if ( builder.isOpaque() ) {
-
-			diffuseColor.a.assign( 1.0 );
-
-		}
-
-	}
-
-	/**
-	 * Abstract interface method that can be implemented by derived materials
-	 * to setup material-specific node variables.
-	 *
-	 * @abstract
-	 * @param {NodeBuilder} builder - The current node builder.
-	 */
-	setupVariants( /*builder*/ ) {
-
-		// Interface function.
-
-	}
-
-	/**
-	 * Setups the outgoing light node variable
-	 *
-	 * @return {Node<vec3>} The outgoing light node.
-	 */
-	setupOutgoingLight() {
-
-		return ( this.lights === true ) ? vec3( 0 ) : diffuseColor.rgb;
-
-	}
-
-	/**
-	 * Setups the normal node from the material.
-	 *
-	 * @return {Node<vec3>} The normal node.
-	 */
-	setupNormal() {
-
-		return this.normalNode ? vec3( this.normalNode ) : materialNormal;
-
-	}
-
-	/**
-	 * Setups the environment node from the material.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node<vec4>} The environment node.
-	 */
-	setupEnvironment( /*builder*/ ) {
-
-		let node = null;
-
-		if ( this.envNode ) {
-
-			node = this.envNode;
-
-		} else if ( this.envMap ) {
-
-			node = this.envMap.isCubeTexture ? materialReference( 'envMap', 'cubeTexture' ) : materialReference( 'envMap', 'texture' );
-
-		}
-
-		return node;
-
-	}
-
-	/**
-	 * Setups the light map node from the material.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node<vec3>} The light map node.
-	 */
-	setupLightMap( builder ) {
-
-		let node = null;
-
-		if ( builder.material.lightMap ) {
-
-			node = new IrradianceNode( materialLightMap );
-
-		}
-
-		return node;
-
-	}
-
-	/**
-	 * Setups the lights node based on the scene, environment and material.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {LightingNode<Array>} The lights node.
-	 */
-	setupMaterialLightings( builder ) {
-
-		const materialLightsNode = [];
-
-		const envNode = this.setupEnvironment( builder );
-
-		if ( envNode && envNode.isLightingNode ) {
-
-			materialLightsNode.push( envNode );
-
-		}
-
-		const lightMapNode = this.setupLightMap( builder );
-
-		if ( lightMapNode && lightMapNode.isLightingNode ) {
-
-			materialLightsNode.push( lightMapNode );
-
-		}
-
-		if ( builder.context.ambientOcclusion ) {
-
-			materialLightsNode.push( new AONode( builder.context.ambientOcclusion ) );
-
-		}
-
-		if ( builder.context.getGI ) {
-
-			const giNode = builder.context.getGI( null, builder );
-
-			if ( giNode !== null ) {
-
-				materialLightsNode.push( new IrradianceNode( giNode ) );
-
-			}
-
-		}
-
-		return materialLightsNode;
-
-	}
-
-	/**
-	 * Setups the ambient occlusion node from the material.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node} The ambient occlusion node.
-	 */
-	setupAmbientOcclusion( builder ) {
-
-		let aoNode = this.aoNode;
-
-		if ( aoNode === null && builder.material.aoMap ) {
-
-			aoNode = materialAO;
-
-		}
-
-		if ( builder.context.getAO ) {
-
-			aoNode = builder.context.getAO( aoNode, builder );
-
-		}
-
-		if ( aoNode !== null ) {
-
-			ambientOcclusion.assign( aoNode );
-
-			builder.context.ambientOcclusion = ambientOcclusion;
-
-		}
-
-	}
-
-	/**
-	 * This method should be implemented by most derived materials
-	 * since it defines the material's lighting model.
-	 *
-	 * @abstract
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {LightingModel} The lighting model.
-	 */
-	setupLightingModel( /*builder*/ ) {
-
-		// Interface function.
-
-	}
-
-	/**
-	 * Setups the outgoing light node.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @return {Node<vec3>} The outgoing light node.
-	 */
-	setupLighting( builder ) {
-
-		const { material } = builder;
-		const { backdropNode, backdropAlphaNode, emissiveNode } = this;
-
-		// OUTGOING LIGHT
-
-		const sceneLighting = this.lights === true && builder.renderer.lighting.enabled;
-		const lights = sceneLighting || this.lightsNode !== null;
-
-		const materialLightings = sceneLighting ? this.setupMaterialLightings( builder ) : [];
-		const lightsNode = lights ? ( this.lightsNode || builder.lightsNode ) : null;
-
-		let outgoingLightNode = this.setupOutgoingLight( builder );
-
-		if ( lightsNode && ( materialLightings.length > 0 || lightsNode.getScope().hasLights ) ) {
-
-			const lightingModel = this.setupLightingModel( builder ) || null;
-
-			outgoingLightNode = lightingContext( lightsNode, lightingModel, materialLightings, backdropNode, backdropAlphaNode );
-
-		} else if ( backdropNode !== null ) {
-
-			outgoingLightNode = vec3( backdropAlphaNode !== null ? mix( outgoingLightNode, backdropNode, backdropAlphaNode ) : backdropNode );
-
-		}
-
-		// EMISSIVE
-
-		if ( ( emissiveNode && emissiveNode.isNode === true ) || ( material.emissive && material.emissive.isColor === true ) ) {
-
-			emissive.assign( vec3( emissiveNode ? emissiveNode : materialEmissive ) );
-
-			outgoingLightNode = outgoingLightNode.add( emissive );
-
-		}
-
-		return outgoingLightNode;
-
-	}
-
-	/**
-	 * Setup the fog.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node<vec4>} outputNode - The existing output node.
-	 * @return {Node<vec4>} The output node.
-	 */
-	setupFog( builder, outputNode ) {
-
-		const fogNode = builder.fogNode;
-
-		if ( fogNode ) {
-
-			output.assign( outputNode );
-
-			outputNode = vec4( fogNode.toVar() );
-
-		}
-
-		return outputNode;
-
-	}
-
-	/**
-	 * Setups premultiplied alpha.
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node<vec4>} outputNode - The existing output node.
-	 * @return {Node<vec4>} The output node.
-	 */
-	setupPremultipliedAlpha( builder, outputNode ) {
-
-		return premultiplyAlpha( outputNode );
-
-	}
-
-	/**
-	 * Setups the output node.
-	 *
-	 * This method can be implemented by derived materials to extend the functionality
-	 * of the material's output or replace it altogether.
-	 *
-	 * ```js
-	 * class ColoredShadowMaterial extends MeshPhongNodeMaterial {
-	 *   constructor( parameters ) {
-	 *     super( parameters );
-	 *     this._shadeColor = uniform( new Color( parameters.shadeColor ?? 0xff0000 ) );
-	 *   }
-	 *
-	 *   setupOutput( builder, outputNode ) {
-	 *	   // Modify the native output of the MeshPhongNodeMaterial fragment shader
-	 *     const brightness = min( outputNode.r, 1.0 );
-	 *     const mixedColor = mix( this._shadeColor, diffuseColor.rgb, brightness );
-	 *	   // Return new output back into NodeMaterial flow
-	 *     return super.setupOutput( builder, vec4( mixedColor, outputNode.a ) );
-	 *   }
-	 * }
-	 * ```
-	 *
-	 * @param {NodeBuilder} builder - The current node builder.
-	 * @param {Node<vec4>} outputNode - The existing output node.
-	 * @return {Node<vec4>} The output node.
-	 */
-	setupOutput( builder, outputNode ) {
-
-		// FOG
-
-		if ( this.fog === true ) {
-
-			outputNode = this.setupFog( builder, outputNode );
-
-		}
-
-		// PREMULTIPLIED ALPHA
-
-		if ( this.premultipliedAlpha === true ) {
-
-			outputNode = this.setupPremultipliedAlpha( builder, outputNode );
-
-		}
-
-		return outputNode;
-
-	}
-
-	/**
-	 * Most classic material types have a node pendant e.g. for `MeshBasicMaterial`
-	 * there is `MeshBasicNodeMaterial`. This utility method is intended for
-	 * defining all material properties of the classic type in the node type.
-	 *
-	 * @param {Material} material - The material to copy properties with their values to this node material.
-	 */
-	setDefaultValues( material ) {
-
-		// This approach is to reuse the native refreshUniforms*
-		// and turn available the use of features like transmission and environment in core
-
-		for ( const property in material ) {
-
-			const value = material[ property ];
-
-			if ( this[ property ] === undefined ) {
-
-				this[ property ] = value;
-
-				if ( value && value.clone ) this[ property ] = value.clone();
-
-			}
-
-		}
-
-		const descriptors = Object.getOwnPropertyDescriptors( material.constructor.prototype );
-
-		for ( const key in descriptors ) {
-
-			if ( Object.getOwnPropertyDescriptor( this.constructor.prototype, key ) === undefined && descriptors[ key ].get !== undefined ) {
-
-				Object.defineProperty( this.constructor.prototype, key, descriptors[ key ] );
-
-			}
-
-		}
-
-	}
-
-	/**
-	 * Serializes this material to JSON.
-	 *
-	 * @param {?(Object|string)} meta - The meta information for serialization.
-	 * @return {Object} The serialized node.
-	 */
-	toJSON( meta ) {
-
-		const isRoot = ( meta === undefined || typeof meta === 'string' );
-
-		if ( isRoot ) {
-
-			meta = {
-				textures: {},
-				images: {},
-				nodes: {}
-			};
-
-		}
-
-		const data = Material.prototype.toJSON.call( this, meta );
-		data.inputNodes = {};
-
-		for ( const { property, childNode } of this._getNodeChildren() ) {
-
-			data.inputNodes[ property ] = childNode.toJSON( meta ).uuid;
-
-		}
-
-		// TODO: Copied from Object3D.toJSON
-
-		function extractFromCache( cache ) {
-
-			const values = [];
-
-			for ( const key in cache ) {
-
-				const data = cache[ key ];
-				delete data.metadata;
-				values.push( data );
-
-			}
-
-			return values;
-
-		}
-
-		if ( isRoot ) {
-
-			const textures = extractFromCache( meta.textures );
-			const images = extractFromCache( meta.images );
-			const nodes = extractFromCache( meta.nodes );
-
-			if ( textures.length > 0 ) data.textures = textures;
-			if ( images.length > 0 ) data.images = images;
-			if ( nodes.length > 0 ) data.nodes = nodes;
-
-		}
-
-		return data;
-
-	}
-
-	/**
-	 * Copies the common properties of the given material to this instance.
-	 *
-	 * @param {Material} source - The material to copy.
-	 * @return {NodeMaterial} A reference to this node material.
-	 */
-	copy( source ) {
-
-		for ( let prototype = Object.getPrototypeOf( this ); prototype !== Object.prototype; prototype = Object.getPrototypeOf( prototype ) ) {
-
-			const descriptors = Object.getOwnPropertyDescriptors( prototype );
-
-			for ( const property in descriptors ) {
-
-				if ( descriptors[ property ].set !== undefined && source[ property ] !== undefined ) {
-
-					const value = source[ property ];
-
-					if ( this[ property ] && this[ property ].copy !== undefined ) {
-
-						this[ property ].copy( value );
-
-					} else {
-
-						this[ property ] = value;
-
-					}
-
-				}
-
-			}
-
-		}
-
-		for ( const property in this ) {
-
-			// Skip internal/private properties (starting with '_'), flags (starting with 'is' + uppercase),
-			// and properties that are handled separately or should not be copied (id, uuid, version, type, userData, clippingPlanes).
-
-			if ( /^(?:is[A-Z]|_)|^(?:id|uuid|version|type|userData|clippingPlanes)$/.test( property ) ) continue;
-
-			if ( this[ property ] !== undefined && source[ property ] !== undefined ) {
-
-				const value = source[ property ];
-
-				if ( this[ property ] && this[ property ].copy !== undefined ) {
-
-					this[ property ].copy( value );
-
-				} else {
-
-					this[ property ] = value;
-
-				}
-
-			}
-
-		}
-
-		this.clippingPlanes = source.clippingPlanes ? source.clippingPlanes.map( ( plane ) => plane.clone() ) : null;
-
-		this.userData = JSON.parse( JSON.stringify( source.userData ) );
-
-		return this;
-
-	}
-
-}
 
 const _camera = /*@__PURE__*/ new OrthographicCamera( -1, 1, 1, -1, 0, 1 );
 
@@ -29611,7 +31610,7 @@ const attributeArray = ( count, type = 'float' ) => {
 	}
 
 	const buffer = new StorageBufferAttribute( count, itemSize, typedArray );
-	const node = storage( buffer, type, buffer.count );
+	const node = storage( buffer, type );
 
 	return node;
 
@@ -29643,102 +31642,11 @@ const instancedArray = ( count, type = 'float' ) => {
 	}
 
 	const buffer = new StorageInstancedBufferAttribute( count, itemSize, typedArray );
-	const node = storage( buffer, type, buffer.count );
+	const node = storage( buffer, type );
 
 	return node;
 
 };
-
-// Mipped Bicubic Texture Filtering by N8
-// https://www.shadertoy.com/view/Dl2SDW
-
-const bC = 1.0 / 6.0;
-
-const w0 = ( a ) => mul( bC, mul( a, mul( a, a.negate().add( 3.0 ) ).sub( 3.0 ) ).add( 1.0 ) );
-
-const w1 = ( a ) => mul( bC, mul( a, mul( a, mul( 3.0, a ).sub( 6.0 ) ) ).add( 4.0 ) );
-
-const w2 = ( a ) => mul( bC, mul( a, mul( a, mul( -3, a ).add( 3.0 ) ).add( 3.0 ) ).add( 1.0 ) );
-
-const w3 = ( a ) => mul( bC, pow( a, 3 ) );
-
-const bicubicWeights = ( a ) => {
-
-	const w0a = w0( a );
-	const w1a = w1( a );
-	const w2a = w2( a );
-	const w3a = w3( a );
-
-	const g0a = w0a.add( w1a );
-	const g1a = w2a.add( w3a );
-
-	// h0 and h1 are the two offset functions.
-	const h0a = add( -1, w1a.div( g0a ) );
-	const h1a = add( 1.0, w3a.div( g1a ) );
-
-	return { g0: g0a, g1: g1a, h0: h0a, h1: h1a };
-
-};
-
-const bicubic = ( textureNode, p0, p3, g0, g1, lod ) => {
-
-	const p1 = vec2( p3.x, p0.y );
-	const p2 = vec2( p0.x, p3.y );
-
-	const a = g0.y.mul( add( g0.x.mul( textureNode.sample( p0 ).level( lod ) ), g1.x.mul( textureNode.sample( p1 ).level( lod ) ) ) );
-	const b = g1.y.mul( add( g0.x.mul( textureNode.sample( p2 ).level( lod ) ), g1.x.mul( textureNode.sample( p3 ).level( lod ) ) ) );
-
-	return a.add( b );
-
-};
-
-/**
- * Applies mipped bicubic texture filtering to the given texture node.
- *
- * @tsl
- * @function
- * @param {TextureNode} textureNode - The texture node that should be filtered.
- * @param {Node<float>} lodNode - Defines the LOD to sample from.
- * @return {Node} The filtered texture sample.
- */
-const textureBicubicLevel = /*@__PURE__*/ Fn( ( [ textureNode, lodNode ] ) => {
-
-	const fLodSize = vec2( textureNode.size( int( lodNode ) ) );
-	const cLodSize = vec2( textureNode.size( int( lodNode.add( 1.0 ) ) ) );
-	const lodSize = vec4( fLodSize, cLodSize );
-	const lodSizeInv = div( 1.0, lodSize );
-	const uvScaled = textureNode.uvNode.xyxy.mul( lodSize ).add( 0.5 );
-	const iuv = floor( uvScaled );
-	const fuv = fract( uvScaled );
-
-	const { g0, g1, h0, h1 } = bicubicWeights( fuv );
-
-	const p0 = iuv.add( h0 ).sub( 0.5 ).mul( lodSizeInv );
-	const p3 = iuv.add( h1 ).sub( 0.5 ).mul( lodSizeInv );
-
-	const fSample = bicubic( textureNode, p0.xy, p3.xy, g0.xy, g1.xy, floor( lodNode ) );
-	const cSample = bicubic( textureNode, p0.zw, p3.zw, g0.zw, g1.zw, ceil( lodNode ) );
-
-	return fract( lodNode ).mix( fSample, cSample );
-
-} );
-
-/**
- * Applies mipped bicubic texture filtering to the given texture node.
- *
- * @tsl
- * @function
- * @param {TextureNode} textureNode - The texture node that should be filtered.
- * @param {Node<float>} [strength] - Defines the strength of the bicubic filtering.
- * @return {Node} The filtered texture sample.
- */
-const textureBicubic = /*@__PURE__*/ Fn( ( [ textureNode, strength ] ) => {
-
-	const lod = strength.mul( maxMipLevel( textureNode ) );
-
-	return textureBicubicLevel( textureNode, lod );
-
-} );
 
 /**
  * A node for representing the uv coordinates of points.
@@ -29839,6 +31747,66 @@ const backgroundRotation = /*@__PURE__*/ uniform( new Matrix4() ).setGroup( rend
 	return _m1;
 
 } );
+
+/**
+ * A storage buffer bound as a single struct instead of an array of elements. This allows
+ * the struct's last member to be a runtime-sized array, whose length follows the size of
+ * the bound buffer. A typical use is a queue with an atomic length ahead of its elements.
+ *
+ * ```js
+ * const Queue = struct( {
+ * 	length: { type: 'uint', atomic: true },
+ * 	elements: 'array<u32>'
+ * }, 'Queue' );
+ *
+ * const queue = storageStruct( new THREE.StorageBufferAttribute( new Uint32Array( count + 1 ), 1 ), Queue );
+ * ```
+ *
+ * The node is only supported with the WebGPU backend.
+ *
+ * @augments StorageBufferNode
+ */
+class StorageStructNode extends StorageBufferNode {
+
+	static get type() {
+
+		return 'StorageStructNode';
+
+	}
+
+	/**
+	 * Constructs a new storage struct node.
+	 *
+	 * @param {StorageBufferAttribute} value - The buffer data.
+	 * @param {Struct} structType - The struct type of the buffer.
+	 */
+	constructor( value, structType ) {
+
+		super( value, structType );
+
+		/**
+		 * This flag can be used for type testing.
+		 *
+		 * @type {boolean}
+		 * @readonly
+		 * @default true
+		 */
+		this.isStorageStructNode = true;
+
+	}
+
+}
+
+/**
+ * TSL function for creating a storage struct node.
+ *
+ * @tsl
+ * @function
+ * @param {StorageBufferAttribute} value - The buffer data.
+ * @param {Struct} structType - The struct type of the buffer.
+ * @returns {StorageStructNode}
+ */
+const storageStruct = ( value, structType ) => new StorageStructNode( value, structType );
 
 /**
  * This special version of a texture node can be used to
@@ -30571,14 +32539,6 @@ class VelocityNode extends Node {
 		this.updateType = NodeUpdateType.OBJECT;
 
 		/**
-		 * Overwritten since velocity nodes save data after the update.
-		 *
-		 * @type {string}
-		 * @default 'object'
-		 */
-		this.updateAfterType = NodeUpdateType.OBJECT;
-
-		/**
 		 * Uniform node representing the previous model matrix in world space.
 		 *
 		 * @type {UniformNode<mat4>}
@@ -30629,9 +32589,30 @@ class VelocityNode extends Node {
 	 */
 	update( { frameId, camera, object } ) {
 
-		const previousModelMatrix = getPreviousMatrix( object );
+		const objectData = getData( object );
 
-		this.previousModelWorldMatrix.value.copy( previousModelMatrix );
+		if ( objectData.frameId !== frameId ) {
+
+			objectData.frameId = frameId;
+
+			if ( objectData.previousModelWorldMatrix === undefined ) {
+
+				objectData.previousModelWorldMatrix = new Matrix4();
+				objectData.currentModelWorldMatrix = new Matrix4();
+
+				objectData.previousModelWorldMatrix.copy( object.matrixWorld );
+
+			} else {
+
+				objectData.previousModelWorldMatrix.copy( objectData.currentModelWorldMatrix );
+
+			}
+
+			objectData.currentModelWorldMatrix.copy( object.matrixWorld );
+
+		}
+
+		this.previousModelWorldMatrix.value.copy( objectData.previousModelWorldMatrix );
 
 		//
 
@@ -30671,17 +32652,6 @@ class VelocityNode extends Node {
 	}
 
 	/**
-	 * Overwritten to updated velocity specific uniforms.
-	 *
-	 * @param {NodeFrame} frame - A reference to the current node frame.
-	 */
-	updateAfter( { object } ) {
-
-		getPreviousMatrix( object ).copy( object.matrixWorld );
-
-	}
-
-	/**
 	 * Implements the velocity computation based on the previous and current vertex data.
 	 *
 	 * @param {NodeBuilder} builder - A reference to the current node builder.
@@ -30717,23 +32687,6 @@ function getData( object ) {
 	}
 
 	return objectData;
-
-}
-
-function getPreviousMatrix( object, index = 0 ) {
-
-	const objectData = getData( object );
-
-	let matrix = objectData[ index ];
-
-	if ( matrix === undefined ) {
-
-		objectData[ index ] = matrix = new Matrix4();
-		objectData[ index ].copy( object.matrixWorld );
-
-	}
-
-	return matrix;
 
 }
 
@@ -30955,7 +32908,7 @@ const luminance = (
  * References:
  * - ASC CDL v1.2
  * - {@link https://blender.stackexchange.com/a/55239/43930}
- * - {@link https://docs.acescentral.com/specifications/acescc/}
+ * - {@link https://docs.acescentral.com/encodings/acescc/}
  */
 const cdl = /*@__PURE__*/ Fn( ( [
 	color,
@@ -31746,8 +33699,16 @@ class PassNode extends Node {
 
 			const texture = this._textures[ name ];
 
-			const index = this.renderTarget.textures.indexOf( texture );
-			this.renderTarget.textures[ index ] = prevTexture;
+			if ( texture === this.renderTarget.depthTexture ) {
+
+				this.renderTarget.depthTexture = prevTexture;
+
+			} else {
+
+				const index = this.renderTarget.textures.indexOf( texture );
+				this.renderTarget.textures[ index ] = prevTexture;
+
+			}
 
 			this._textures[ name ] = prevTexture;
 			this._previousTextures[ name ] = texture;
@@ -31901,6 +33862,12 @@ class PassNode extends Node {
 		if ( renderer.reversedDepthBuffer === true && this.renderTarget.depthTexture !== null ) {
 
 			this.renderTarget.depthTexture.type = FloatType;
+
+		}
+
+		for ( const name in this._previousTextures ) {
+
+			this._previousTextures[ name ].type = this._textures[ name ].type;
 
 		}
 
@@ -35446,127 +37413,6 @@ class LightsNode extends Node {
  */
 const lights = ( lights = [] ) => new LightsNode().setLights( lights );
 
-/**
- * Data structure for the renderer. It allows defining values
- * with chained, hierarchical keys. Keys are meant to be
- * objects since the module internally works with Weak Maps
- * for performance reasons.
- *
- * @private
- */
-class ChainMap {
-
-	/**
-	 * Constructs a new Chain Map.
-	 */
-	constructor() {
-
-		/**
-		 * A map of Weak Maps by their key length.
-		 *
-		 * @type {Object<number, WeakMap>}
-		 */
-		this.weakMaps = {};
-
-
-	}
-
-	/**
-	 * Returns the Weak Map for the given keys.
-	 *
-	 * @param {Array<Object>} keys - List of keys.
-	 * @return {WeakMap} The weak map.
-	 */
-	_getWeakMap( keys ) {
-
-		const length = keys.length;
-
-		let weakMap = this.weakMaps[ length ];
-
-		if ( weakMap === undefined ) {
-
-			weakMap = new WeakMap();
-			this.weakMaps[ length ] = weakMap;
-
-		}
-
-		return weakMap;
-
-	}
-
-	/**
-	 * Returns the value for the given array of keys.
-	 *
-	 * @param {Array<Object>} keys - List of keys.
-	 * @return {any} The value. Returns `undefined` if no value was found.
-	 */
-	get( keys ) {
-
-		let map = this._getWeakMap( keys );
-
-		for ( let i = 0; i < keys.length - 1; i ++ ) {
-
-			map = map.get( keys[ i ] );
-
-			if ( map === undefined ) return undefined;
-
-		}
-
-		return map.get( keys[ keys.length - 1 ] );
-
-	}
-
-	/**
-	 * Sets the value for the given keys.
-	 *
-	 * @param {Array<Object>} keys - List of keys.
-	 * @param {any} value - The value to set.
-	 * @return {ChainMap} A reference to this Chain Map.
-	 */
-	set( keys, value ) {
-
-		let map = this._getWeakMap( keys );
-
-		for ( let i = 0; i < keys.length - 1; i ++ ) {
-
-			const key = keys[ i ];
-
-			if ( map.has( key ) === false ) map.set( key, new WeakMap() );
-
-			map = map.get( key );
-
-		}
-
-		map.set( keys[ keys.length - 1 ], value );
-
-		return this;
-
-	}
-
-	/**
-	 * Deletes a value for the given keys.
-	 *
-	 * @param {Array<Object>} keys - The keys.
-	 * @return {boolean} Returns `true` if the value has been removed successfully and `false` if the value has not be found.
-	 */
-	delete( keys ) {
-
-		let map = this._getWeakMap( keys );
-
-		for ( let i = 0; i < keys.length - 1; i ++ ) {
-
-			map = map.get( keys[ i ] );
-
-			if ( map === undefined ) return false;
-
-		}
-
-		return map.delete( keys[ keys.length - 1 ] );
-
-	}
-
-}
-
 const _shadowMaterialLib = /*@__PURE__*/ new WeakMap();
 const _shadowRenderObjectLibrary = /*@__PURE__*/ new ChainMap();
 const _shadowRenderObjectKeys = [];
@@ -36749,7 +38595,7 @@ class ShadowNode extends ShadowBaseNode {
  */
 const shadow = ( light, shadow ) => new ShadowNode( light, shadow );
 
-const _clearColor$1 = /*@__PURE__*/ new Color();
+const _clearColor = /*@__PURE__*/ new Color();
 const _projScreenMatrix = /*@__PURE__*/ new Matrix4();
 const _lightPositionWorld = /*@__PURE__*/ new Vector3();
 const _lookTarget = /*@__PURE__*/ new Vector3();
@@ -37035,7 +38881,7 @@ class PointShadowNode extends ShadowNode {
 
 		const previousAutoClear = renderer.autoClear;
 
-		const previousClearColor = renderer.getClearColor( _clearColor$1 );
+		const previousClearColor = renderer.getClearColor( _clearColor );
 		const previousClearAlpha = renderer.getClearAlpha();
 
 		renderer.autoClear = false;
@@ -37514,1349 +39360,6 @@ class PointLightNode extends AnalyticLightNode {
 	}
 
 }
-
-const GOLDEN_ANGLE = 2.399963229728653;
-
-/**
- * Returns the mip level of a PMREM that has been prefiltered for the given roughness.
- * Uses the inverse of `PMREMGenerator.lodToRoughness()`.
- *
- * @tsl
- * @function
- * @param {Node<float>} roughness - The roughness.
- * @param {Node<float>} maxLod - The last mip level of the PMREM.
- * @return {Node<float>} The mip level.
- * @see {@link https://github.com/google/filament/blob/main/shaders/src/surface_light_indirect.fs | Filament: perceptualRoughnessToLod()}
- */
-const roughnessToMip = ( roughness, maxLod ) => {
-
-	roughness = float( roughness ).clamp();
-
-	return float( maxLod ).mul( roughness ).mul( float( 2.0 ).sub( roughness ) );
-
-};
-
-// Gaussian blur using stratified inverse-CDF samples on a golden-angle spiral.
-const sphericalGaussianBlur = /*@__PURE__*/ Fn( ( { SAMPLES, sigma, direction, envMap } ) => {
-
-	const outputDirection = vec3( direction ).toVar();
-
-	const up = select( abs( outputDirection.z ).lessThan( 0.999 ), vec3( 0.0, 0.0, 1.0 ), vec3( 1.0, 0.0, 0.0 ) );
-	const tangent = normalize( cross( up, outputDirection ) ).toVar();
-	const bitangent = cross( outputDirection, tangent ).toVar();
-
-	// Truncate the kernel at three standard deviations or at the antipode.
-	const thetaMax = min( sigma.mul( 3.0 ), Math.PI );
-	const truncation = exp( thetaMax.mul( thetaMax ).mul( -0.5 ).div( sigma.mul( sigma ) ) ).oneMinus().toVar();
-
-	const color = vec3( 0.0 ).toVar();
-	const accumWeight = float( 0.0 ).toVar();
-
-	Loop( { start: int( 0 ), end: SAMPLES }, ( { i } ) => {
-
-		// Stratified inverse-CDF sampling of the Gaussian, placed on a golden-angle spiral.
-		const stratum = float( i ).add( 0.5 ).div( float( SAMPLES ) );
-		const theta = sigma.mul( sqrt( log( stratum.mul( truncation ).oneMinus() ).mul( -2 ) ) ).toVar();
-		const phi = float( i ).mul( GOLDEN_ANGLE ).toVar();
-
-		const offset = tangent.mul( cos( phi ) ).add( bitangent.mul( sin( phi ) ) );
-		const sampleDirection = outputDirection.mul( cos( theta ) ).add( offset.mul( sin( theta ) ) );
-
-		// Correct the planar sample density to solid angle.
-		const weight = sin( theta ).div( theta ).toVar();
-
-		color.addAssign( envMap.sample( sampleDirection ).level( 0 ).rgb.mul( weight ) );
-		accumWeight.addAssign( weight );
-
-	} );
-
-	return vec4( color.div( accumWeight ), 1.0 );
-
-} );
-
-// Van der Corput radical inverse.
-const radicalInverse_VdC = /*@__PURE__*/ Fn( ( [ bits_immutable ] ) => {
-
-	const bits = uint( bits_immutable ).toVar();
-	bits.assign( bits.shiftLeft( uint( 16 ) ).bitOr( bits.shiftRight( uint( 16 ) ) ) );
-	bits.assign( bits.bitAnd( uint( 0x55555555 ) ).shiftLeft( uint( 1 ) ).bitOr( bits.bitAnd( uint( 0xAAAAAAAA ) ).shiftRight( uint( 1 ) ) ) );
-	bits.assign( bits.bitAnd( uint( 0x33333333 ) ).shiftLeft( uint( 2 ) ).bitOr( bits.bitAnd( uint( 0xCCCCCCCC ) ).shiftRight( uint( 2 ) ) ) );
-	bits.assign( bits.bitAnd( uint( 0x0F0F0F0F ) ).shiftLeft( uint( 4 ) ).bitOr( bits.bitAnd( uint( 0xF0F0F0F0 ) ).shiftRight( uint( 4 ) ) ) );
-	bits.assign( bits.bitAnd( uint( 0x00FF00FF ) ).shiftLeft( uint( 8 ) ).bitOr( bits.bitAnd( uint( 0xFF00FF00 ) ).shiftRight( uint( 8 ) ) ) );
-	return float( bits ).mul( 2.3283064365386963e-10 ); // / 0x100000000
-
-} );
-
-// Hammersley sequence.
-const hammersley = /*@__PURE__*/ Fn( ( [ i, N ] ) => {
-
-	return vec2( float( i ).div( float( N ) ), radicalInverse_VdC( i ) );
-
-} );
-
-// GGX convolution using VNDF importance sampling. Each sample reads the mip level of the
-// source cube map that matches its solid angle (filtered importance sampling), which keeps
-// the estimate smooth even for tiny, very bright light sources.
-const ggxConvolution = /*@__PURE__*/ Fn( ( { roughness, lodBias, envMap, direction, GGX_SAMPLES } ) => {
-
-	const N = vec3( direction ).toVar();
-
-	const prefilteredColor = vec3( 0.0 ).toVar();
-
-	// For very low roughness, just sample the environment directly
-	If( roughness.lessThan( 0.001 ), () => {
-
-		prefilteredColor.assign( envMap.sample( N ).level( 0 ).rgb );
-
-	} ).Else( () => {
-
-		const alpha = roughness.mul( roughness ).toConst();
-		const alpha2 = alpha.mul( alpha ).toConst();
-
-		// Tangent space basis for VNDF sampling
-		const up = select( abs( N.z ).lessThan( 0.999 ), vec3( 0.0, 0.0, 1.0 ), vec3( 1.0, 0.0, 0.0 ) );
-		const tangent = normalize( cross( up, N ) ).toVar();
-		const bitangent = cross( N, tangent ).toVar();
-
-		const totalWeight = float( 0.0 ).toVar();
-
-		Loop( { start: uint( 0 ), end: GGX_SAMPLES }, ( { i } ) => {
-
-			const Xi = hammersley( i, GGX_SAMPLES );
-
-			// With V = N, sample the reflected direction directly.
-			const invQ = float( 1.0 ).div( Xi.x.oneMinus().add( alpha2.mul( Xi.x ) ) ).toConst();
-			const NdotL = Xi.x.oneMinus().sub( alpha2.mul( Xi.x ) ).mul( invQ ).toConst();
-
-			If( NdotL.greaterThan( 0.0 ), () => {
-
-				const phi = Xi.y.mul( 2.0 * Math.PI ).toConst();
-				const sinTheta = alpha.mul( 2.0 ).mul( sqrt( Xi.x.mul( Xi.x.oneMinus() ) ) ).mul( invQ ).toConst();
-				const L = N.mul( NdotL ).add( tangent.mul( cos( phi ) ).add( bitangent.mul( sin( phi ) ) ).mul( sinTheta ) ).toConst();
-
-				// Match the source mip to the sample's solid angle; see lodBias.
-				const d = alpha2.mul( invQ );
-				const lod = max( log2( d ).add( lodBias ), 0.0 );
-
-				// Weight by NdotL for the split-sum approximation
-				prefilteredColor.addAssign( envMap.sample( L ).level( lod ).rgb.mul( NdotL ) );
-				totalWeight.addAssign( NdotL );
-
-			} );
-
-		} );
-
-		prefilteredColor.divAssign( totalWeight );
-
-	} );
-
-	return vec4( prefilteredColor, 1.0 );
-
-} );
-
-// GGX convolution that weights every texel of a small source mip. Noise free and,
-// for the wide lobes of the rough mip levels, cheaper than importance sampling.
-const ggxIntegration = /*@__PURE__*/ Fn( ( { roughness, sourceLod, sourceSize, envMap, direction } ) => {
-
-	const N = vec3( direction ).toVar();
-
-	const alpha = roughness.mul( roughness ).toConst();
-	const alpha2 = alpha.mul( alpha ).toConst();
-
-	const texelSize = float( 2.0 ).div( float( sourceSize ) ).toConst();
-
-	const prefilteredColor = vec3( 0.0 ).toVar();
-	const totalWeight = float( 0.0 ).toVar();
-
-	// Pair opposite texels: only the one in N's hemisphere contributes.
-	Loop( { start: int( 0 ), end: int( 3 ), name: 'face' }, ( { face } ) => {
-
-		Loop( { start: int( 0 ), end: sourceSize, name: 'y' }, ( { y } ) => {
-
-			Loop( { start: int( 0 ), end: sourceSize, name: 'x' }, ( { x } ) => {
-
-				const uv = vec2( x, y ).add( 0.5 ).mul( texelSize ).sub( 1.0 ).toConst();
-				const texelDirection = select( face.equal( 0 ), vec3( 1.0, uv ), select( face.equal( 1 ), vec3( uv.x, 1.0, uv.y ), vec3( uv, 1.0 ) ) ).toVar();
-
-				const invDistance = inverseSqrt( dot( uv, uv ).add( 1.0 ) ).toConst();
-				const NdotL = dot( N, texelDirection ).toVar();
-				texelDirection.mulAssign( select( NdotL.lessThan( 0.0 ), -1, 1.0 ) );
-				NdotL.assign( abs( NdotL ).mul( invDistance ) );
-
-				// With V = N, NdotH squared is ( 1 + NdotL ) / 2. Common factors
-				// in the GGX distribution and texel solid angle cancel when normalized.
-				const d = alpha2.add( 1.0 ).add( alpha2.sub( 1.0 ).mul( NdotL ) );
-				const weight = NdotL.mul( invDistance ).mul( invDistance ).mul( invDistance ).div( d.mul( d ) ).toConst();
-
-				prefilteredColor.addAssign( envMap.sample( texelDirection ).level( sourceLod ).rgb.mul( weight ) );
-				totalWeight.addAssign( weight );
-
-			} );
-
-		} );
-
-	} );
-
-	return vec4( prefilteredColor.div( totalWeight ), 1.0 );
-
-} );
-
-/**
- * This class represents a cube render target. It is a special version
- * of `WebGLCubeRenderTarget` which is compatible with `WebGPURenderer`.
- *
- * @augments RenderTarget
- */
-class CubeRenderTarget extends RenderTarget {
-
-	/**
-	 * Constructs a new cube render target.
-	 *
-	 * @param {number} [size=1] - The size of the render target.
-	 * @param {RenderTarget~Options} [options] - The configuration object.
-	 */
-	constructor( size = 1, options = {} ) {
-
-		super( size, size, options );
-
-		/**
-		 * This flag can be used for type testing.
-		 *
-		 * @type {boolean}
-		 * @readonly
-		 * @default true
-		 */
-		this.isCubeRenderTarget = true;
-
-		const image = { width: size, height: size, depth: 1 };
-		const images = [ image, image, image, image, image, image ];
-
-		/**
-		 * Overwritten with a different texture type.
-		 *
-		 * @type {DataArrayTexture}
-		 */
-		this.texture = new CubeTexture( images );
-		this._setTextureOptions( options );
-
-		// By convention -- likely based on the RenderMan spec from the 1990's -- cube maps are specified by WebGL (and three.js)
-		// in a coordinate system in which positive-x is to the right when looking up the positive-z axis -- in other words,
-		// in a left-handed coordinate system. By continuing this convention, preexisting cube maps continued to render correctly.
-
-		// three.js uses a right-handed coordinate system. So environment maps used in three.js appear to have px and nx swapped
-		// and the flag isRenderTargetTexture controls this conversion. The flip is not required when using WebGLCubeRenderTarget.texture
-		// as a cube texture (this is detected when isRenderTargetTexture is set to true for cube textures).
-
-		this.texture.isRenderTargetTexture = true;
-
-	}
-
-	/**
-	 * Converts the given equirectangular texture to a cube map.
-	 *
-	 * @param {Renderer} renderer - The renderer.
-	 * @param {Texture} texture - The equirectangular texture.
-	 * @return {CubeRenderTarget} A reference to this cube render target.
-	 */
-	fromEquirectangularTexture( renderer, texture$1 ) {
-
-		const currentMinFilter = texture$1.minFilter;
-		const currentGenerateMipmaps = texture$1.generateMipmaps;
-
-		texture$1.generateMipmaps = true;
-
-		this.texture.type = texture$1.type;
-		this.texture.colorSpace = texture$1.colorSpace;
-
-		this.texture.generateMipmaps = texture$1.generateMipmaps;
-		this.texture.minFilter = texture$1.minFilter;
-		this.texture.magFilter = texture$1.magFilter;
-
-		const geometry = new BoxGeometry( 5, 5, 5 );
-
-		const uvNode = equirectUV( positionWorldDirection );
-
-		const material = new NodeMaterial();
-		material.colorNode = texture( texture$1, uvNode, 0 );
-		material.side = BackSide;
-		material.blending = NoBlending;
-
-		const mesh = new Mesh( geometry, material );
-
-		const scene = new Scene();
-		scene.add( mesh );
-
-		// Avoid blurred poles
-		if ( texture$1.minFilter === LinearMipmapLinearFilter ) texture$1.minFilter = LinearFilter;
-
-		const camera = new CubeCamera( 1, 10, this );
-
-		const currentMRT = renderer.getMRT();
-		renderer.setMRT( null );
-
-		camera.update( renderer, scene );
-
-		renderer.setMRT( currentMRT );
-
-		texture$1.minFilter = currentMinFilter;
-		texture$1.generateMipmaps = currentGenerateMipmaps;
-
-		mesh.geometry.dispose();
-		mesh.material.dispose();
-
-		return this;
-
-	}
-
-	/**
-	 * Clears this cube render target.
-	 *
-	 * @param {Renderer} renderer - The renderer.
-	 * @param {boolean} [color=true] - Whether the color buffer should be cleared or not.
-	 * @param {boolean} [depth=true] - Whether the depth buffer should be cleared or not.
-	 * @param {boolean} [stencil=true] - Whether the stencil buffer should be cleared or not.
-	 */
-	clear( renderer, color = true, depth = true, stencil = true ) {
-
-		const currentRenderTarget = renderer.getRenderTarget();
-
-		for ( let i = 0; i < 6; i ++ ) {
-
-			renderer.setRenderTarget( this, i );
-
-			renderer.clear( color, depth, stencil );
-
-		}
-
-		renderer.setRenderTarget( currentRenderTarget );
-
-	}
-
-}
-
-// Smaller inputs are upsampled so that every PMREM has enough mip levels.
-const MIN_SIZE = 256;
-
-// Log2 of the face size of the roughest mip level. Smaller faces can't
-// represent the diffuse irradiance that is stored in this level.
-const LOD_MIN = 3;
-
-// Spiral samples per pass of the initial fromScene() blur.
-const BLUR_SAMPLES = 20;
-
-// GGX VNDF samples for the sharp mip levels.
-const GGX_SAMPLES = 256;
-
-// Integrate a small source mip for the rough levels to avoid sampling noise.
-const INTEGRATION_SIZE = 16;
-const INTEGRATION_LEVELS = 3;
-
-const _origin = /*@__PURE__*/ new Vector3();
-const _clearColor = /*@__PURE__*/ new Color();
-
-// maps materials to their uniforms dictionary
-
-const _uniformsMap = new WeakMap();
-
-/**
- * Generates a Prefiltered, Mipmapped Radiance Environment Map (PMREM) for
- * image-based lighting. The result is a cube render target whose mip levels
- * store GGX-filtered radiance at increasing roughness, from a mirror at level 0
- * to roughness 1. See {@link PMREMGenerator.lodToRoughness} for the mapping.
- *
- * Filtering assumes the view direction equals the surface normal. Sharp levels
- * use GGX visible normal sampling (Heitz, 2018), while rough levels integrate a
- * lower-resolution source cubemap.
- *
- * @see {@link https://jcgt.org/published/0007/04/01/ | Sampling the GGX Distribution of Visible Normals}
- */
-class PMREMGenerator {
-
-	/**
-	 * Constructs a new PMREM generator.
-	 *
-	 * @param {Renderer} renderer - The renderer.
-	 */
-	constructor( renderer ) {
-
-		this._renderer = renderer;
-
-		this._cubeSize = 0;
-		this._sourceTarget = null;
-
-		this._cubeCamera = new CubeCamera( 1, 10, null );
-		this._boxMesh = new Mesh( new BoxGeometry( 5, 5, 5 ), null );
-
-		this._cubemapMaterial = null;
-		this._equirectMaterial = null;
-
-		this._blurMaterial = null;
-		this._ggxMaterial = null;
-		this._integrationMaterial = null;
-
-	}
-
-	/**
-	 * Generates a PMREM from a scene, optionally applying a Gaussian blur before
-	 * GGX filtering.
-	 *
-	 * @param {Scene} scene - The scene to be captured.
-	 * @param {number} [sigma=0] - The blur radius in radians.
-	 * @param {number} [near=0.1] - The near plane distance.
-	 * @param {number} [far=100] - The far plane distance.
-	 * @param {Object} [options={}] - The configuration options.
-	 * @param {number} [options.size=256] - The texture size of the PMREM, rounded down to a power of two and at least 256.
-	 * @param {Vector3} [options.position=origin] - The position of the internal cube camera that renders the scene.
-	 * @param {?CubeRenderTarget} [options.renderTarget=null] - The render target to use.
-	 * @return {CubeRenderTarget} The resulting PMREM.
-	 */
-	fromScene( scene, sigma = 0, near = 0.1, far = 100, options = {} ) {
-
-		const {
-			size = 256,
-			position = _origin,
-			renderTarget = null,
-		} = options;
-
-		const renderer = this._renderer;
-
-		this._setSize( size );
-
-		if ( renderer.hasInitialized() === false ) {
-
-			throw new Error( 'THREE.PMREMGenerator: .fromScene() called before the backend is initialized. Use "await renderer.init();" before using this method.' );
-
-		}
-
-		const pmremTarget = renderTarget || this._allocateTarget();
-		const sourceTarget = this._getSourceTarget( true );
-
-		if ( sigma > 0 ) {
-
-			sourceTarget.texture.mipmapsAutoUpdate = false;
-
-		}
-
-		// Clear every captured face, independent of the application's clear settings.
-
-		const autoClear = renderer.autoClear;
-		const autoClearColor = renderer.autoClearColor;
-		const autoClearDepth = renderer.autoClearDepth;
-		const autoClearStencil = renderer.autoClearStencil;
-		const background = scene.background;
-
-		renderer.autoClear = true;
-		renderer.autoClearColor = true;
-		renderer.autoClearDepth = true;
-		renderer.autoClearStencil = true;
-
-		if ( background === null ) scene.background = renderer.getClearColor( _clearColor );
-
-		const cubeCamera = new CubeCamera( near, far, sourceTarget );
-		cubeCamera.position.copy( position );
-		cubeCamera.update( renderer, scene );
-
-		renderer.autoClear = autoClear;
-		renderer.autoClearColor = autoClearColor;
-		renderer.autoClearDepth = autoClearDepth;
-		renderer.autoClearStencil = autoClearStencil;
-
-		scene.background = background;
-
-		if ( sigma > 0 ) {
-
-			sourceTarget.texture.mipmapsAutoUpdate = true;
-			this._blur( pmremTarget, sigma );
-
-		}
-
-		this._applyPMREM( pmremTarget );
-
-		return pmremTarget;
-
-	}
-
-	/**
-	 * Asynchronous version of {@link PMREMGenerator#fromScene}.
-	 *
-	 * @deprecated
-	 * @param {Scene} scene - The scene to be captured.
-	 * @param {number} [sigma=0] - The blur radius in radians.
-	 * @param {number} [near=0.1] - The near plane distance.
-	 * @param {number} [far=100] - The far plane distance.
-	 * @param {Object} [options={}] - The configuration options.
-	 * @param {number} [options.size=256] - The texture size of the PMREM, rounded down to a power of two and at least 256.
-	 * @param {Vector3} [options.position=origin] - The position of the internal cube camera that renders the scene.
-	 * @param {?CubeRenderTarget} [options.renderTarget=null] - The render target to use.
-	 * @return {Promise<CubeRenderTarget>} A Promise that resolves with the PMREM.
-	 * @see {@link PMREMGenerator#fromScene}
-	 */
-	async fromSceneAsync( scene, sigma = 0, near = 0.1, far = 100, options = {} ) {
-
-		warnOnce( 'PMREMGenerator: ".fromSceneAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
-
-		await this._renderer.init();
-
-		return this.fromScene( scene, sigma, near, far, options );
-
-	}
-
-	/**
-	 * Generates a PMREM from an LDR or HDR equirectangular texture. The cube face
-	 * size is one quarter of the image width, rounded down to a power of two and
-	 * at least 256.
-	 *
-	 * @param {Texture} equirectangular - The equirectangular texture to be converted.
-	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
-	 * @return {CubeRenderTarget} The resulting PMREM.
-	 * @see {@link PMREMGenerator#fromEquirectangularAsync}
-	 */
-	fromEquirectangular( equirectangular, renderTarget = null ) {
-
-		if ( this._renderer.hasInitialized() === false ) {
-
-			throw new Error( 'THREE.PMREMGenerator: .fromEquirectangular() called before the backend is initialized. Use "await renderer.init();" before using this method.' );
-
-		}
-
-		return this._fromTexture( equirectangular, renderTarget );
-
-	}
-
-	/**
-	 * Asynchronous version of {@link PMREMGenerator#fromEquirectangular}.
-	 *
-	 * @deprecated
-	 * @param {Texture} equirectangular - The equirectangular texture to be converted.
-	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
-	 * @return {Promise<CubeRenderTarget>} The resulting PMREM.
-	 * @see {@link PMREMGenerator#fromEquirectangular}
-	 */
-	async fromEquirectangularAsync( equirectangular, renderTarget = null ) {
-
-		warnOnce( 'PMREMGenerator: ".fromEquirectangularAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
-
-		await this._renderer.init();
-
-		return this._fromTexture( equirectangular, renderTarget );
-
-	}
-
-	/**
-	 * Generates a PMREM from an LDR or HDR cubemap. The cube face size matches
-	 * the input, rounded down to a power of two and at least 256.
-	 *
-	 * @param {Texture} cubemap - The cubemap texture to be converted.
-	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
-	 * @return {CubeRenderTarget} The resulting PMREM.
-	 * @see {@link PMREMGenerator#fromCubemapAsync}
-	 */
-	fromCubemap( cubemap, renderTarget = null ) {
-
-		if ( this._renderer.hasInitialized() === false ) {
-
-			throw new Error( 'THREE.PMREMGenerator: .fromCubemap() called before the backend is initialized. Use "await renderer.init();" before using this method.' );
-
-		}
-
-		return this._fromTexture( cubemap, renderTarget );
-
-	}
-
-	/**
-	 * Asynchronous version of {@link PMREMGenerator#fromCubemap}.
-	 *
-	 * @deprecated
-	 * @param {Texture} cubemap - The cubemap texture to be converted.
-	 * @param {?CubeRenderTarget} [renderTarget=null] - The render target to use.
-	 * @return {Promise<CubeRenderTarget>} The resulting PMREM.
-	 * @see {@link PMREMGenerator#fromCubemap}
-	 */
-	async fromCubemapAsync( cubemap, renderTarget = null ) {
-
-		warnOnce( 'PMREMGenerator: ".fromCubemapAsync()" is deprecated. Use "await renderer.init()" instead.' ); // @deprecated r181
-
-		await this._renderer.init();
-
-		return this._fromTexture( cubemap, renderTarget );
-
-	}
-
-	/**
-	 * Pre-compiles the cubemap shader. You can get faster start-up by invoking this method during
-	 * your texture's network fetch for increased concurrency.
-	 *
-	 * @returns {Promise}
-	 */
-	async compileCubemapShader() {
-
-		if ( this._cubemapMaterial === null ) {
-
-			this._cubemapMaterial = _getCubemapMaterial();
-			await this._compileMaterial( this._cubemapMaterial );
-
-		}
-
-	}
-
-	/**
-	 * Pre-compiles the equirectangular shader. You can get faster start-up by invoking this method during
-	 * your texture's network fetch for increased concurrency.
-	 *
-	 * @returns {Promise}
-	 */
-	async compileEquirectangularShader() {
-
-		if ( this._equirectMaterial === null ) {
-
-			this._equirectMaterial = _getEquirectMaterial();
-			await this._compileMaterial( this._equirectMaterial );
-
-		}
-
-	}
-
-	/**
-	 * Disposes of the PMREMGenerator's internal memory. The PMREMs it returned
-	 * belong to the caller and are not disposed.
-	 */
-	dispose() {
-
-		if ( this._sourceTarget !== null ) this._sourceTarget.dispose();
-
-		if ( this._cubemapMaterial !== null ) this._cubemapMaterial.dispose();
-		if ( this._equirectMaterial !== null ) this._equirectMaterial.dispose();
-		if ( this._blurMaterial !== null ) this._blurMaterial.dispose();
-		if ( this._ggxMaterial !== null ) this._ggxMaterial.dispose();
-		if ( this._integrationMaterial !== null ) this._integrationMaterial.dispose();
-
-		this._boxMesh.geometry.dispose();
-
-	}
-
-	/**
-	 * Returns the roughness a mip level of a PMREM has been prefiltered for.
-	 * The inverse mapping is used by the renderers when sampling a PMREM.
-	 *
-	 * @param {number} lod - The mip level.
-	 * @param {number} maxLod - The last mip level of the PMREM.
-	 * @return {number} The roughness.
-	 */
-	static lodToRoughness( lod, maxLod ) {
-
-		return maxLod > 0 ? 1 - Math.sqrt( 1 - lod / maxLod ) : 0;
-
-	}
-
-	// private interface
-
-	_setSize( cubeSize ) {
-
-		this._cubeSize = Math.max( MIN_SIZE, floorPowerOfTwo( cubeSize ) );
-
-	}
-
-	_fromTexture( texture, renderTarget ) {
-
-		if ( texture.mapping === CubeReflectionMapping || texture.mapping === CubeRefractionMapping ) {
-
-			this._setSize( texture.image.length === 0 ? MIN_SIZE : ( texture.image[ 0 ].width || texture.image[ 0 ].image.width ) );
-
-		} else { // Equirectangular
-
-			this._setSize( texture.image.width / 4 );
-
-		}
-
-		const pmremTarget = renderTarget || this._allocateTarget();
-
-		this._textureToCubemap( texture );
-		this._applyPMREM( pmremTarget );
-
-		return pmremTarget;
-
-	}
-
-	_allocateTarget() {
-
-		const size = this._cubeSize;
-
-		const pmremTarget = _createRenderTarget( size, false, false );
-
-		// Allocate only the prefiltered mip levels without automatic mipmap generation.
-
-		const maxLod = Math.log2( size ) - LOD_MIN;
-
-		for ( let lod = 0; lod <= maxLod; lod ++ ) {
-
-			pmremTarget.texture.mipmaps.push( { width: size >> lod, height: size >> lod } );
-
-		}
-
-		pmremTarget.texture.name = 'PMREM';
-		pmremTarget.texture.isPMREMTexture = true;
-
-		return pmremTarget;
-
-	}
-
-	_getSourceTarget( depthBuffer = false ) {
-
-		const size = this._cubeSize;
-		const sourceTarget = this._sourceTarget;
-
-		if ( sourceTarget === null || sourceTarget.width !== size || ( depthBuffer && sourceTarget.depthBuffer === false ) ) {
-
-			if ( sourceTarget !== null ) sourceTarget.dispose();
-
-			this._sourceTarget = _createRenderTarget( size, true, depthBuffer );
-
-		}
-
-		return this._sourceTarget;
-
-	}
-
-	async _compileMaterial( material ) {
-
-		this._boxMesh.material = material;
-		await this._renderer.compile( this._boxMesh, this._cubeCamera.children[ 0 ] );
-
-	}
-
-	/**
-	 * Renders the box mesh with the given material into all six faces of a cube render target.
-	 *
-	 * @private
-	 * @param {CubeRenderTarget} target - The render target.
-	 * @param {number} lod - The mip level to render into.
-	 * @param {NodeMaterial} material - The material.
-	 */
-	_renderCube( target, lod, material ) {
-
-		const boxMesh = this._boxMesh;
-		const cubeCamera = this._cubeCamera;
-
-		boxMesh.material = material;
-
-		cubeCamera.renderTarget = target;
-		cubeCamera.activeMipmapLevel = lod;
-		cubeCamera.update( this._renderer, boxMesh );
-
-	}
-
-	_textureToCubemap( texture ) {
-
-		let material;
-
-		if ( texture.mapping === CubeReflectionMapping || texture.mapping === CubeRefractionMapping ) {
-
-			if ( this._cubemapMaterial === null ) {
-
-				this._cubemapMaterial = _getCubemapMaterial();
-
-			}
-
-			material = this._cubemapMaterial;
-
-		} else {
-
-			if ( this._equirectMaterial === null ) {
-
-				this._equirectMaterial = _getEquirectMaterial();
-
-			}
-
-			material = this._equirectMaterial;
-
-		}
-
-		_uniformsMap.get( material ).envMap.value = texture;
-
-		this._renderCube( this._getSourceTarget(), 0, material );
-
-	}
-
-	/**
-	 * Prefilters the source cubemap into the mip levels of the PMREM. The sharp levels
-	 * integrate the GGX lobe of their roughness with VNDF importance sampling, reading the
-	 * mip level of the source that matches the solid angle of each sample. The rough
-	 * levels weight every texel of a small source mip with the GGX lobe instead.
-	 *
-	 * @private
-	 * @param {CubeRenderTarget} pmremTarget - The PMREM.
-	 */
-	_applyPMREM( pmremTarget ) {
-
-		if ( this._ggxMaterial === null ) {
-
-			this._ggxMaterial = _getGGXMaterial();
-			this._integrationMaterial = _getIntegrationMaterial();
-
-		}
-
-		const size = this._cubeSize;
-		const maxLod = pmremTarget.texture.mipmaps.length - 1;
-
-		const ggxUniforms = _uniformsMap.get( this._ggxMaterial );
-		ggxUniforms.envMap.value = this._sourceTarget.texture;
-
-		const integrationUniforms = _uniformsMap.get( this._integrationMaterial );
-		integrationUniforms.envMap.value = this._sourceTarget.texture;
-		integrationUniforms.sourceLod.value = Math.log2( size / INTEGRATION_SIZE );
-
-		for ( let lod = 0; lod <= maxLod; lod ++ ) {
-
-			const roughness = PMREMGenerator.lodToRoughness( lod, maxLod );
-
-			if ( lod > maxLod - INTEGRATION_LEVELS ) {
-
-				integrationUniforms.roughness.value = roughness;
-
-				this._renderCube( pmremTarget, lod, this._integrationMaterial );
-
-			} else {
-
-				// For V = N, pdf( L ) = D( H ) / 4. Match the source texel solid angle to
-				// 1 / ( GGX_SAMPLES * pdf ), with a half-mip bias to reduce sampling noise.
-				// The shader supplies log2 of the GGX denominator.
-				const lodBias = roughness > 0 ? Math.log2( size ) + 0.5 * Math.log2( 6 / ( GGX_SAMPLES * Math.pow( roughness, 4 ) ) ) + 0.5 : 0;
-
-				ggxUniforms.roughness.value = roughness;
-				ggxUniforms.lodBias.value = lodBias;
-
-				this._renderCube( pmremTarget, lod, this._ggxMaterial );
-
-			}
-
-		}
-
-	}
-
-	/**
-	 * Applies the initial fromScene() blur in two passes using a golden-angle
-	 * spiral kernel. Level 0 of the PMREM serves as the intermediate target.
-	 *
-	 * @private
-	 * @param {CubeRenderTarget} pmremTarget - The PMREM.
-	 * @param {number} sigma - The blur radius in radians.
-	 */
-	_blur( pmremTarget, sigma ) {
-
-		if ( this._blurMaterial === null ) {
-
-			this._blurMaterial = _getBlurMaterial();
-
-		}
-
-		const material = this._blurMaterial;
-		const uniforms = _uniformsMap.get( material );
-
-		const sourceTarget = this._sourceTarget;
-
-		// Split the blur variance between two passes. Clamp sigma to the sphere's
-		// maximum angular distance.
-		uniforms.sigma.value = Math.min( sigma, Math.PI ) / Math.SQRT2;
-
-		uniforms.envMap.value = sourceTarget.texture;
-		this._renderCube( pmremTarget, 0, material );
-
-		uniforms.envMap.value = pmremTarget.texture;
-		this._renderCube( sourceTarget, 0, material );
-
-	}
-
-}
-
-function _createRenderTarget( size, generateMipmaps, depthBuffer ) {
-
-	return new CubeRenderTarget( size, {
-		minFilter: LinearMipmapLinearFilter,
-		generateMipmaps: generateMipmaps,
-		type: HalfFloatType,
-		colorSpace: LinearSRGBColorSpace,
-		depthBuffer: depthBuffer
-	} );
-
-}
-
-function _getMaterial( type, uniforms, fragmentNode ) {
-
-	const material = new NodeMaterial();
-	material.name = `PMREM_${ type }`;
-	material.fragmentNode = fragmentNode;
-	material.side = BackSide;
-	material.blending = NoBlending;
-	material.depthTest = false;
-	material.depthWrite = false;
-
-	_uniformsMap.set( material, uniforms );
-
-	return material;
-
-}
-
-function _getBlurMaterial() {
-
-	const uniforms = {
-		envMap: cubeTexture(),
-		sigma: uniform( 0 )
-	};
-
-	return _getMaterial( 'blur', uniforms, sphericalGaussianBlur( {
-		...uniforms,
-		direction: positionWorldDirection,
-		SAMPLES: int( BLUR_SAMPLES )
-	} ) );
-
-}
-
-function _getGGXMaterial() {
-
-	const uniforms = {
-		envMap: cubeTexture(),
-		roughness: uniform( 0 ),
-		lodBias: uniform( 0 )
-	};
-
-	return _getMaterial( 'ggx', uniforms, ggxConvolution( {
-		...uniforms,
-		direction: positionWorldDirection,
-		GGX_SAMPLES: uint( GGX_SAMPLES )
-	} ) );
-
-}
-
-function _getIntegrationMaterial() {
-
-	const uniforms = {
-		envMap: cubeTexture(),
-		roughness: uniform( 0 ),
-		sourceLod: uniform( 0 ),
-		sourceSize: uniform( INTEGRATION_SIZE, 'int' ) // a uniform so the loops aren't unrolled
-	};
-
-	return _getMaterial( 'integration', uniforms, ggxIntegration( {
-		...uniforms,
-		direction: positionWorldDirection
-	} ) );
-
-}
-
-function _getCubemapMaterial() {
-
-	const uniforms = {
-		envMap: cubeTexture()
-	};
-
-	return _getMaterial( 'cubemap', uniforms, uniforms.envMap.sample( positionWorldDirection ) );
-
-}
-
-function _getEquirectMaterial() {
-
-	const uniforms = {
-		envMap: texture()
-	};
-
-	const fragmentNode = Fn( () => {
-
-		// Average four subpixel samples to preserve small, bright features.
-		const direction = positionWorldDirection;
-		const dx = direction.dFdx().mul( 0.25 ).toConst();
-		const dy = direction.dFdy().mul( 0.25 ).toConst();
-
-		const color = uniforms.envMap.sample( equirectUV( direction.sub( dx ).sub( dy ).normalize() ) ).level( 0 ).rgb
-			.add( uniforms.envMap.sample( equirectUV( direction.add( dx ).sub( dy ).normalize() ) ).level( 0 ).rgb )
-			.add( uniforms.envMap.sample( equirectUV( direction.sub( dx ).add( dy ).normalize() ) ).level( 0 ).rgb )
-			.add( uniforms.envMap.sample( equirectUV( direction.add( dx ).add( dy ).normalize() ) ).level( 0 ).rgb );
-
-		return vec4( color.mul( 0.25 ), 1.0 );
-
-	} )();
-
-	return _getMaterial( 'equirect', uniforms, fragmentNode );
-
-}
-
-const _cache = new WeakMap();
-
-/**
- * Generates a PMREM from the given texture.
- *
- * @private
- * @param {Texture} texture - The texture to create the PMREM for.
- * @param {Renderer} renderer - The renderer.
- * @param {PMREMGenerator} generator - The PMREM generator.
- * @return {?Texture} The PMREM.
- */
-function _getPMREMFromTexture( texture, renderer, generator ) {
-
-	const cache = _getCache( renderer );
-
-	let renderTarget = cache.get( texture );
-
-	const pmremVersion = renderTarget !== undefined ? renderTarget.texture.pmremVersion : -1;
-
-	if ( pmremVersion !== texture.pmremVersion ) {
-
-		const image = texture.image;
-
-		if ( texture.isCubeTexture ) {
-
-			if ( isCubeMapReady( image ) ) {
-
-				renderTarget = generator.fromCubemap( texture, renderTarget );
-
-			} else {
-
-				return null;
-
-			}
-
-
-		} else {
-
-			if ( isEquirectangularMapReady( image ) ) {
-
-				renderTarget = generator.fromEquirectangular( texture, renderTarget );
-
-			} else {
-
-				return null;
-
-			}
-
-		}
-
-		renderTarget.texture.pmremVersion = texture.pmremVersion;
-
-		// add dispose event listener for new PMREMs
-
-		if ( cache.has( texture ) === false ) {
-
-			const onDispose = () => {
-
-				texture.removeEventListener( 'dispose', onDispose );
-
-				const pmrem = cache.get( texture );
-
-				if ( pmrem !== undefined ) {
-
-					pmrem.texture.pmremVersion = -1;
-					pmrem.dispose();
-					cache.delete( texture );
-
-				}
-
-			};
-
-			texture.addEventListener( 'dispose', onDispose );
-
-		}
-
-		//
-
-		cache.set( texture, renderTarget );
-
-	}
-
-	return renderTarget.texture;
-
-}
-
-/**
- * Returns a cache that stores generated PMREMs for the respective textures.
- * A cache must be maintained per renderer since PMREMs are render target textures
- * which can't be shared across render contexts.
- *
- * @private
- * @param {Renderer} renderer - The renderer.
- * @return {WeakMap<Texture, CubeRenderTarget>} The PMREM cache.
- */
-function _getCache( renderer ) {
-
-	let rendererCache = _cache.get( renderer );
-
-	if ( rendererCache === undefined ) {
-
-		rendererCache = new WeakMap();
-		_cache.set( renderer, rendererCache );
-
-	}
-
-	return rendererCache;
-
-}
-
-/**
- * This node represents a PMREM which is a special type of preprocessed
- * environment map intended for PBR materials.
- *
- * ```js
- * const material = new MeshStandardNodeMaterial();
- * material.envNode = pmremTexture( envMap );
- * ```
- *
- * @augments Node
- */
-class PMREMNode extends Node {
-
-	static get type() {
-
-		return 'PMREMNode';
-
-	}
-
-	/**
-	 * Constructs a new PMREM node.
-	 *
-	 * @param {Texture} value - The input texture.
-	 * @param {Node<vec3>} [uvNode=null] - The uv node.
-	 * @param {Node<float>} [levelNode=null] - The level node.
-	 */
-	constructor( value, uvNode = null, levelNode = null ) {
-
-		super( 'vec3' );
-
-		/**
-		 * Reference to the input texture.
-		 *
-		 * @private
-		 * @type {Texture}
-		 */
-		this._value = value;
-
-		/**
-		 * Reference to the generated PMREM.
-		 *
-		 * @private
-		 * @type {Texture | null}
-		 * @default null
-		 */
-		this._pmrem = null;
-
-		/**
-		 *  The uv node.
-		 *
-		 * @type {Node<vec3>}
-		 */
-		this.uvNode = uvNode;
-
-		/**
-		 *  The level node.
-		 *
-		 * @type {Node<float>}
-		 */
-		this.levelNode = levelNode;
-
-		/**
-		 * Reference to a PMREM generator.
-		 *
-		 * @private
-		 * @type {?PMREMGenerator}
-		 * @default null
-		 */
-		this._generator = null;
-
-		const defaultTexture = new CubeTexture();
-		defaultTexture.isRenderTargetTexture = true;
-
-		/**
-		 * The texture node holding the generated PMREM.
-		 *
-		 * @private
-		 * @type {CubeTextureNode}
-		 */
-		this._texture = cubeTexture( defaultTexture );
-
-		/**
-		 * A uniform representing the last mip level of the PMREM.
-		 *
-		 * @private
-		 * @type {UniformNode<float>}
-		 */
-		this._maxLod = uniform( 0 );
-
-		/**
-		 * A uniform representing the width of the sharpest mip level of the PMREM.
-		 *
-		 * @private
-		 * @type {UniformNode<float>}
-		 */
-		this._size = uniform( 0 );
-
-		/**
-		 * The `updateBeforeType` is set to `NodeUpdateType.RENDER`.
-		 *
-		 * @type {string}
-		 * @default 'render'
-		 */
-		this.updateBeforeType = NodeUpdateType.RENDER;
-
-	}
-
-	set value( value ) {
-
-		this._value = value;
-		this._pmrem = null;
-
-	}
-
-	/**
-	 * The node's texture value.
-	 *
-	 * @type {Texture}
-	 */
-	get value() {
-
-		return this._value;
-
-	}
-
-	/**
-	 * Uses the given PMREM texture to update internal values.
-	 *
-	 * @param {Texture} texture - The PMREM texture.
-	 */
-	updateFromTexture( texture ) {
-
-		const mipmaps = texture.isCompressedCubeTexture ? texture.image[ 0 ].mipmaps : texture.mipmaps;
-
-		this._texture.value = texture;
-		this._maxLod.value = mipmaps.length - 1;
-		this._size.value = mipmaps[ 0 ].width;
-
-	}
-
-	updateBefore( frame ) {
-
-		let pmrem = this._pmrem;
-
-		const pmremVersion = pmrem ? pmrem.pmremVersion : -1;
-		const texture = this._value;
-
-		if ( pmremVersion !== texture.pmremVersion ) {
-
-			if ( texture.isPMREMTexture === true ) {
-
-				pmrem = texture;
-
-			} else {
-
-				if ( this._generator === null ) {
-
-					this._generator = new PMREMGenerator( frame.renderer );
-
-				}
-
-				pmrem = _getPMREMFromTexture( texture, frame.renderer, this._generator );
-
-			}
-
-			if ( pmrem !== null ) {
-
-				this._pmrem = pmrem;
-
-				this.updateFromTexture( pmrem );
-
-			}
-
-		}
-
-	}
-
-	setup( builder ) {
-
-		this.updateBefore( builder );
-
-		//
-
-		let uvNode = this.uvNode;
-
-		if ( uvNode === null && builder.context.getUV ) {
-
-			uvNode = builder.context.getUV( this, builder );
-
-		}
-
-		//
-
-		let levelNode = this.levelNode;
-
-		if ( levelNode === null && builder.context.getTextureLevel ) {
-
-			levelNode = builder.context.getTextureLevel( this );
-
-		}
-
-		//
-
-		return this._texture.sample( materialEnvRotation.mul( uvNode ) ).level( roughnessToMip( levelNode, this._maxLod ) ).rgb;
-
-	}
-
-	dispose() {
-
-		super.dispose();
-
-		if ( this._generator !== null ) this._generator.dispose();
-
-	}
-
-}
-
-/**
- * Returns `true` if the given cube map image has been fully loaded.
- *
- * @private
- * @param {?Array<(Image|Object)>} [image] - The cube map image.
- * @return {boolean} Whether the given cube map is ready or not.
- */
-function isCubeMapReady( image ) {
-
-	if ( image === null || image === undefined ) return false;
-
-	let count = 0;
-	const length = 6;
-
-	for ( let i = 0; i < length; i ++ ) {
-
-		if ( image[ i ] !== undefined ) count ++;
-
-	}
-
-	return count === length;
-
-
-}
-
-/**
- * Returns `true` if the given equirectangular image has been fully loaded.
- *
- * @private
- * @param {(Image|Object)} image - The equirectangular image.
- * @return {boolean} Whether the given cube map is ready or not.
- */
-function isEquirectangularMapReady( image ) {
-
-	if ( image === null || image === undefined ) return false;
-
-	return image.height > 0;
-
-}
-
-/**
- * TSL function for creating a PMREM node.
- *
- * @tsl
- * @function
- * @param {Texture} value - The input texture.
- * @param {?Node<vec3>} [uvNode=null] - The uv node.
- * @param {?Node<float>} [levelNode=null] - The level node.
- * @returns {PMREMNode}
- */
-const pmremTexture = /*@__PURE__*/ nodeProxy( PMREMNode ).setParameterLength( 1, 3 );
 
 /**
  * Creates a 2x2 checkerboard pattern that can be used as procedural texture data.
@@ -40677,465 +41180,6 @@ const mx_heighttonormal = ( input, scale = 1, texcoord = uv$1() ) => {
 
 };
 
-const EON_EPSILON = 1e-7;
-const FON_A_COEFFICIENT = 0.5 - 2 / ( 3 * Math.PI );
-const FON_AVERAGE_ALBEDO_COEFFICIENT = 2 / 3 - 28 / ( 15 * Math.PI );
-
-const FON_DirectionalAlbedo = /*@__PURE__*/ Fn( ( { mu, roughness, A } ) => {
-
-	const muComp = mu.oneMinus();
-	const gOverPi = muComp.mul(
-		muComp.mul(
-			muComp.mul(
-				muComp.mul( 0.0714429953 ).sub( 0.332181442 )
-			).add( 0.491881867 )
-		).add( 0.0571085289 )
-	);
-
-	return A.mul( roughness.mul( gOverPi ).add( 1.0 ) );
-
-}, { mu: 'float', roughness: 'float', A: 'float', return: 'float' } );
-
-// Portsmouth et al. 2025, "EON: A Practical Energy-Preserving Rough Diffuse BRDF"
-// https://jcgt.org/published/0014/01/06/
-const BRDF_EON = /*@__PURE__*/ Fn( ( { lightDirection, diffuseColor, roughness, normalView: normalView$1 = normalView, viewDirection = positionViewDirection } ) => {
-
-	const rho = diffuseColor.clamp();
-	const dotNL = normalView$1.dot( lightDirection ).clamp();
-	const dotNV = normalView$1.dot( viewDirection ).clamp();
-	const s = lightDirection.dot( viewDirection ).sub( dotNL.mul( dotNV ) );
-	const sOverT = s.greaterThan( 0.0 ).select( s.div( dotNL.max( dotNV ).max( EON_EPSILON ) ), s );
-
-	const A = roughness.mul( FON_A_COEFFICIENT ).add( 1.0 ).reciprocal();
-	const singleScatter = rho.mul( 1 / Math.PI, A, roughness.mul( sOverT ).add( 1.0 ) );
-
-	const averageAlbedo = A.mul( roughness.mul( FON_AVERAGE_ALBEDO_COEFFICIENT ).add( 1.0 ) );
-	const albedoV = FON_DirectionalAlbedo( { mu: dotNV, roughness, A } );
-	const albedoL = FON_DirectionalAlbedo( { mu: dotNL, roughness, A } );
-	const rhoMultiScatter = rho.mul( rho, averageAlbedo ).div( rho.mul( averageAlbedo.oneMinus() ).oneMinus().max( EON_EPSILON ) );
-	const multiScatter = rhoMultiScatter.mul(
-		1 / Math.PI,
-		albedoV.oneMinus().max( EON_EPSILON ),
-		albedoL.oneMinus().max( EON_EPSILON )
-	).div( averageAlbedo.oneMinus().max( EON_EPSILON ) );
-	const eon = singleScatter.add( multiScatter );
-
-	return roughness.lessThanEqual( EON_EPSILON ).select( rho.mul( 1 / Math.PI ), eon );
-
-} );
-
-const EON_DirectionalAlbedo = /*@__PURE__*/ Fn( ( { diffuseColor, roughness, dotNV } ) => {
-
-	const rho = diffuseColor.clamp();
-	const A = roughness.mul( FON_A_COEFFICIENT ).add( 1.0 ).reciprocal();
-	const directionalAlbedo = FON_DirectionalAlbedo( { mu: dotNV.clamp(), roughness, A } );
-	const averageAlbedo = A.mul( roughness.mul( FON_AVERAGE_ALBEDO_COEFFICIENT ).add( 1.0 ) );
-	const rhoMultiScatter = rho.mul( rho, averageAlbedo ).div( rho.mul( averageAlbedo.oneMinus() ).oneMinus().max( EON_EPSILON ) );
-	const eonAlbedo = rho.mul( directionalAlbedo ).add( rhoMultiScatter.mul( directionalAlbedo.oneMinus() ) );
-
-	return roughness.lessThanEqual( EON_EPSILON ).select( rho, eonAlbedo );
-
-}, { diffuseColor: 'vec3', roughness: 'float', dotNV: 'float', return: 'vec3' } );
-
-const F_Schlick = /*@__PURE__*/ Fn( ( { f0, f90, dotVH } ) => {
-
-	// Original approximation by Christophe Schlick '94
-	// float fresnel = pow( 1.0 - dotVH, 5.0 );
-
-	// Optimized variant (presented by Epic at SIGGRAPH '13)
-	// https://cdn2.unrealengine.com/Resources/files/2013SiggraphPresentationsNotes-26915738.pdf
-	const fresnel = dotVH.mul( -5.55473 ).sub( 6.98316 ).mul( dotVH ).exp2();
-
-	return f0.mul( fresnel.oneMinus() ).add( f90.mul( fresnel ) );
-
-} ); // validated
-
-// Moving Frostbite to Physically Based Rendering 3.0 - page 12, listing 2
-// https://seblagarde.files.wordpress.com/2015/07/course_notes_moving_frostbite_to_pbr_v32.pdf
-const V_GGX_SmithCorrelated = /*@__PURE__*/ Fn( ( { alpha, dotNL, dotNV } ) => {
-
-	const a2 = alpha.pow2();
-
-	const gv = dotNL.mul( a2.add( a2.oneMinus().mul( dotNV.pow2() ) ).sqrt() );
-	const gl = dotNV.mul( a2.add( a2.oneMinus().mul( dotNL.pow2() ) ).sqrt() );
-
-	return div( 0.5, gv.add( gl ).max( EPSILON ) );
-
-}, { alpha: 'float', dotNL: 'float', dotNV: 'float', return: 'float' } ); // validated
-
-// https://google.github.io/filament/Filament.md.html#materialsystem/anisotropicmodel/anisotropicspecularbrdf
-
-const V_GGX_SmithCorrelated_Anisotropic = /*@__PURE__*/ Fn( ( { alphaT, alphaB, dotTV, dotBV, dotTL, dotBL, dotNV, dotNL } ) => {
-
-	const gv = dotNL.mul( vec3( alphaT.mul( dotTV ), alphaB.mul( dotBV ), dotNV ).length() );
-	const gl = dotNV.mul( vec3( alphaT.mul( dotTL ), alphaB.mul( dotBL ), dotNL ).length() );
-
-	return div( 0.5, gv.add( gl ).max( EPSILON ) );
-
-}, {
-	alphaT: 'float',
-	alphaB: 'float',
-	dotTV: 'float',
-	dotBV: 'float',
-	dotTL: 'float',
-	dotBL: 'float',
-	dotNV: 'float',
-	dotNL: 'float',
-	return: 'float'
-} );
-
-// Microfacet Models for Refraction through Rough Surfaces - equation (33)
-// http://graphicrants.blogspot.com/2013/08/specular-brdf-reference.html
-// alpha is "roughness squared" in Disney’s reparameterization
-const D_GGX = /*@__PURE__*/ Fn( ( { alpha, dotNH } ) => {
-
-	const a2 = alpha.pow2();
-
-	const denom = dotNH.pow2().mul( a2.oneMinus() ).oneMinus(); // avoid alpha = 0 with dotNH = 1
-
-	return a2.div( denom.pow2() ).mul( 1 / Math.PI );
-
-}, { alpha: 'float', dotNH: 'float', return: 'float' } ); // validated
-
-const RECIPROCAL_PI = /*@__PURE__*/ float( 1 / Math.PI );
-
-// https://google.github.io/filament/Filament.md.html#materialsystem/anisotropicmodel/anisotropicspecularbrdf
-
-const D_GGX_Anisotropic = /*@__PURE__*/ Fn( ( { alphaT, alphaB, dotNH, dotTH, dotBH } ) => {
-
-	const a2 = alphaT.mul( alphaB );
-	const v = vec3( alphaB.mul( dotTH ), alphaT.mul( dotBH ), a2.mul( dotNH ) );
-	const v2 = v.dot( v );
-	const w2 = a2.div( v2 );
-
-	return RECIPROCAL_PI.mul( a2.mul( w2.pow2() ) );
-
-}, {
-	alphaT: 'float',
-	alphaB: 'float',
-	dotNH: 'float',
-	dotTH: 'float',
-	dotBH: 'float',
-	return: 'float'
-} );
-
-// GGX Distribution, Schlick Fresnel, GGX_SmithCorrelated Visibility
-const BRDF_GGX = /*@__PURE__*/ Fn( ( { lightDirection, f0, f90, roughness, f, normalView: normalView$1 = normalView, viewDirection = positionViewDirection, USE_IRIDESCENCE, USE_ANISOTROPY } ) => {
-
-	const alpha = roughness.max( 0.045 ).pow2(); // punctual lights need a minimum roughness to show a highlight
-
-	const halfDir = lightDirection.add( viewDirection ).normalize();
-
-	const dotNL = normalView$1.dot( lightDirection ).clamp();
-	const dotNV = normalView$1.dot( viewDirection ).clamp(); // @ TODO: Move to core dotNV
-	const dotNH = normalView$1.dot( halfDir ).clamp();
-	const dotVH = viewDirection.dot( halfDir ).clamp();
-
-	let F = F_Schlick( { f0, f90, dotVH } );
-	let V, D;
-
-	if ( defined( USE_IRIDESCENCE ) ) {
-
-		F = iridescence.mix( F, f );
-
-	}
-
-	if ( defined( USE_ANISOTROPY ) ) {
-
-		const dotTL = anisotropyT.dot( lightDirection );
-		const dotTV = anisotropyT.dot( viewDirection );
-		const dotTH = anisotropyT.dot( halfDir );
-		const dotBL = anisotropyB.dot( lightDirection );
-		const dotBV = anisotropyB.dot( viewDirection );
-		const dotBH = anisotropyB.dot( halfDir );
-
-		const clampedAlphaT = alphaT.max( alpha );
-
-		V = V_GGX_SmithCorrelated_Anisotropic( { alphaT: clampedAlphaT, alphaB: alpha, dotTV, dotBV, dotTL, dotBL, dotNV, dotNL } );
-		D = D_GGX_Anisotropic( { alphaT: clampedAlphaT, alphaB: alpha, dotNH, dotTH, dotBH } );
-
-	} else {
-
-		V = V_GGX_SmithCorrelated( { alpha, dotNL, dotNV } );
-		D = D_GGX( { alpha, dotNH } );
-
-	}
-
-	return F.mul( V ).mul( D );
-
-} ); // validated
-
-const BRDF_Lambert = /*@__PURE__*/ Fn( ( inputs ) => {
-
-	return inputs.diffuseColor.mul( 1 / Math.PI ); // punctual light
-
-} ); // validated
-
-// https://github.com/google/filament/blob/master/shaders/src/brdf.fs
-const D_Charlie = /*@__PURE__*/ Fn( ( { roughness, dotNH } ) => {
-
-	const alpha = roughness.pow2();
-
-	// Estevez and Kulla 2017, "Production Friendly Microfacet Sheen BRDF"
-	const invAlpha = float( 1.0 ).div( alpha );
-	const cos2h = dotNH.pow2();
-	const sin2h = cos2h.oneMinus().max( 0.0078125 ); // 2^(-14/2), so sin2h^2 > 0 in fp16
-
-	return float( 2.0 ).add( invAlpha ).mul( sin2h.pow( invAlpha.mul( 0.5 ) ) ).div( 2.0 * Math.PI );
-
-}, { roughness: 'float', dotNH: 'float', return: 'float' } );
-
-// https://github.com/google/filament/blob/master/shaders/src/brdf.fs
-const V_Neubelt = /*@__PURE__*/ Fn( ( { dotNV, dotNL } ) => {
-
-	// Neubelt and Pettineo 2013, "Crafting a Next-gen Material Pipeline for The Order: 1886"
-	return float( 1.0 ).div( float( 4.0 ).mul( dotNL.add( dotNV ).sub( dotNL.mul( dotNV ) ) ) ).clamp();
-
-}, { dotNV: 'float', dotNL: 'float', return: 'float' } );
-
-const BRDF_Sheen = /*@__PURE__*/ Fn( ( { lightDirection } ) => {
-
-	const halfDir = lightDirection.add( positionViewDirection ).normalize();
-
-	const dotNL = normalView.dot( lightDirection ).clamp();
-	const dotNV = normalView.dot( positionViewDirection ).clamp();
-	const dotNH = normalView.dot( halfDir ).clamp();
-
-	const D = D_Charlie( { roughness: sheenRoughness, dotNH } );
-	const V = V_Neubelt( { dotNV, dotNL } );
-
-	return sheen.mul( D ).mul( V );
-
-} );
-
-/**
- * Precomputed DFG LUT for physically based specular lighting, used by both
- * image-based lighting and direct-light multi-scattering energy compensation
- * Resolution: 16x16
- * Samples: 4096 per texel
- * Format: RG16F (2 half floats per texel: scale, bias)
- */
-
-const DATA = new Uint16Array( [
-	0x30b5, 0x3ad1, 0x314c, 0x3a4d, 0x33d2, 0x391c, 0x35ef, 0x3828, 0x37f3, 0x36a6, 0x38d1, 0x3539, 0x3979, 0x3410, 0x39f8, 0x3252, 0x3a53, 0x30f0, 0x3a94, 0x2fc9, 0x3abf, 0x2e35, 0x3ada, 0x2d05, 0x3ae8, 0x2c1f, 0x3aed, 0x2ae0, 0x3aea, 0x29d1, 0x3ae1, 0x28ff,
-	0x3638, 0x38e4, 0x364a, 0x38ce, 0x3699, 0x385e, 0x374e, 0x372c, 0x3839, 0x35a4, 0x38dc, 0x3462, 0x396e, 0x32c4, 0x39de, 0x3134, 0x3a2b, 0x3003, 0x3a59, 0x2e3a, 0x3a6d, 0x2ce1, 0x3a6e, 0x2bba, 0x3a5f, 0x2a33, 0x3a49, 0x290a, 0x3a2d, 0x2826, 0x3a0a, 0x26e8,
-	0x3894, 0x36d7, 0x3897, 0x36c9, 0x38a3, 0x3675, 0x38bc, 0x35ac, 0x38ee, 0x349c, 0x393e, 0x3332, 0x3997, 0x3186, 0x39e2, 0x3038, 0x3a13, 0x2e75, 0x3a29, 0x2cf5, 0x3a2d, 0x2bac, 0x3a21, 0x29ff, 0x3a04, 0x28bc, 0x39dc, 0x2790, 0x39ad, 0x261a, 0x3978, 0x24fa,
-	0x39ac, 0x34a8, 0x39ac, 0x34a3, 0x39ae, 0x3480, 0x39ae, 0x3423, 0x39b1, 0x330e, 0x39c2, 0x31a9, 0x39e0, 0x3063, 0x39fc, 0x2eb5, 0x3a0c, 0x2d1d, 0x3a14, 0x2bcf, 0x3a07, 0x29ff, 0x39e9, 0x28a3, 0x39be, 0x273c, 0x3989, 0x25b3, 0x394a, 0x2488, 0x3907, 0x2345,
-	0x3a77, 0x3223, 0x3a76, 0x321f, 0x3a73, 0x3204, 0x3a6a, 0x31b3, 0x3a58, 0x3114, 0x3a45, 0x303b, 0x3a34, 0x2eb6, 0x3a26, 0x2d31, 0x3a1e, 0x2bef, 0x3a0b, 0x2a0d, 0x39ec, 0x28a1, 0x39c0, 0x271b, 0x3987, 0x2580, 0x3944, 0x2449, 0x38fa, 0x22bd, 0x38ac, 0x2155,
-	0x3b07, 0x2fca, 0x3b06, 0x2fca, 0x3b00, 0x2fb8, 0x3af4, 0x2f7c, 0x3adb, 0x2eea, 0x3ab4, 0x2e00, 0x3a85, 0x2cec, 0x3a5e, 0x2bc5, 0x3a36, 0x2a00, 0x3a0d, 0x2899, 0x39dc, 0x2707, 0x39a0, 0x2562, 0x395a, 0x2424, 0x390b, 0x2268, 0x38b7, 0x20fd, 0x385f, 0x1fd1,
-	0x3b69, 0x2cb9, 0x3b68, 0x2cbb, 0x3b62, 0x2cbb, 0x3b56, 0x2cae, 0x3b3b, 0x2c78, 0x3b0d, 0x2c0a, 0x3acf, 0x2ae3, 0x3a92, 0x2998, 0x3a54, 0x2867, 0x3a17, 0x26d0, 0x39d3, 0x253c, 0x3989, 0x2402, 0x3935, 0x2226, 0x38dc, 0x20bd, 0x387d, 0x1f54, 0x381d, 0x1db3,
-	0x3ba9, 0x296b, 0x3ba8, 0x296f, 0x3ba3, 0x297b, 0x3b98, 0x2987, 0x3b7f, 0x2976, 0x3b4e, 0x2927, 0x3b0e, 0x2895, 0x3ac2, 0x27b7, 0x3a73, 0x263b, 0x3a23, 0x24e7, 0x39d0, 0x239b, 0x3976, 0x21d9, 0x3917, 0x207e, 0x38b2, 0x1ee7, 0x384b, 0x1d53, 0x37c7, 0x1c1e,
-	0x3bd2, 0x25cb, 0x3bd1, 0x25d3, 0x3bcd, 0x25f0, 0x3bc2, 0x261f, 0x3bad, 0x2645, 0x3b7d, 0x262d, 0x3b3e, 0x25c4, 0x3aec, 0x250f, 0x3a93, 0x243a, 0x3a32, 0x22ce, 0x39d0, 0x215b, 0x3969, 0x202a, 0x38fe, 0x1e6e, 0x388f, 0x1cf1, 0x381f, 0x1b9b, 0x3762, 0x19dd,
-	0x3be9, 0x21ab, 0x3be9, 0x21b7, 0x3be5, 0x21e5, 0x3bdd, 0x2241, 0x3bc9, 0x22a7, 0x3ba0, 0x22ec, 0x3b62, 0x22cd, 0x3b0f, 0x2247, 0x3aae, 0x2175, 0x3a44, 0x2088, 0x39d4, 0x1f49, 0x3960, 0x1dbe, 0x38e9, 0x1c77, 0x3870, 0x1ae8, 0x37f1, 0x1953, 0x3708, 0x181b,
-	0x3bf6, 0x1cea, 0x3bf6, 0x1cfb, 0x3bf3, 0x1d38, 0x3bec, 0x1dbd, 0x3bda, 0x1e7c, 0x3bb7, 0x1f25, 0x3b7d, 0x1f79, 0x3b2c, 0x1f4c, 0x3ac6, 0x1ea6, 0x3a55, 0x1dbb, 0x39da, 0x1cbd, 0x395a, 0x1b9d, 0x38d8, 0x1a00, 0x3855, 0x18ac, 0x37ab, 0x173c, 0x36b7, 0x1598,
-	0x3bfc, 0x1736, 0x3bfc, 0x1759, 0x3bf9, 0x17e7, 0x3bf4, 0x1896, 0x3be4, 0x1997, 0x3bc6, 0x1aa8, 0x3b91, 0x1b84, 0x3b43, 0x1bd2, 0x3ade, 0x1b8a, 0x3a65, 0x1acd, 0x39e2, 0x19d3, 0x3957, 0x18cd, 0x38ca, 0x17b3, 0x383e, 0x1613, 0x376d, 0x14bf, 0x366f, 0x135e,
-	0x3bff, 0x101b, 0x3bff, 0x1039, 0x3bfc, 0x10c8, 0x3bf9, 0x1226, 0x3bea, 0x1428, 0x3bcf, 0x1584, 0x3b9f, 0x16c5, 0x3b54, 0x179a, 0x3af0, 0x17ce, 0x3a76, 0x1771, 0x39ea, 0x16a4, 0x3956, 0x15a7, 0x38bf, 0x14a7, 0x3829, 0x1379, 0x3735, 0x11ea, 0x362d, 0x10a1,
-	0x3c00, 0x061b, 0x3c00, 0x066a, 0x3bfe, 0x081c, 0x3bfa, 0x0a4c, 0x3bed, 0x0d16, 0x3bd5, 0x0fb3, 0x3ba9, 0x114d, 0x3b63, 0x127c, 0x3b01, 0x132f, 0x3a85, 0x1344, 0x39f4, 0x12d2, 0x3957, 0x120d, 0x38b5, 0x1122, 0x3817, 0x103c, 0x3703, 0x0ed3, 0x35f0, 0x0d6d,
-	0x3c00, 0x007a, 0x3c00, 0x0089, 0x3bfe, 0x011d, 0x3bfb, 0x027c, 0x3bf0, 0x04fa, 0x3bda, 0x0881, 0x3bb1, 0x0acd, 0x3b6f, 0x0c97, 0x3b10, 0x0d7b, 0x3a93, 0x0df1, 0x39fe, 0x0def, 0x3959, 0x0d8a, 0x38af, 0x0ce9, 0x3808, 0x0c31, 0x36d5, 0x0af0, 0x35b9, 0x09a3,
-	0x3c00, 0x0000, 0x3c00, 0x0001, 0x3bff, 0x0015, 0x3bfb, 0x0059, 0x3bf2, 0x00fd, 0x3bdd, 0x01df, 0x3bb7, 0x031c, 0x3b79, 0x047c, 0x3b1d, 0x05d4, 0x3aa0, 0x06d5, 0x3a08, 0x075a, 0x395d, 0x075e, 0x38aa, 0x06f7, 0x37f4, 0x0648, 0x36ac, 0x0576, 0x3586, 0x049f
-] );
-
-let lut = null;
-
-const DFGLUT = /*@__PURE__*/ Fn( ( { roughness, dotNV } ) => {
-
-	if ( lut === null ) {
-
-		lut = new DataTexture( DATA, 16, 16, RGFormat, HalfFloatType );
-		lut.name = 'DFG_LUT';
-		lut.minFilter = LinearFilter;
-		lut.magFilter = LinearFilter;
-		lut.wrapS = ClampToEdgeWrapping;
-		lut.wrapT = ClampToEdgeWrapping;
-		lut.generateMipmaps = false;
-		lut.needsUpdate = true;
-
-	}
-
-	const uv = vec2( roughness, dotNV );
-
-	return texture( lut, uv ).rg;
-
-} );
-
-const EnvironmentBRDF = /*@__PURE__*/ Fn( ( inputs ) => {
-
-	const { dotNV, specularColor, specularF90, roughness } = inputs;
-
-	const fab = DFGLUT( { dotNV, roughness } );
-	return specularColor.mul( fab.x ).add( specularF90.mul( fab.y ) );
-
-} );
-
-const Schlick_to_F0 = /*@__PURE__*/ Fn( ( { f, f90, dotVH } ) => {
-
-	const x = dotVH.oneMinus().saturate();
-	const x2 = x.mul( x );
-	const x5 = x.mul( x2, x2 ).clamp( 0, .9999 );
-
-	return f.sub( vec3( f90 ).mul( x5 ) ).div( x5.oneMinus() );
-
-}, { f: 'vec3', f90: 'float', dotVH: 'float', return: 'vec3' } );
-
-// Rect Area Light
-
-// Real-Time Polygonal-Light Shading with Linearly Transformed Cosines
-// by Eric Heitz, Jonathan Dupuy, Stephen Hill and David Neubelt
-// code: https://github.com/selfshadow/ltc_code/
-
-const LTC_Uv = /*@__PURE__*/ Fn( ( { N, V, roughness } ) => {
-
-	const LUT_SIZE = 64.0;
-	const LUT_SCALE = ( LUT_SIZE - 1.0 ) / LUT_SIZE;
-	const LUT_BIAS = 0.5 / LUT_SIZE;
-
-	const dotNV = N.dot( V ).saturate();
-
-	// texture parameterized by sqrt( GGX alpha ) and sqrt( 1 - cos( theta ) )
-	const uv = vec2( roughness, dotNV.oneMinus().sqrt() );
-
-	uv.assign( uv.mul( LUT_SCALE ).add( LUT_BIAS ) );
-
-	return uv;
-
-}, { N: 'vec3', V: 'vec3', roughness: 'float', return: 'vec2' } );
-
-const LTC_ClippedSphereFormFactor = /*@__PURE__*/ Fn( ( { f } ) => {
-
-	// Real-Time Area Lighting: a Journey from Research to Production (p.102)
-	// An approximation of the form factor of a horizon-clipped rectangle.
-
-	const l = f.length();
-
-	return max( l.mul( l ).add( f.z ).div( l.add( 1.0 ) ), 0 );
-
-}, { f: 'vec3', return: 'float' } );
-
-const LTC_EdgeVectorFormFactor = /*@__PURE__*/ Fn( ( { v1, v2 } ) => {
-
-	const x = v1.dot( v2 );
-	const y = x.abs().toVar();
-
-	// rational polynomial approximation to theta / sin( theta ) / 2PI
-	const a = y.mul( 0.0145206 ).add( 0.4965155 ).mul( y ).add( 0.8543985 ).toVar();
-	const b = y.add( 4.1616724 ).mul( y ).add( 3.4175940 ).toVar();
-	const v = a.div( b );
-
-	const theta_sintheta = x.greaterThan( 0.0 ).select( v, max( x.mul( x ).oneMinus(), 1e-7 ).inverseSqrt().mul( 0.5 ).sub( v ) );
-
-	return v1.cross( v2 ).mul( theta_sintheta );
-
-}, { v1: 'vec3', v2: 'vec3', return: 'vec3' } );
-
-const LTC_Evaluate = /*@__PURE__*/ Fn( ( { N, V, P, mInv, p0, p1, p2, p3 } ) => {
-
-	// bail if point is on back side of plane of light
-	// assumes ccw winding order of light vertices
-	const v1 = p1.sub( p0 ).toVar();
-	const v2 = p3.sub( p0 ).toVar();
-
-	const lightNormal = v1.cross( v2 );
-	const result = vec3().toVar();
-
-	If( lightNormal.dot( P.sub( p0 ) ).greaterThanEqual( 0.0 ), () => {
-
-		// construct orthonormal basis around N
-		const T1 = V.sub( N.mul( V.dot( N ) ) ).normalize();
-		const T2 = N.cross( T1 ).negate(); // negated from paper; possibly due to a different handedness of world coordinate system
-
-		// compute transform
-		const mat = mInv.mul( mat3( T1, T2, N ).transpose() ).toVar();
-
-		// transform rect
-		// & project rect onto sphere
-		const coords0 = mat.mul( p0.sub( P ) ).normalize().toVar();
-		const coords1 = mat.mul( p1.sub( P ) ).normalize().toVar();
-		const coords2 = mat.mul( p2.sub( P ) ).normalize().toVar();
-		const coords3 = mat.mul( p3.sub( P ) ).normalize().toVar();
-
-		// calculate vector form factor
-		const vectorFormFactor = vec3( 0 ).toVar();
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords0, v2: coords1 } ) );
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords1, v2: coords2 } ) );
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords2, v2: coords3 } ) );
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords3, v2: coords0 } ) );
-
-		// adjust for horizon clipping
-		result.assign( vec3( LTC_ClippedSphereFormFactor( { f: vectorFormFactor } ) ) );
-
-	} );
-
-	return result;
-
-}, {
-	N: 'vec3',
-	V: 'vec3',
-	P: 'vec3',
-	mInv: 'mat3',
-	p0: 'vec3',
-	p1: 'vec3',
-	p2: 'vec3',
-	p3: 'vec3',
-	return: 'vec3'
-} );
-
-const LTC_Evaluate_Volume = /*@__PURE__*/ Fn( ( { P, p0, p1, p2, p3 } ) => {
-
-	// bail if point is on back side of plane of light
-	// assumes ccw winding order of light vertices
-	const v1 = p1.sub( p0 ).toVar();
-	const v2 = p3.sub( p0 ).toVar();
-
-	const lightNormal = v1.cross( v2 );
-	const result = vec3().toVar();
-
-	If( lightNormal.dot( P.sub( p0 ) ).greaterThanEqual( 0.0 ), () => {
-
-		// transform rect
-		// & project rect onto sphere
-		const coords0 = p0.sub( P ).normalize().toVar();
-		const coords1 = p1.sub( P ).normalize().toVar();
-		const coords2 = p2.sub( P ).normalize().toVar();
-		const coords3 = p3.sub( P ).normalize().toVar();
-
-		// calculate vector form factor
-		const vectorFormFactor = vec3( 0 ).toVar();
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords0, v2: coords1 } ) );
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords1, v2: coords2 } ) );
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords2, v2: coords3 } ) );
-		vectorFormFactor.addAssign( LTC_EdgeVectorFormFactor( { v1: coords3, v2: coords0 } ) );
-
-		// adjust for horizon clipping
-		result.assign( vec3( LTC_ClippedSphereFormFactor( { f: vectorFormFactor.abs() } ) ) );
-
-	} );
-
-	return result;
-
-}, {
-	P: 'vec3',
-	p0: 'vec3',
-	p1: 'vec3',
-	p2: 'vec3',
-	p3: 'vec3',
-	return: 'vec3'
-} );
-
-const getGeometryRoughness = /*@__PURE__*/ Fn( ( builder ) => {
-
-	if ( builder.geometry.hasAttribute( 'normal' ) === false ) {
-
-		return float( 0 );
-
-	}
-
-	const dxy = normalViewGeometry.dFdx().abs().max( normalViewGeometry.dFdy().abs() );
-	const geometryRoughness = dxy.x.max( dxy.y ).max( dxy.z );
-
-	return geometryRoughness;
-
-} );
-
 /**
  * This computes a parallax corrected normal which is used for box-projected cube mapping (BPCEM).
  *
@@ -41165,22 +41209,6 @@ const getParallaxCorrectNormal = /*@__PURE__*/ Fn( ( [ normal, cubeSize, cubePos
 
 	const correction = min( distances.x, distances.y, distances.z ).toConst();
 	return positionWorld.add( nDir.mul( correction ) ).sub( cubePos );
-
-} );
-
-const getRoughness = /*@__PURE__*/ Fn( ( inputs ) => {
-
-	const { roughness } = inputs;
-
-	const geometryRoughness = getGeometryRoughness();
-
-	// Minimum roughness, so even a perfect mirror samples a prefiltered level of the environment map.
-	// Matches Filament's desktop MIN_PERCEPTUAL_ROUGHNESS: https://github.com/google/filament/blob/main/shaders/src/surface_material.fs
-	let roughnessFactor = roughness.max( 0.045 );
-	roughnessFactor = roughnessFactor.add( geometryRoughness );
-	roughnessFactor = roughnessFactor.min( 1.0 );
-
-	return roughnessFactor;
 
 } );
 
@@ -41777,6 +41805,7 @@ var Three_TSL = /*#__PURE__*/Object.freeze({
 	storage: storage,
 	storageBarrier: storageBarrier,
 	storageElement: storageElement,
+	storageStruct: storageStruct,
 	storageTexture: storageTexture,
 	storageTexture3D: storageTexture3D,
 	struct: struct,
@@ -41900,4 +41929,4 @@ var Three_TSL = /*#__PURE__*/Object.freeze({
 	xor: xor
 });
 
-export { AONode, AnalyticLightNode, ArrayElementNode, ArrayNode, AssignNode, AtomicFunctionNode, AttributeNode, BRDF_EON, BRDF_GGX, BRDF_Lambert, BRDF_Sheen, BarrierNode, BasicPointShadowFilter, BasicShadowFilter, BitcastNode, BitcountNode, BlendMode, Break, BufferAttributeNode, BufferNode, BuiltinNode, BumpMapNode, BypassNode, ChainMap, ClippingNode, CodeNode, Color4, ColorSpaceNode, ComputeBuiltinNode, ComputeNode, ConditionalNode, Const, ConstNode, ContextNode, Continue, ConvertNode, CubeRenderTarget, CubeTextureNode, DFGLUT, D_GGX, D_GGX_Anisotropic, DebugNode, Discard, EON_DirectionalAlbedo, EPSILON, EnvironmentBRDF, EventNode, ExpressionNode, F_Schlick, FlipNode, Fn, FrontFacingNode, FunctionCallNode, FunctionNode, FunctionOverloadingNode, HALF_PI, INFINITY, If, IndexNode, InputNode, InspectorBase, InspectorNode, IrradianceNode, IsolateNode, JoinNode, LTC_Evaluate, LTC_Evaluate_Volume, LTC_Uv, LightingContextNode, LightingNode, LightsNode, Loop, LoopNode, MRTNode, MaterialNode, MaterialReferenceNode, MathNode, MaxMipLevelNode, MemberNode, ModelNode, Node, NodeAccess, NodeError, NodeMaterial, NodeMaterialObserver, NodeShaderStage, NodeType, NodeUpdateType, NodeUtils, NormalMapNode, Object3DNode, OnAfterObjectUpdate, OnAfterRenderPipeline, OnBeforeFrameUpdate, OnBeforeMaterialUpdate, OnBeforeObjectUpdate, OnBeforeRenderPipeline, OnFrameUpdate, OnMaterialUpdate, OnObjectUpdate, OperatorNode, OutputStructNode, OverrideContextNode, PCFShadowFilter, PI, PI2, PMREMGenerator, PMREMNode, PackFloatNode, Packed4x8IntegerNode, ParameterNode, PassNode, PointLightNode, PointShadowFilter, PointShadowNode, PointUVNode, PropertyNode, QuadMesh, RTTNode, RangeNode, ReferenceAttributeNode, ReferenceBaseNode, ReferenceElementNode, ReferenceNode, ReflectorNode, RenderOutputNode, RendererReferenceNode, RendererUtils, Return, RotateNode, SampleNode, Schlick_to_F0, ScreenNode, SetNode, ShaderNode, ShadowBaseNode, ShadowNode, SplitNode, Stack, StackNode, StackTrace, StorageArrayElementNode, StorageBufferAttribute, StorageBufferNode, StorageInstancedBufferAttribute, StorageTexture3DNode, StorageTextureNode, StructNode, StructTypeNode, SubBuildNode, SubgroupFunctionNode, Switch, TBNViewMatrix, TWO_PI, Texture3DNode, TextureNode, TextureSizeNode, Three_TSL, ToneMappingNode, ToonOutlinePassNode, UniformArrayNode, UniformGroupNode, UniformNode, UnpackFloatNode, UserDataNode, VSMShadowFilter, V_GGX_SmithCorrelated, V_GGX_SmithCorrelated_Anisotropic, Var, VarNode, VaryingNode, VelocityNode, VertexColorNode, ViewportDepthNode, ViewportDepthTextureNode, ViewportSharedTextureNode, ViewportTextureNode, WorkgroupInfoNode, abs, acesFilmicToneMapping, acos, acosh, add, addMethodChaining, addNodeElement, agxToneMapping, all, alphaT, ambientOcclusion, and, anisotropy, anisotropyB, anisotropyT, any, array, asin, asinh, assign, atan, atanh, atomicAdd, atomicAnd, atomicFunc, atomicLoad, atomicMax, atomicMin, atomicOr, atomicStore, atomicSub, atomicXor, attenuationColor, attenuationDistance, attribute, attributeArray, backgroundBlurriness, backgroundIntensity, backgroundRotation, batch, batchColor, batchIndirectIndex, bentNormalView, billboarding, bitAnd, bitNot, bitOr, bitXor, bitangentGeometry, bitangentLocal, bitangentView, bitangentViewFrame, bitangentWorld, bitcast, blendBurn, blendColor, blendDodge, blendOverlay, blendScreen, bool, buffer, bufferAttribute, builtin, builtinAOContext, builtinGIContext, builtinShadowContext, bumpMap, bvec2, bvec3, bvec4, bypass, cache, call, cameraFar, cameraIndex, cameraNear, cameraNormalMatrix, cameraPosition, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraViewMatrix, cameraViewport, cameraWorldMatrix, cbrt, cdl, ceil, checker, cineonToneMapping, clamp, clearcoat, clearcoatNormalView, clearcoatRoughness, clipSpace, clipping, clippingAlpha, code, color, colorSpaceToWorking, colorToDirection, compute, computeKernel, computeSkinning, context, convert, convertColorSpace, convertToTexture, cos, cosh, countLeadingZeros, countOneBits, countTrailingZeros, cross, cubeTexture, cubeTextureBase, dFdx, dFdy, dashSize, debug, decrement, decrementBefore, defaultBuildStages, defaultShaderStages, defined, degrees, deltaTime, densityFogFactor, depth, depthPass, determinant, difference, diffuseColor, diffuseContribution, diffuseRoughness, directPointLight, directionToColor, directionToFaceDirection, dispersion, distance, div, dot, dot4I8Packed, dot4U8Packed, drawIndex, dynamicBufferAttribute, element, emissive, equal, equirectDirection, equirectUV, exp, exp2, exponentialHeightFogFactor, expression, faceDirection, faceForward, faceforward, float, floatBitsToInt, floatBitsToUint, floor, fog, fract, frameGroup, frameId, frontFacing, fwidth, gain, gapSize, getConstNodeType, getCurrentStack, getDistanceAttenuation, getGeometryRoughness, getNormalFromDepth, getParallaxCorrectNormal, getRoughness, getScreenPosition, getScreenPositionFromClip, getShIrradianceAt, getTextureIndex, getTextureType, getTypeFromLength, getViewPosition, globalId, glsl, glslFn, grayscale, greaterThan, greaterThanEqual, hardwareClipping, hash, hashArray, hashString, highpModelNormalViewMatrix, highpModelViewMatrix, hue, increment, incrementBefore, inspect, instance, instanceColor, instanceIndex, instancedArray, instancedBufferAttribute, instancedDynamicBufferAttribute, instancedMesh, int, intBitsToFloat, interleavedGradientNoise, inverse, inverseSqrt, inversesqrt, invocationLocalIndex, invocationSubgroupIndex, ior, iridescence, iridescenceIOR, iridescenceThickness, isArrayAsParameter, isBackgroundDepth, isolate, ivec2, ivec3, ivec4, js, label, length, lengthSq, lessThan, lessThanEqual, lightPosition, lightProjectionUV, lightShadowMatrix, lightTargetDirection, lightTargetPosition, lightViewPosition, lightingContext, lights, linearDepth, linearToneMapping, localId, log, log2, logarithmicDepthToViewZ, luminance, mat2, mat3, mat4, matcapUV, materialAO, materialAlphaTest, materialAnisotropy, materialAnisotropyVector, materialAttenuationColor, materialAttenuationDistance, materialClearcoat, materialClearcoatNormal, materialClearcoatRoughness, materialColor, materialDiffuseRoughness, materialDispersion, materialEmissive, materialEnvIntensity, materialEnvRotation, materialIOR, materialIridescence, materialIridescenceIOR, materialIridescenceThickness, materialLightMap, materialLineDashOffset, materialLineDashSize, materialLineGapSize, materialLineScale, materialLineWidth, materialMetalness, materialNormal, materialOpacity, materialPointSize, materialReference, materialReflectivity, materialRefractionRatio, materialRetroreflectivity, materialRotation, materialRoughness, materialSheen, materialSheenRoughness, materialShininess, materialSpecular, materialSpecularColor, materialSpecularIntensity, materialSpecularStrength, materialThickness, materialTransmission, max, maxMipLevel, mediumpModelViewMatrix, mergeContext, metalness, min, mix, mixElement, mod, modelDirection, modelNormalMatrix, modelPosition, modelRadius, modelScale, modelViewMatrix, modelViewPosition, modelViewProjection, modelWorldMatrix, modelWorldMatrixInverse, morphColor, morphReference, mrt, mul, mx_aastep, mx_add, mx_atan2, mx_cell_noise_float, mx_cell_noise_vec3, mx_contrast, mx_divide, mx_fractal_noise_float, mx_fractal_noise_float_2d, mx_fractal_noise_vec2, mx_fractal_noise_vec3, mx_fractal_noise_vec4, mx_frame, mx_heighttonormal, mx_hsvtorgb, mx_ifequal, mx_ifgreater, mx_ifgreatereq, mx_invert, mx_modulo, mx_multiply, mx_noise_float, mx_noise_vec3, mx_noise_vec4, mx_place2d, mx_power, mx_ramp4, mx_ramplr, mx_ramptb, mx_rgbtohsv, mx_rotate2d, mx_rotate3d, mx_safepower, mx_separate, mx_smoothstep, mx_splitlr, mx_splittb, mx_srgb_texture_to_lin_rec709, mx_subtract, mx_timer, mx_transform_uv, mx_unifiednoise2d, mx_unifiednoise3d, mx_worley_noise_float, mx_worley_noise_float_2d, mx_worley_noise_float_3d, mx_worley_noise_vec2, mx_worley_noise_vec3, mx_worley_noise_vec3_style, negate, negateOnBackSide, neutralToneMapping, nodeArray, nodeImmutable, nodeObject, nodeObjectAssignable, nodeObjects, nodeProxy, nodeProxyAssignable, nodeProxyConstructor, normalFlat, normalGeometry, normalLocal, normalMap, normalView, normalViewGeometry, normalWorld, normalWorldGeometry, normalize, not, notEqual, numWorkgroups, objectDirection, objectGroup, objectPosition, objectRadius, objectScale, objectViewPosition, objectWorldMatrix, oneMinus, or, orthographicDepthToViewZ, oscSawtooth, oscSine, oscSquare, oscTriangle, output, outputStruct, overloadingFn, overrideNode, overrideNodes, pack4xI8, pack4xI8Clamp, pack4xU8, pack4xU8Clamp, packHalf2x16, packNormalToRGB, packSnorm2x16, packSnorm4x8, packUnorm2x16, packUnorm4x8, parabola, parallaxDirection, parallaxUV, parameter, pass, passTexture, pcurve, perspectiveDepthToViewZ, pmremTexture, pointShadow, pointUV, pointWidth, positionGeometry, positionLocal, positionPrevious, positionView, positionViewDirection, positionWorld, positionWorldDirection, posterize, pow, pow2, pow3, pow4, premultiplyAlpha, projectionDepth, property, quadBroadcast, quadSwapDiagonal, quadSwapX, quadSwapY, radians, rand, range, rangeFogFactor, reciprocal, reference, reference$1, referenceAttribute, referenceBuffer, reflect, reflectVector, reflectView, reflector, refract, refractVector, refractView, reinhardToneMapping, remap, remapClamp, renderGroup, renderOutput, rendererReference, replaceDefaultUV, retroreflectivity, rotate, rotateUV, roughness, round, rtt, sRGBTransferEOTF, sRGBTransferOETF, sample, sampler, samplerComparison, saturate, saturation, screenCoordinate, screenDPR, screenSize, screenUV, select, setCurrentStack, setName, shaderStages, shadow, shadowPositionWorld, shapeCircle, sharedUniformGroup, sheen, sheenRoughness, shiftLeft, shiftRight, shininess, sign, sin, sinc, sinh, skinning, smoothstep, smoothstepElement, specularColor, specularColorBlended, specularF90, spherizeUV, split, spritesheetUV, sqrt, stack, step, stepElement, storage, storageBarrier, storageElement, storageTexture, storageTexture3D, struct, sub, subBuild, subgroupAdd, subgroupAll, subgroupAnd, subgroupAny, subgroupBallot, subgroupBroadcast, subgroupBroadcastFirst, subgroupElect, subgroupExclusiveAdd, subgroupExclusiveMul, subgroupInclusiveAdd, subgroupInclusiveMul, subgroupIndex, subgroupMax, subgroupMin, subgroupMul, subgroupOr, subgroupShuffle, subgroupShuffleDown, subgroupShuffleUp, subgroupShuffleXor, subgroupSize, subgroupXor, tan, tangentGeometry, tangentLocal, tangentView, tangentViewFrame, tangentWorld, tanh, texture, texture3D, texture3DLevel, texture3DLoad, textureBarrier, textureBicubic, textureBicubicLevel, textureLevel, textureLoad, textureSize, textureStore, thickness, time, toneMapping, toneMappingExposure, toonOutlinePass, transformDirection, transformNormal, transformNormalByInverseViewMatrix, transformNormalByViewMatrix, transformNormalToView, transmission, transpose, triNoise3D, triplanarTexture, triplanarTextures, trunc, uint, uintBitsToFloat, uniform, uniformArray, uniformCubeTexture, uniformFlow, uniformGroup, uniformTexture, unpack4xI8, unpack4xU8, unpackHalf2x16, unpackNormal, unpackRGBToNormal, unpackSnorm2x16, unpackSnorm4x8, unpackUnorm2x16, unpackUnorm4x8, unpremultiplyAlpha, userData, uv$1 as uv, uvec2, uvec3, uvec4, varying, varyingProperty, vec2, vec3, vec4, vectorComponents, velocity, vertexColor, vertexIndex, vertexStage, vibrance, viewZToLogarithmicDepth, viewZToOrthographicDepth, viewZToPerspectiveDepth, viewZToReversedOrthographicDepth, viewZToReversedPerspectiveDepth, viewport, viewportCoordinate, viewportDepthTexture, viewportLinearDepth, viewportMipTexture, viewportOpaqueMipTexture, viewportSafeUV, viewportSharedTexture, viewportSize, viewportTexture, viewportUV, vogelDiskSample, wgsl, wgslFn, workgroupArray, workgroupBarrier, workgroupId, workingLuminanceCoefficients, workingToColorSpace, xor };
+export { AONode, AnalyticLightNode, ArrayElementNode, ArrayNode, AssignNode, AtomicFunctionNode, AttributeNode, BRDF_EON, BRDF_GGX, BRDF_Lambert, BRDF_Sheen, BarrierNode, BasicPointShadowFilter, BasicShadowFilter, BitcastNode, BitcountNode, BlendMode, Break, BufferAttributeNode, BufferNode, BuiltinNode, BumpMapNode, BypassNode, ChainMap, ClippingNode, CodeNode, Color4, ColorSpaceNode, ComputeBuiltinNode, ComputeNode, ConditionalNode, Const, ConstNode, ContextNode, Continue, ConvertNode, CubeRenderTarget, CubeTextureNode, DFGLUT, D_GGX, D_GGX_Anisotropic, DebugNode, Discard, EON_DirectionalAlbedo, EPSILON, EnvironmentBRDF, EventNode, ExpressionNode, F_Schlick, FlipNode, Fn, FrontFacingNode, FunctionCallNode, FunctionNode, FunctionOverloadingNode, HALF_PI, INFINITY, If, IndexNode, InputNode, InspectorBase, InspectorNode, IrradianceNode, IsolateNode, JoinNode, LTC_Evaluate, LTC_Evaluate_Volume, LTC_Uv, LightingContextNode, LightingNode, LightsNode, Loop, LoopNode, MRTNode, MaterialNode, MaterialReferenceNode, MathNode, MaxMipLevelNode, MemberNode, ModelNode, Node, NodeAccess, NodeError, NodeMaterial, NodeMaterialObserver, NodeShaderStage, NodeType, NodeUpdateType, NodeUtils, NormalMapNode, Object3DNode, OnAfterObjectUpdate, OnAfterRenderPipeline, OnBeforeFrameUpdate, OnBeforeMaterialUpdate, OnBeforeObjectUpdate, OnBeforeRenderPipeline, OnFrameUpdate, OnMaterialUpdate, OnObjectUpdate, OperatorNode, OutputStructNode, OverrideContextNode, PCFShadowFilter, PI, PI2, PMREMGenerator, PMREMNode, PackFloatNode, Packed4x8IntegerNode, ParameterNode, PassNode, PointLightNode, PointShadowFilter, PointShadowNode, PointUVNode, PropertyNode, QuadMesh, RTTNode, RangeNode, ReferenceAttributeNode, ReferenceBaseNode, ReferenceElementNode, ReferenceNode, ReflectorNode, RenderOutputNode, RendererReferenceNode, RendererUtils, Return, RotateNode, SampleNode, Schlick_to_F0, ScreenNode, SetNode, ShaderNode, ShadowBaseNode, ShadowNode, SplitNode, Stack, StackNode, StackTrace, StorageArrayElementNode, StorageBufferAttribute, StorageBufferNode, StorageInstancedBufferAttribute, StorageStructNode, StorageTexture3DNode, StorageTextureNode, StructNode, StructTypeNode, SubBuildNode, SubgroupFunctionNode, Switch, TBNViewMatrix, TWO_PI, Texture3DNode, TextureNode, TextureSizeNode, Three_TSL, ToneMappingNode, ToonOutlinePassNode, UniformArrayNode, UniformGroupNode, UniformNode, UnpackFloatNode, UserDataNode, VSMShadowFilter, V_GGX_SmithCorrelated, V_GGX_SmithCorrelated_Anisotropic, Var, VarNode, VaryingNode, VelocityNode, VertexColorNode, ViewportDepthNode, ViewportDepthTextureNode, ViewportSharedTextureNode, ViewportTextureNode, WorkgroupInfoNode, abs, acesFilmicToneMapping, acos, acosh, add, addMethodChaining, addNodeElement, agxToneMapping, all, alphaT, ambientOcclusion, and, anisotropy, anisotropyB, anisotropyT, any, array, asin, asinh, assign, atan, atanh, atomicAdd, atomicAnd, atomicFunc, atomicLoad, atomicMax, atomicMin, atomicOr, atomicStore, atomicSub, atomicXor, attenuationColor, attenuationDistance, attribute, attributeArray, backgroundBlurriness, backgroundIntensity, backgroundRotation, batch, batchColor, batchIndirectIndex, bentNormalView, billboarding, bitAnd, bitNot, bitOr, bitXor, bitangentGeometry, bitangentLocal, bitangentView, bitangentViewFrame, bitangentWorld, bitcast, blendBurn, blendColor, blendDodge, blendOverlay, blendScreen, bool, buffer, bufferAttribute, builtin, builtinAOContext, builtinGIContext, builtinShadowContext, bumpMap, bvec2, bvec3, bvec4, bypass, cache, call, cameraFar, cameraIndex, cameraNear, cameraNormalMatrix, cameraPosition, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraViewMatrix, cameraViewport, cameraWorldMatrix, cbrt, cdl, ceil, checker, cineonToneMapping, clamp, clearcoat, clearcoatNormalView, clearcoatRoughness, clipSpace, clipping, clippingAlpha, code, color, colorSpaceToWorking, colorToDirection, compute, computeKernel, computeSkinning, context, convert, convertColorSpace, convertToTexture, cos, cosh, countLeadingZeros, countOneBits, countTrailingZeros, cross, cubeTexture, cubeTextureBase, dFdx, dFdy, dashSize, debug, decrement, decrementBefore, defaultBuildStages, defaultShaderStages, defined, degrees, deltaTime, densityFogFactor, depth, depthPass, determinant, difference, diffuseColor, diffuseContribution, diffuseRoughness, directPointLight, directionToColor, directionToFaceDirection, dispersion, distance, div, dot, dot4I8Packed, dot4U8Packed, drawIndex, dynamicBufferAttribute, element, emissive, equal, equirectDirection, equirectUV, exp, exp2, exponentialHeightFogFactor, expression, faceDirection, faceForward, faceforward, float, floatBitsToInt, floatBitsToUint, floor, fog, fract, frameGroup, frameId, frontFacing, fwidth, gain, gapSize, getConstNodeType, getCurrentStack, getDistanceAttenuation, getGeometryRoughness, getNormalFromDepth, getParallaxCorrectNormal, getRoughness, getScreenPosition, getScreenPositionFromClip, getShIrradianceAt, getTextureIndex, getTextureType, getTypeFromLength, getViewPosition, globalId, glsl, glslFn, grayscale, greaterThan, greaterThanEqual, hardwareClipping, hash, hashArray, hashString, highpModelNormalViewMatrix, highpModelViewMatrix, hue, increment, incrementBefore, inspect, instance, instanceColor, instanceIndex, instancedArray, instancedBufferAttribute, instancedDynamicBufferAttribute, instancedMesh, int, intBitsToFloat, interleavedGradientNoise, inverse, inverseSqrt, inversesqrt, invocationLocalIndex, invocationSubgroupIndex, ior, iridescence, iridescenceIOR, iridescenceThickness, isArrayAsParameter, isBackgroundDepth, isolate, ivec2, ivec3, ivec4, js, label, length, lengthSq, lessThan, lessThanEqual, lightPosition, lightProjectionUV, lightShadowMatrix, lightTargetDirection, lightTargetPosition, lightViewPosition, lightingContext, lights, linearDepth, linearToneMapping, localId, log, log2, logarithmicDepthToViewZ, luminance, mat2, mat3, mat4, matcapUV, materialAO, materialAlphaTest, materialAnisotropy, materialAnisotropyVector, materialAttenuationColor, materialAttenuationDistance, materialClearcoat, materialClearcoatNormal, materialClearcoatRoughness, materialColor, materialDiffuseRoughness, materialDispersion, materialEmissive, materialEnvIntensity, materialEnvRotation, materialIOR, materialIridescence, materialIridescenceIOR, materialIridescenceThickness, materialLightMap, materialLineDashOffset, materialLineDashSize, materialLineGapSize, materialLineScale, materialLineWidth, materialMetalness, materialNormal, materialOpacity, materialPointSize, materialReference, materialReflectivity, materialRefractionRatio, materialRetroreflectivity, materialRotation, materialRoughness, materialSheen, materialSheenRoughness, materialShininess, materialSpecular, materialSpecularColor, materialSpecularIntensity, materialSpecularStrength, materialThickness, materialTransmission, max, maxMipLevel, mediumpModelViewMatrix, mergeContext, metalness, min, mix, mixElement, mod, modelDirection, modelNormalMatrix, modelPosition, modelRadius, modelScale, modelViewMatrix, modelViewPosition, modelViewProjection, modelWorldMatrix, modelWorldMatrixInverse, morphColor, morphReference, mrt, mul, mx_aastep, mx_add, mx_atan2, mx_cell_noise_float, mx_cell_noise_vec3, mx_contrast, mx_divide, mx_fractal_noise_float, mx_fractal_noise_float_2d, mx_fractal_noise_vec2, mx_fractal_noise_vec3, mx_fractal_noise_vec4, mx_frame, mx_heighttonormal, mx_hsvtorgb, mx_ifequal, mx_ifgreater, mx_ifgreatereq, mx_invert, mx_modulo, mx_multiply, mx_noise_float, mx_noise_vec3, mx_noise_vec4, mx_place2d, mx_power, mx_ramp4, mx_ramplr, mx_ramptb, mx_rgbtohsv, mx_rotate2d, mx_rotate3d, mx_safepower, mx_separate, mx_smoothstep, mx_splitlr, mx_splittb, mx_srgb_texture_to_lin_rec709, mx_subtract, mx_timer, mx_transform_uv, mx_unifiednoise2d, mx_unifiednoise3d, mx_worley_noise_float, mx_worley_noise_float_2d, mx_worley_noise_float_3d, mx_worley_noise_vec2, mx_worley_noise_vec3, mx_worley_noise_vec3_style, negate, negateOnBackSide, neutralToneMapping, nodeArray, nodeImmutable, nodeObject, nodeObjectAssignable, nodeObjects, nodeProxy, nodeProxyAssignable, nodeProxyConstructor, normalFlat, normalGeometry, normalLocal, normalMap, normalView, normalViewGeometry, normalWorld, normalWorldGeometry, normalize, not, notEqual, numWorkgroups, objectDirection, objectGroup, objectPosition, objectRadius, objectScale, objectViewPosition, objectWorldMatrix, oneMinus, or, orthographicDepthToViewZ, oscSawtooth, oscSine, oscSquare, oscTriangle, output, outputStruct, overloadingFn, overrideNode, overrideNodes, pack4xI8, pack4xI8Clamp, pack4xU8, pack4xU8Clamp, packHalf2x16, packNormalToRGB, packSnorm2x16, packSnorm4x8, packUnorm2x16, packUnorm4x8, parabola, parallaxDirection, parallaxUV, parameter, pass, passTexture, pcurve, perspectiveDepthToViewZ, pmremTexture, pointShadow, pointUV, pointWidth, positionGeometry, positionLocal, positionPrevious, positionView, positionViewDirection, positionWorld, positionWorldDirection, posterize, pow, pow2, pow3, pow4, premultiplyAlpha, projectionDepth, property, quadBroadcast, quadSwapDiagonal, quadSwapX, quadSwapY, radians, rand, range, rangeFogFactor, reciprocal, reference, reference$1, referenceAttribute, referenceBuffer, reflect, reflectVector, reflectView, reflector, refract, refractVector, refractView, reinhardToneMapping, remap, remapClamp, renderGroup, renderOutput, rendererReference, replaceDefaultUV, retroreflectivity, rotate, rotateUV, roughness, round, rtt, sRGBTransferEOTF, sRGBTransferOETF, sample, sampler, samplerComparison, saturate, saturation, screenCoordinate, screenDPR, screenSize, screenUV, select, setCurrentStack, setName, shaderStages, shadow, shadowPositionWorld, shapeCircle, sharedUniformGroup, sheen, sheenRoughness, shiftLeft, shiftRight, shininess, sign, sin, sinc, sinh, skinning, smoothstep, smoothstepElement, specularColor, specularColorBlended, specularF90, spherizeUV, split, spritesheetUV, sqrt, stack, step, stepElement, storage, storageBarrier, storageElement, storageStruct, storageTexture, storageTexture3D, struct, sub, subBuild, subgroupAdd, subgroupAll, subgroupAnd, subgroupAny, subgroupBallot, subgroupBroadcast, subgroupBroadcastFirst, subgroupElect, subgroupExclusiveAdd, subgroupExclusiveMul, subgroupInclusiveAdd, subgroupInclusiveMul, subgroupIndex, subgroupMax, subgroupMin, subgroupMul, subgroupOr, subgroupShuffle, subgroupShuffleDown, subgroupShuffleUp, subgroupShuffleXor, subgroupSize, subgroupXor, tan, tangentGeometry, tangentLocal, tangentView, tangentViewFrame, tangentWorld, tanh, texture, texture3D, texture3DLevel, texture3DLoad, textureBarrier, textureBicubic, textureBicubicLevel, textureLevel, textureLoad, textureSize, textureStore, thickness, time, toneMapping, toneMappingExposure, toonOutlinePass, transformDirection, transformNormal, transformNormalByInverseViewMatrix, transformNormalByViewMatrix, transformNormalToView, transmission, transpose, triNoise3D, triplanarTexture, triplanarTextures, trunc, uint, uintBitsToFloat, uniform, uniformArray, uniformCubeTexture, uniformFlow, uniformGroup, uniformTexture, unpack4xI8, unpack4xU8, unpackHalf2x16, unpackNormal, unpackRGBToNormal, unpackSnorm2x16, unpackSnorm4x8, unpackUnorm2x16, unpackUnorm4x8, unpremultiplyAlpha, userData, uv$1 as uv, uvec2, uvec3, uvec4, varying, varyingProperty, vec2, vec3, vec4, vectorComponents, velocity, vertexColor, vertexIndex, vertexStage, vibrance, viewZToLogarithmicDepth, viewZToOrthographicDepth, viewZToPerspectiveDepth, viewZToReversedOrthographicDepth, viewZToReversedPerspectiveDepth, viewport, viewportCoordinate, viewportDepthTexture, viewportLinearDepth, viewportMipTexture, viewportOpaqueMipTexture, viewportSafeUV, viewportSharedTexture, viewportSize, viewportTexture, viewportUV, vogelDiskSample, wgsl, wgslFn, workgroupArray, workgroupBarrier, workgroupId, workingLuminanceCoefficients, workingToColorSpace, xor };

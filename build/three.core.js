@@ -7541,8 +7541,8 @@ class Texture extends EventDispatcher {
 		this.userData = {};
 
 		/**
-		 * This can be used to only update a subregion or specific rows of the texture (for example, just the
-		 * first 3 rows). Use the `addUpdateRange()` function to add ranges to this array.
+		 * This can be used to only update parts of a data texture (for example, just a few rows).
+		 * Use the `addUpdateRange()` function to add ranges to this array.
 		 *
 		 * @type {Array<Object>}
 		 */
@@ -7680,8 +7680,12 @@ class Texture extends EventDispatcher {
 	/**
 	 * Adds a range of data in the data texture to be updated on the GPU.
 	 *
-	 * @param {number} start - Position at which to start update.
-	 * @param {number} count - The number of components to update.
+	 * Update ranges assume four components per texel, so they currently only work with `RGBAFormat`.
+	 * Each range must stay within a single row of the texture. To update several rows, add one
+	 * range per row. Update ranges are only supported in `WebGLRenderer`.
+	 *
+	 * @param {number} start - Index of the first array element to update.
+	 * @param {number} count - The number of array elements to update.
 	 */
 	addUpdateRange( start, count ) {
 
@@ -28932,7 +28936,7 @@ class PointsMaterial extends Material {
 		/**
 		 * Defines the size of the points in pixels.
 		 *
-		 * Might be capped if the value exceeds hardware dependent parameters like [gl.ALIASED_POINT_SIZE_RANGE](https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/getParamete).
+		 * Might be capped if the value exceeds hardware dependent parameters like [gl.ALIASED_POINT_SIZE_RANGE](https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/getParameter).
 		 *
 		 * @type {number}
 		 * @default 1
@@ -42445,6 +42449,10 @@ function makeClipAdditive( targetClip, referenceFrame = 0, referenceClip = targe
 
 		if ( targetTrack.createInterpolant.isInterpolantFactoryMethodGLTFCubicSpline ) {
 
+			// Cubic spline tracks store an in-tangent, the value and an out-tangent per keyframe.
+			// Subtracting a constant does not change the tangents of numeric tracks, but removing
+			// a rotation from quaternion tracks has to rotate the tangents as well.
+
 			targetOffset = targetValueSize / 3;
 
 		}
@@ -42489,25 +42497,28 @@ function makeClipAdditive( targetClip, referenceFrame = 0, referenceClip = targe
 		const numTimes = targetTrack.times.length;
 		for ( let j = 0; j < numTimes; ++ j ) {
 
-			const valueStart = j * targetValueSize + targetOffset;
-
 			if ( referenceTrackType === 'quaternion' ) {
 
-				// Multiply the conjugate for quaternion track types
-				Quaternion.multiplyQuaternionsFlat(
-					targetTrack.values,
-					valueStart,
-					referenceValue,
-					0,
-					targetTrack.values,
-					valueStart
-				);
+				for ( let k = 0; k < targetValueSize; k += 4 ) {
+
+					const offset = j * targetValueSize + k;
+
+					Quaternion.multiplyQuaternionsFlat(
+						targetTrack.values,
+						offset,
+						referenceValue,
+						0,
+						targetTrack.values,
+						offset
+					);
+
+				}
 
 			} else {
 
+				const valueStart = j * targetValueSize + targetOffset;
 				const valueEnd = targetValueSize - targetOffset * 2;
 
-				// Subtract each value for all other numeric track types
 				for ( let k = 0; k < valueEnd; ++ k ) {
 
 					targetTrack.values[ valueStart + k ] -= referenceValue[ k ];
