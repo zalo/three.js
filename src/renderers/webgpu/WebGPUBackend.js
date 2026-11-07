@@ -1598,6 +1598,8 @@ class WebGPUBackend extends Backend {
 
 		submit( this.device, renderContextData.encoder.finish() );
 
+		this._finishTimerPass();
+
 		// pass and encoder are only valid between beginRender() and finishRender()
 
 		renderContextData.currentPass = null;
@@ -2036,6 +2038,8 @@ class WebGPUBackend extends Backend {
 		groupData.passEncoderGPU.end();
 
 		submit( this.device, groupData.cmdEncoderGPU.finish() );
+
+		this._finishTimerPass();
 
 	}
 
@@ -2636,18 +2640,27 @@ class WebGPUBackend extends Backend {
 	 */
 	initTimestampQuery( type, uid, descriptor ) {
 
-		// inside GPU timers, the first pass after a timer begins writes its start slot, and every pass
-		// overwrites the end slot all the timers share
+		// inside GPU timers, every pass writes its beginning to a slot of its own and overwrites the end slot
+		// all the timers share. A pass that is issued inside another, e.g. of a shadow map or of an effect,
+		// runs before it, so which pass starts a measurement is only known when a pass is submitted, see
+		// _finishTimerPass()
 		const timers = this._timers;
-		if ( timers !== null && timers.freeSlots.length < TIMER_SLOT_COUNT - 1 ) {
+		if ( timers !== null ) {
 
-			_renderPassTimestampWrites.querySet = timers.querySet;
-			_renderPassTimestampWrites.beginningOfPassWriteIndex = timers.pendingSlot === - 1 ? undefined : timers.pendingSlot;
-			_renderPassTimestampWrites.endOfPassWriteIndex = TIMER_END_SLOT;
+			const slot = timers.activeCount > 0 && timers.freeSlots.length > 0 ? timers.freeSlots.pop() : - 1;
 
-			descriptor.timestampWrites = _renderPassTimestampWrites;
-			timers.pendingSlot = - 1;
-			return;
+			timers.passSlots.push( slot );
+
+			if ( timers.activeCount > 0 ) {
+
+				_renderPassTimestampWrites.querySet = timers.querySet;
+				_renderPassTimestampWrites.beginningOfPassWriteIndex = slot === - 1 ? undefined : slot;
+				_renderPassTimestampWrites.endOfPassWriteIndex = TIMER_END_SLOT;
+
+				descriptor.timestampWrites = _renderPassTimestampWrites;
+				return;
+
+			}
 
 		}
 
@@ -2678,9 +2691,39 @@ class WebGPUBackend extends Backend {
 	}
 
 	/**
+	 * Called when a pass is submitted: the first pass submitted since measurements began is the first
+	 * of them to run, so the measurements start at its beginning.
+	 *
+	 * @private
+	 */
+	_finishTimerPass() {
+
+		const timers = this._timers;
+
+		// a pass that began before the first timer has no entry
+		if ( timers === null || timers.passSlots.length === 0 ) return;
+
+		const slot = timers.passSlots.pop();
+
+		if ( slot === - 1 ) return;
+
+		if ( timers.pendingSlot !== - 1 ) {
+
+			timers.startSlots[ timers.pendingSlot ] = slot;
+			timers.pendingSlot = - 1;
+
+		} else {
+
+			timers.freeSlots.push( slot );
+
+		}
+
+	}
+
+	/**
 	 * Starts a GPU timer measurement. The timers share one query set, created on first use.
 	 *
-	 * @return {?number} The measurement's start slot, or `null` without the `timestamp-query` feature.
+	 * @return {?number} The measurement's id, or `null` without the `timestamp-query` feature.
 	 */
 	beginTimer() {
 
@@ -2713,12 +2756,21 @@ class WebGPUBackend extends Backend {
 				querySet,
 				resolveBuffer,
 
-				// the start slots and how many measurements use each, freed once none do
+				// the slots that are free. A slot is the id of the measurements that begin before the same
+				// pass, or holds the beginning of a pass
 				freeSlots: Array.from( { length: TIMER_SLOT_COUNT - 1 }, ( v, i ) => i + 1 ),
-				slotReferenceCounts: new Array( TIMER_SLOT_COUNT ).fill( 0 ),
 
-				// the start slot the next pass writes, shared by the measurements that begin before it
+				// how many measurements use each id, freed once none do, and how many measurements are active
+				slotReferenceCounts: new Array( TIMER_SLOT_COUNT ).fill( 0 ),
+				activeCount: 0,
+
+				// the id of the measurements that wait for the next pass to be submitted, and the slot with
+				// the beginning of that pass by the id, once it was
 				pendingSlot: - 1,
+				startSlots: new Array( TIMER_SLOT_COUNT ).fill( - 1 ),
+
+				// the slots of the passes that are issued but not submitted yet, the innermost last
+				passSlots: [],
 			};
 
 		}
@@ -2737,6 +2789,7 @@ class WebGPUBackend extends Backend {
 		}
 
 		timers.slotReferenceCounts[ timers.pendingSlot ] ++;
+		timers.activeCount ++;
 
 		return timers.pendingSlot;
 
@@ -2745,23 +2798,31 @@ class WebGPUBackend extends Backend {
 	/**
 	 * Ends the given measurement and returns its GPU time in milliseconds.
 	 *
-	 * @param {?number} startSlot - The measurement's start slot returned by {@link WebGPUBackend#beginTimer}.
+	 * @param {?number} id - The measurement's id returned by {@link WebGPUBackend#beginTimer}.
 	 * @return {Promise<?number>} The GPU time in milliseconds.
 	 */
-	endTimer( startSlot ) {
+	endTimer( id ) {
 
 		// resolved right away, before the start slot can be reused
-		const result = this.getTimerElapsed( startSlot );
+		const result = this.getTimerElapsed( id );
 
-		if ( startSlot !== null ) {
+		if ( id !== null ) {
 
 			const timers = this._timers;
-			timers.slotReferenceCounts[ startSlot ] --;
-			if ( timers.slotReferenceCounts[ startSlot ] === 0 ) {
+			timers.activeCount --;
+			timers.slotReferenceCounts[ id ] --;
+			if ( timers.slotReferenceCounts[ id ] === 0 ) {
 
-				timers.freeSlots.push( startSlot );
+				timers.freeSlots.push( id );
 
-				if ( timers.pendingSlot === startSlot ) {
+				if ( timers.startSlots[ id ] !== - 1 ) {
+
+					timers.freeSlots.push( timers.startSlots[ id ] );
+					timers.startSlots[ id ] = - 1;
+
+				}
+
+				if ( timers.pendingSlot === id ) {
 
 					timers.pendingSlot = - 1;
 
@@ -2781,12 +2842,12 @@ class WebGPUBackend extends Backend {
 	 * passes don't affect the result.
 	 *
 	 * @async
-	 * @param {?number} startSlot - The measurement's start slot returned by {@link WebGPUBackend#beginTimer}.
+	 * @param {?number} id - The measurement's id returned by {@link WebGPUBackend#beginTimer}.
 	 * @return {Promise<?number>} The GPU time in milliseconds.
 	 */
-	async getTimerElapsed( startSlot ) {
+	async getTimerElapsed( id ) {
 
-		if ( startSlot === null ) {
+		if ( id === null ) {
 
 			return null;
 
@@ -2794,9 +2855,10 @@ class WebGPUBackend extends Backend {
 
 		const timers = this._timers;
 		const device = this.device;
+		const startSlot = timers.startSlots[ id ];
 
-		// no pass has written the start slot yet
-		if ( startSlot === timers.pendingSlot ) {
+		// no pass was submitted since the measurement began
+		if ( startSlot === - 1 ) {
 
 			return 0;
 

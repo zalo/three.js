@@ -1,6 +1,7 @@
 /**
- * Measures the GPU time from the start of the first render or compute pass issued after
- * {@link GPUTimer#begin} to the end of the last one issued before {@link GPUTimer#end}. Unlike the
+ * Measures the GPU time from the start of the first render or compute pass that runs after
+ * {@link GPUTimer#begin} to the end of the last one issued before {@link GPUTimer#end}. A pass that is
+ * issued inside another, e.g. of a shadow map or of an effect, runs before it. Unlike the
  * renderer's `trackTimestamp` option, a timer only times the passes it wraps, keeps its results
  * separate from {@link Renderer#resolveTimestampsAsync} and doesn't require the renderer to be created
  * with `trackTimestamp`.
