@@ -211,13 +211,13 @@ class DenoiseNode extends Node {
 		this.quality = quality;
 
 		/**
-		 * The number of filter passes. The filter spans `3^iterations` texels with the `'fast'` preset, and
-		 * `2^(iterations + 1) - 1` texels with the `'quality'` preset.
+		 * The number of filter passes. Each pass doubles the stride of its 3x3 kernel, so the filter is a tent that spans
+		 * `2^(iterations + 1) - 1` texels.
 		 *
 		 * @type {number}
-		 * @default 2
+		 * @default 3
 		 */
-		this.iterations = quality === 'fast' ? 2 : ( screenSpace ? 3 : 4 );
+		this.iterations = screenSpace || quality === 'fast' ? 3 : 4;
 
 		/**
 		 * How many standard deviations of the noise luminance differences may span before texels stop being
@@ -509,7 +509,7 @@ class DenoiseNode extends Node {
 
 				this._input.value = source.textures[ 0 ];
 				if ( this.alpha && ! direct ) this._inputAlpha.value = source.textures[ 1 ];
-				this._step.value = this.quality === 'fast' ? 3 ** i : 1 << i;
+				this._step.value = 1 << i;
 				this._blurDeviation.value = i === 0 && this._prepareTarget === null && ! this._direct;
 
 				_quadMesh.material = this._getFilterMaterial( final, direct );
@@ -534,7 +534,7 @@ class DenoiseNode extends Node {
 			for ( let i = 0; i < iterations; i ++ ) {
 
 				this._input.value = this._targets[ i % 2 ].texture;
-				this._step.value = this.quality === 'fast' ? 3 ** i : 1 << i;
+				this._step.value = 1 << i;
 
 				renderer.setRenderTarget( this._targets[ ( i + 1 ) % 2 ] );
 				_quadMesh.render( renderer );
@@ -1237,7 +1237,8 @@ class DenoiseNode extends Node {
 	 * @private
 	 * @param {boolean} final - Whether the pass writes the output.
 	 * @param {boolean} direct - Whether the pass reads the history directly ( the first pass of the 'fast' preset in time
-	 * with alpha ): the deviation of the luminance comes from the fast history, and alpha has no edge stop of its own.
+	 * with alpha ): the deviation of the luminance comes from the fast history, and alpha has no edge stop of its own,
+	 * its spread over the taps is the deviation of alpha for the next passes.
 	 * @return {NodeMaterial} The material.
 	 */
 	_createFilterMaterial( final, direct ) {
@@ -1249,11 +1250,11 @@ class DenoiseNode extends Node {
 		const alpha = this.alpha;
 		const roughness = this.roughnessNode !== null;
 
-		// 'fast': a flat kernel, at strides 1 and 3 two passes tile one 9x9 box, where a peaked kernel would leave a
-		// grid; 'quality': the weights 1/4, 1/2 and 1/4 along each axis, and a linear fit
+		// the weights 1/4, 1/2 and 1/4 along each axis, at strides 1, 2, 4, ...: together one smooth tent, where a flat
+		// kernel would leave squares around outliers; 'quality' also fits a plane to the weighted texels
 
 		const fit = this.quality !== 'fast';
-		const kernel = ( t ) => fit ? float( 2 ).sub( t ).div( 4 ) : float( 1 );
+		const kernel = ( t ) => float( 2 ).sub( t ).div( 4 );
 
 		const filter = () => {
 
@@ -1334,7 +1335,7 @@ class DenoiseNode extends Node {
 				const noise = vec3( 0 ).toVar(); // sums of w w s s, times 1, x, y
 				const noiseSpread = vec3( 0 ).toVar(); // times x x, x y, y y
 				const sumA = alpha ? float( 0 ).toVar() : null;
-				const noiseA = alpha ? float( 0 ).toVar() : null;
+				const noiseA = alpha ? ( direct ? vec2( 0 ) : float( 0 ) ).toVar() : null; // sums of w w s s, direct: of w a a and w w
 
 				// the taps are loops, unrolled ones would make shaders that take seconds to compile on some platforms
 
@@ -1397,7 +1398,7 @@ class DenoiseNode extends Node {
 							if ( alpha ) {
 
 								sumA.addAssign( weight.mul( valueAlpha.x ) );
-								noiseA.addAssign( weight.pow2().mul( valueAlpha.y.pow2() ) );
+								noiseA.addAssign( direct ? vec2( weight.mul( valueAlpha.x.pow2() ), weight.pow2() ) : weight.pow2().mul( valueAlpha.y.pow2() ) );
 
 							}
 
@@ -1433,9 +1434,17 @@ class DenoiseNode extends Node {
 
 				}
 
-				// alpha: the weighted mean; after a direct pass, without an edge stop
+				// alpha: the weighted mean, with the deviation of the mean; after a direct pass, from the spread of alpha over
+				// the taps, as if its noise was independent
 
-				if ( alpha ) resultAlpha.assign( vec4( sumA.div( moments.x ), direct ? float( 1e3 ) : sqrt( noiseA ).div( moments.x ), 0, 0 ) );
+				if ( alpha ) {
+
+					const meanA = sumA.div( moments.x ).toVar();
+					const deviationA = direct ? sqrt( noiseA.x.div( moments.x ).sub( meanA.pow2() ).max( 0 ).mul( noiseA.y ) ).div( moments.x ) : sqrt( noiseA ).div( moments.x );
+
+					resultAlpha.assign( vec4( meanA, deviationA, 0, 0 ) );
+
+				}
 
 			} );
 
