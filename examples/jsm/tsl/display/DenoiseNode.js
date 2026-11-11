@@ -1004,7 +1004,15 @@ class DenoiseNode extends Node {
 
 					const fastAge = age.min( FAST_FRAMES );
 					const range = currentMax.rgb.sub( currentMin.rgb );
-					fast.assign( mix( current.rgb, previousFast.rgb.clamp( currentMin.rgb.sub( range ), currentMax.rgb.add( range ) ), fastAge.sub( 1 ).div( fastAge ) ) );
+
+					// reflections: the deviation of the noise of the fast history ( the variance of the frames over
+					// 2 FAST_FRAMES - 1 ). Sparse reflections, rare hits among misses, often have no range in the
+					// neighborhood, which tells nothing about their noise and would clamp the fast history to the misses;
+					// there, the deviation is the margin
+
+					const deviation = this._specular ? sqrt( previousFast.w.max( 0 ).div( 2 * FAST_FRAMES - 1 ) ).toVar() : null;
+					const margin = this._specular ? luminance( range ).greaterThan( 1e-4 ).select( range, deviation.mul( previousFast.rgb.div( luminance( previousFast.rgb ).max( 1e-4 ) ) ) ) : range;
+					fast.assign( mix( current.rgb, previousFast.rgb.clamp( currentMin.rgb.sub( margin ), currentMax.rgb.add( margin ) ), fastAge.sub( 1 ).div( fastAge ) ) );
 
 					const spread = fastMax.sub( fastMin ).max( range ).max( fast.mul( 0.05 ) ).add( 1e-3 );
 					const excess = previousColor.rgb.sub( fast ).abs().div( spread );
@@ -1013,18 +1021,17 @@ class DenoiseNode extends Node {
 					age.assign( mix( age, 1, lag ) );
 					fast.assign( mix( fast, current.rgb, lag ) );
 
-					// the long history is bounded by that range too. Reflections widen it by the deviation of the noise of
-					// the fast history ( the variance of the frames over 2 FAST_FRAMES - 1 ): their rare bright samples would
-					// otherwise clamp and darken the long history, more so the longer it is
+					// the long history is bounded by that range too. Reflections widen it by the deviation: their rare bright
+					// samples would otherwise clamp and darken the long history, more so the longer it is
 
 					const minimum = fastMin.min( fast ).min( current.rgb ).toVar();
 					const maximum = fastMax.max( fast ).max( current.rgb ).toVar();
 
 					if ( this._specular ) {
 
-						const deviation = sqrt( previousFast.w.max( 0 ).div( 2 * FAST_FRAMES - 1 ) ).mul( fast.div( luminance( fast ).max( 1e-4 ) ) );
-						minimum.subAssign( deviation );
-						maximum.addAssign( deviation );
+						const widening = deviation.mul( fast.div( luminance( fast ).max( 1e-4 ) ) );
+						minimum.subAssign( widening );
+						maximum.addAssign( widening );
 
 					}
 
