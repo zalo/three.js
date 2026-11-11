@@ -1013,8 +1013,21 @@ class DenoiseNode extends Node {
 					age.assign( mix( age, 1, lag ) );
 					fast.assign( mix( fast, current.rgb, lag ) );
 
-					const minimum = fastMin.min( fast ).min( current.rgb );
-					const maximum = fastMax.max( fast ).max( current.rgb );
+					// the long history is bounded by that range too. Reflections widen it by the deviation of the noise of
+					// the fast history ( the variance of the frames over 2 FAST_FRAMES - 1 ): their rare bright samples would
+					// otherwise clamp and darken the long history, more so the longer it is
+
+					const minimum = fastMin.min( fast ).min( current.rgb ).toVar();
+					const maximum = fastMax.max( fast ).max( current.rgb ).toVar();
+
+					if ( this._specular ) {
+
+						const deviation = sqrt( previousFast.w.max( 0 ).div( 2 * FAST_FRAMES - 1 ) ).mul( fast.div( luminance( fast ).max( 1e-4 ) ) );
+						minimum.subAssign( deviation );
+						maximum.addAssign( deviation );
+
+					}
+
 					const alphaRange = currentMax.a.sub( currentMin.a );
 					const bounded = vec4( previousColor.rgb.clamp( minimum, maximum ), alpha ? previousColor.a.clamp( currentMin.a.sub( alphaRange ), currentMax.a.add( alphaRange ) ) : 1 );
 
