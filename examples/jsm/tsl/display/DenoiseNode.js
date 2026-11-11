@@ -986,7 +986,8 @@ class DenoiseNode extends Node {
 					const previousFast = sumFast.div( sumWeight ).toVar();
 					const age = min( sumLength.div( sumWeight ).add( 1 ), this.maxFrames ).toVar();
 
-					// reflections: as many frames as the view direction takes to turn by a fraction of the lobe width
+					// reflections: as many frames as the view direction takes to turn by a fraction of the lobe width, but
+					// not fewer than the fast history, which bounds the lag of the long history anyway
 
 					if ( this._specular ) {
 
@@ -994,7 +995,7 @@ class DenoiseNode extends Node {
 						const turn = length( toCamera( this._cameraWorldMatrix ).sub( toCamera( this._previousCameraWorldMatrix ) ) );
 						const lobe = normal.w.mul( normal.w ).max( 0.01 ).mul( 2 );
 
-						age.assign( age.min( lobe.mul( PARALLAX_TOLERANCE ).div( turn.max( 1e-6 ) ).max( 1 ) ) );
+						age.assign( age.min( lobe.mul( PARALLAX_TOLERANCE ).div( turn.max( 1e-6 ) ).max( FAST_FRAMES ) ) );
 
 					}
 
