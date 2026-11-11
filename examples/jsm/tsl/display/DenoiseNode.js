@@ -14,6 +14,10 @@ const FAST_FRAMES = 4;
 // the distance to the tangent plane, relative to the view depth, beyond which a history texel is another surface
 const PLANE_TOLERANCE = 0.02;
 
+// reflections: the history keeps the frames over which the view direction turned by less than this fraction of the
+// width of the reflection lobe, 2 a for GGX, since glossy reflections change with the view direction
+const PARALLAX_TOLERANCE = 0.3;
+
 // specular: how fast the weight of a neighbor falls with its difference of roughness and of hit distance factor
 const ROUGHNESS_PHI = 20;
 const HIT_DISTANCE_PHI = 8;
@@ -250,7 +254,9 @@ class DenoiseNode extends Node {
 		this.relativeNoise = uniform( 0.05 );
 
 		/**
-		 * Temporal: the maximum length of the history in frames. Longer histories have less noise and more lag.
+		 * Temporal: the maximum length of the history in frames. Longer histories have less noise and more lag. With
+		 * `roughness` and `hitDistance`, the history of a reflection is also shorter while the view direction to its
+		 * surface turns, relative to the width of its reflection lobe, so reflections can use long histories.
 		 *
 		 * @type {UniformNode<float>}
 		 */
@@ -360,6 +366,7 @@ class DenoiseNode extends Node {
 		this._previousViewMatrix = uniform( new Matrix4() );
 		this._previousProjectionMatrix = uniform( new Matrix4() );
 		this._previousProjectionMatrixInverse = uniform( new Matrix4() );
+		this._previousCameraWorldMatrix = uniform( new Matrix4() );
 		this._jitter = new Vector2();
 		this._jitterDelta = uniform( new Vector2() );
 		this._historyValid = uniform( false, 'bool' );
@@ -663,6 +670,7 @@ class DenoiseNode extends Node {
 		this._previousViewMatrix.value.copy( camera.matrixWorldInverse );
 		this._previousProjectionMatrix.value.copy( camera.projectionMatrix );
 		this._previousProjectionMatrixInverse.value.copy( camera.projectionMatrixInverse );
+		this._previousCameraWorldMatrix.value.copy( camera.matrixWorld );
 		this._historyValid.value = true;
 
 	}
@@ -977,6 +985,18 @@ class DenoiseNode extends Node {
 					const previousColor = sumColor.div( sumWeight ).toVar();
 					const previousFast = sumFast.div( sumWeight ).toVar();
 					const age = min( sumLength.div( sumWeight ).add( 1 ), this.maxFrames ).toVar();
+
+					// reflections: as many frames as the view direction takes to turn by a fraction of the lobe width
+
+					if ( this._specular ) {
+
+						const toCamera = ( matrix ) => this.camera.isOrthographicCamera ? matrix.mul( vec4( 0, 0, 1, 0 ) ).xyz.normalize() : matrix.mul( vec4( 0, 0, 0, 1 ) ).xyz.sub( world.xyz ).normalize();
+						const turn = length( toCamera( this._cameraWorldMatrix ).sub( toCamera( this._previousCameraWorldMatrix ) ) );
+						const lobe = normal.w.mul( normal.w ).max( 0.01 ).mul( 2 );
+
+						age.assign( age.min( lobe.mul( PARALLAX_TOLERANCE ).div( turn.max( 1e-6 ) ).max( 1 ) ) );
+
+					}
 
 					// color anti-lag ( ReLAX ): a short fast history, loosely bounded by the range of the current
 					// neighborhood, bounds the long history; where they diverge beyond the spread of the fast history,
