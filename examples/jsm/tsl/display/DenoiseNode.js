@@ -510,7 +510,7 @@ class DenoiseNode extends Node {
 				this._input.value = source.textures[ 0 ];
 				if ( this.alpha && ! direct ) this._inputAlpha.value = source.textures[ 1 ];
 				this._step.value = 1 << i;
-				this._blurDeviation.value = i === 0 && this._prepareTarget === null && ! this._direct;
+				this._blurDeviation.value = i === 0 && this._prepareTarget === null;
 
 				_quadMesh.material = this._getFilterMaterial( final, direct );
 				_quadMesh.name = 'Denoise [ Filter ]';
@@ -1275,7 +1275,8 @@ class DenoiseNode extends Node {
 				const centerLuminance = luminance( center.rgb ).toVar();
 
 				// SVGF: the deviation of a texel is blurred over the 3x3 texels of the same surface first, where it was not
-				// yet, so that a single lucky sample does not stop the filter
+				// yet, so that a single lucky sample does not stop the filter, e.g. dark islands where no sample of the
+				// history was bright. A direct pass blurs the deviations of the fast history
 
 				const centerDeviation = center.a.toVar();
 
@@ -1286,7 +1287,7 @@ class DenoiseNode extends Node {
 					Loop( { start: - 1, end: 1, condition: '<=', name: 'y' }, { start: - 1, end: 1, condition: '<=', name: 'x' }, ( { x, y } ) => {
 
 						const q = coord.add( ivec2( x, y ) ).clamp( ivec2( 0 ), size.sub( 1 ) ).toVar();
-						const v = input.load( q ).a.toVar();
+						const v = ( direct ? sqrt( this._currentFast.load( q ).w.max( 0 ) ) : input.load( q ).a ).toVar();
 						const k = float( 2 ).sub( abs( float( x ) ) ).mul( float( 2 ).sub( abs( float( y ) ) ) );
 
 						If( v.greaterThanEqual( 0 ).and( this._texelAt( q, rays ).surface.w.equal( surface.w ) ), () => {
